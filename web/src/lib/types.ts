@@ -1,53 +1,73 @@
-export interface VehiculoData {
-  descripcion?: string;
-  placas?: string;
-  serie?: string;
-  motor?: string;
-  tipo?: string;
-  nacional_importado?: string;
+export interface CampoExtraido {
+  nombre: string;
+  valor: string | null;
+  metodo: 'regla' | 'ia' | 'no_encontrado';
+  regla_id: number | null;
 }
 
-export interface DireccionData {
-  calle?: string;
-  colonia?: string;
-  municipio?: string;
-  cp?: string;
-  estado?: string;
+export interface StatsExtraccion {
+  por_regla: number;
+  por_ia: number;
+  no_encontrados: number;
 }
 
-export interface PrimasData {
-  prima_neta?: string;
-  tasa_financiamiento?: string;
-  gastos_expedicion?: string;
-  subtotal?: string;
-  iva?: string;
-  prima_total?: string;
-}
-
-export interface VigenciaData {
-  inicio?: string;
-  fin?: string;
-}
-
-export interface PolizaExtraida {
+export interface ResultadoPDF {
+  id: number | null;
   archivo: string;
-  compania?: string;
-  ramo?: string;
-  numero_poliza?: string;
-  nombre_cliente?: string;
-  rfc?: string;
-  forma_pago?: string;
-  moneda?: string;
-  vehiculo?: VehiculoData;
-  direccion?: DireccionData;
-  primas?: PrimasData;
-  vigencia?: VigenciaData;
-  error?: string;
-  metodo_extraccion?: string;
+  compania: string | null;
+  ramo: string | null;
+  subramo: string | null;
+  campos: Record<string, { valor: string | null; metodo: string; regla_id: number | null }>;
+  stats: StatsExtraccion;
+  error: string | null;
 }
 
-export interface ExtractionResponse {
-  success: boolean;
-  data: PolizaExtraida[];
-  error?: string;
+export interface Compania {
+  id: number;
+  nombre: string;
+  keywords: string[];
+  activo: boolean;
+}
+
+export interface Ramo {
+  id: number;
+  nombre: string;
+  compania_id: number;
+  keywords: string[];
+  activo: boolean;
+}
+
+export interface Subramo {
+  id: number;
+  nombre: string;
+  ramo_id: number;
+  keywords: string[];
+  activo: boolean;
+  cobertura: {
+    total_campos: number;
+    campos_con_regla: number;
+    campos_sin_regla: number;
+    porcentaje: number;
+  };
+}
+
+export interface Campo {
+  id: number;
+  nombre: string;
+  label: string;
+  tipo: string;
+  requerido: boolean;
+  orden: number;
+}
+
+export interface Regla {
+  id: number;
+  subramo_id: number;
+  nombre_campo: string;
+  patron_regex: string;
+  contexto_antes: string | null;
+  contexto_despues: string | null;
+  confianza: number;
+  creado_por: string;
+  activo: boolean;
 }

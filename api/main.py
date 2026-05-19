@@ -1,12 +1,32 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+import os
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .models.poliza import ExtractionResponse
-from .services.extractor import procesar_pdf
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from .database import init_db, SessionLocal
+from .seed.data import sembrar
+from .routers import extraccion, catalogos, reglas
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    db = SessionLocal()
+    try:
+        sembrar(db)
+    finally:
+        db.close()
+    yield
+
 
 app = FastAPI(
     title="Lector de Pólizas API",
-    description="Extracción multi-compañía de datos de pólizas PDF (GNP, Quálitas, ANA, HDI, Banorte…)",
-    version="1.0.0",
+    description="Extracción multi-compañía de pólizas PDF — GNP, Quálitas, ANA, HDI, Banorte…",
+    version="2.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -16,31 +36,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(extraccion.router)
+app.include_router(catalogos.router)
+app.include_router(reglas.router)
+
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "1.0.0"}
-
-
-@app.post("/extraer", response_model=ExtractionResponse)
-async def extraer_polizas(files: list[UploadFile] = File(...)):
-    """
-    Recibe uno o varios archivos PDF de pólizas y extrae sus datos.
-    Detecta automáticamente la compañía aseguradora.
-    """
-    if not files:
-        raise HTTPException(status_code=400, detail="Se requiere al menos un archivo PDF")
-
-    resultados = []
-    for archivo in files:
-        if not archivo.filename or not archivo.filename.lower().endswith(".pdf"):
-            resultados.append(
-                {"archivo": archivo.filename or "desconocido", "error": "Solo se aceptan archivos PDF"}
-            )
-            continue
-
-        contenido = await archivo.read()
-        resultado = procesar_pdf(contenido, archivo.filename)
-        resultados.append(resultado)
-
-    return ExtractionResponse(success=True, data=resultados)
+    return {"status": "ok", "version": "2.0.0"}
