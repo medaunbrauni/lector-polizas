@@ -4,7 +4,7 @@ import {
   Upload, FileUp, Loader2, CheckCircle2, AlertCircle,
   Download, Eye, X, Car, FileText, Cpu,
 } from 'lucide-react';
-import type { PolizaExtraida, ExtractionResponse } from '../lib/types';
+import type { ResultadoPDF, ExtractionResponse } from '../lib/types';
 import PolizaDetalle from '../components/lector/PolizaDetalle';
 
 const API_URL = '/api/extraer';
@@ -26,11 +26,11 @@ function badgeCompania(compania?: string) {
 }
 
 export default function LectorPolizas() {
-  const [resultados, setResultados] = useState<PolizaExtraida[]>([]);
+  const [resultados, setResultados] = useState<ResultadoPDF[]>([]);
   const [procesando, setProcesando] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [detalle, setDetalle] = useState<PolizaExtraida | null>(null);
+  const [detalle, setDetalle] = useState<ResultadoPDF | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   async function procesar(files: FileList) {
@@ -78,16 +78,19 @@ export default function LectorPolizas() {
       'Error', 'Método',
     ];
 
+    const c = (r: ResultadoPDF, k: string) => r.campos?.[k]?.valor ?? null;
     const filas = resultados.map((r) => [
-      r.archivo, r.compania, r.ramo, r.numero_poliza, r.nombre_cliente, r.rfc,
-      r.forma_pago, r.moneda,
-      r.vehiculo?.placas, r.vehiculo?.serie, r.vehiculo?.motor,
-      r.vehiculo?.descripcion, r.vehiculo?.tipo, r.vehiculo?.nacional_importado,
-      r.primas?.prima_neta, r.primas?.gastos_expedicion, r.primas?.subtotal,
-      r.primas?.iva, r.primas?.prima_total,
-      r.vigencia?.inicio, r.vigencia?.fin,
-      r.direccion?.colonia, r.direccion?.municipio, r.direccion?.cp, r.direccion?.estado,
-      r.error, r.metodo_extraccion,
+      r.archivo, r.compania, r.ramo,
+      c(r, 'numero_poliza'), c(r, 'nombre_cliente'), c(r, 'rfc'),
+      c(r, 'forma_pago'), c(r, 'moneda'),
+      c(r, 'placas'), c(r, 'serie'), c(r, 'motor'),
+      c(r, 'descripcion_vehiculo'), c(r, 'tipo_vehiculo'), c(r, 'nacional_importado'),
+      c(r, 'prima_neta'), c(r, 'gastos_expedicion'), c(r, 'subtotal'),
+      c(r, 'iva'), c(r, 'prima_total'),
+      c(r, 'inicio_vigencia'), c(r, 'fin_vigencia'),
+      c(r, 'colonia'), c(r, 'municipio'), c(r, 'cp'), c(r, 'estado'),
+      r.error,
+      r.stats.por_ia > 0 ? `IA(${r.stats.por_ia}) + Regla(${r.stats.por_regla})` : `Regla(${r.stats.por_regla})`,
     ]);
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...filas]);
@@ -207,19 +210,19 @@ export default function LectorPolizas() {
                           ? <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${badgeCompania(r.compania)}`}>{r.compania}</span>
                           : <span className="text-xs text-gray-400">—</span>}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-600 font-mono">{r.numero_poliza || '—'}</td>
-                      <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[160px] truncate">{r.nombre_cliente || '—'}</td>
-                      <td className="px-3 py-2.5 text-xs text-gray-600 font-mono">{r.vehiculo?.placas || '—'}</td>
-                      <td className="px-3 py-2.5 text-xs font-semibold text-gray-800">{r.primas?.prima_total || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-gray-600 font-mono">{r.campos?.numero_poliza?.valor || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[160px] truncate">{r.campos?.nombre_cliente?.valor || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-gray-600 font-mono">{r.campos?.placas?.valor || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs font-semibold text-gray-800">{r.campos?.prima_total?.valor || '—'}</td>
                       <td className="px-3 py-2.5 text-xs text-gray-500">
-                        {r.vigencia?.inicio && r.vigencia?.fin
-                          ? `${r.vigencia.inicio} – ${r.vigencia.fin}`
+                        {r.campos?.inicio_vigencia?.valor && r.campos?.fin_vigencia?.valor
+                          ? `${r.campos.inicio_vigencia.valor} – ${r.campos.fin_vigencia.valor}`
                           : '—'}
                       </td>
                       <td className="px-3 py-2.5">
-                        {r.metodo_extraccion === 'ai_claude'
-                          ? <span className="inline-flex items-center gap-1 text-[10px] text-purple-600 font-medium"><Cpu className="w-3 h-3" />IA</span>
-                          : <span className="text-[10px] text-gray-400">Parser</span>}
+                        {r.stats?.por_ia > 0
+                          ? <span className="inline-flex items-center gap-1 text-[10px] text-purple-600 font-medium"><Cpu className="w-3 h-3" />IA ({r.stats.por_ia})</span>
+                          : <span className="text-[10px] text-gray-400">Regla ({r.stats?.por_regla ?? 0})</span>}
                       </td>
                       <td className="px-3 py-2.5">
                         {r.error

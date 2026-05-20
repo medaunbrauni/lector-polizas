@@ -1,11 +1,12 @@
 import { NavLink } from 'react-router-dom';
-import { FileSearch, BookOpen, Zap, History } from 'lucide-react';
+import { FileSearch, BookOpen, Zap, History, Code2 } from 'lucide-react';
 
 const NAV = [
-  { to: '/',          icon: FileSearch, label: 'Extractor'  },
-  { to: '/historial', icon: History,    label: 'Historial'  },
-  { to: '/catalogos', icon: BookOpen,   label: 'Catálogos'  },
-  { to: '/reglas',    icon: Zap,        label: 'Reglas'     },
+  { to: '/',              icon: FileSearch, label: 'Extractor',     exact: true  },
+  { to: '/historial',     icon: History,    label: 'Historial',     exact: false },
+  { to: '/catalogos',     icon: BookOpen,   label: 'Catálogos',     exact: false },
+  { to: '/reglas',        icon: Zap,        label: 'Reglas',        exact: true  },
+  { to: '/reglas/codigo', icon: Code2,      label: 'Código Reglas', exact: false },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -25,11 +26,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-0.5">
-          {NAV.map(({ to, icon: Icon, label }) => (
+          {NAV.map(({ to, icon: Icon, label, exact }) => (
             <NavLink
               key={to}
               to={to}
-              end={to === '/'}
+              end={exact}
               className={({ isActive }) =>
                 `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   isActive

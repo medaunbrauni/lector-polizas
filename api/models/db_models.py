@@ -12,8 +12,12 @@ class Compania(Base):
     __tablename__ = "companias"
     id = Column(Integer, primary_key=True)
     nombre = Column(String(120), nullable=False, unique=True)
-    keywords = Column(JSON, default=list)       # palabras clave para detección
+    nombre_exportacion = Column(String(120), nullable=True)   # alias para mesa de control
+    keywords = Column(JSON, default=list)
+    patrones_deteccion = Column(JSON, default=list)           # regex para detectar en PDF
     activo = Column(Boolean, default=True)
+    prioridad = Column(Integer, nullable=True)
+    porcentaje_docs = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ramos = relationship("Ramo", back_populates="compania", cascade="all, delete-orphan")
@@ -23,8 +27,10 @@ class Ramo(Base):
     __tablename__ = "ramos"
     id = Column(Integer, primary_key=True)
     nombre = Column(String(120), nullable=False)
+    nombre_exportacion = Column(String(120), nullable=True)
     compania_id = Column(Integer, ForeignKey("companias.id"), nullable=False)
     keywords = Column(JSON, default=list)
+    patrones_deteccion = Column(JSON, default=list)
     activo = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -36,9 +42,13 @@ class Subramo(Base):
     __tablename__ = "subramos"
     id = Column(Integer, primary_key=True)
     nombre = Column(String(120), nullable=False)
+    nombre_exportacion = Column(String(120), nullable=True)
     ramo_id = Column(Integer, ForeignKey("ramos.id"), nullable=False)
     keywords = Column(JSON, default=list)
+    patrones_deteccion = Column(JSON, default=list)
     activo = Column(Boolean, default=True)
+    prioridad = Column(Integer, nullable=True)
+    porcentaje_docs = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ramo = relationship("Ramo", back_populates="subramos")
@@ -74,6 +84,8 @@ class ReglaExtraccion(Base):
     ejemplos = Column(JSON, default=list)   # valores de muestra que matchean
     confianza = Column(Float, default=1.0)  # 0.0-1.0
     activo = Column(Boolean, default=True)
+    es_borrador = Column(Boolean, default=False)       # guardado sin confirmar coincidencia
+    bbox = Column(JSON, nullable=True)                 # {page,x0,top,x1,bottom} normalizados 0-1
     creado_por = Column(String(30), default="manual")  # manual | ia | visual
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -1,6 +1,7 @@
 """
 Pipeline principal de extracción.
-Orquesta: texto PDF → detección → reglas → IA fallback → guardar historial.
+Orquesta: texto PDF → detección → reglas → guardar historial.
+Solo usa reglas regex definidas en BD; no llama a IA para extraer datos.
 """
 import io
 import pdfplumber
@@ -8,7 +9,6 @@ from sqlalchemy.orm import Session
 
 from .detector import detectar_jerarquia
 from .rule_engine import aplicar_reglas, campos_sin_regla
-from ..parsers.ai_fallback import extraer_campos_con_ia
 from ..models.db_models import Extraccion, CampoExtraido, CampoDefinido
 
 
@@ -25,6 +25,7 @@ def extraer_texto_pdf(contenido: bytes) -> str:
 def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     """
     Pipeline completo. Retorna dict con todos los datos y metadata.
+    Extracción solo por reglas regex; no usa IA como fallback.
     """
     # 1. Extraer texto
     try:
@@ -43,25 +44,13 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     campos_faltantes: list[CampoDefinido] = []
 
     if subramo:
-        datos_reglas = aplicar_reglas(texto, subramo.id, db)
+        datos_reglas = aplicar_reglas(texto, subramo.id, db, pdf_bytes=contenido)
         campos_cubiertos = {k for k, v in datos_reglas.items() if v["metodo"] == "regla"}
         campos_faltantes = campos_sin_regla(subramo.id, campos_cubiertos, db)
 
-    # 4. IA para campos sin regla
-    datos_ia: dict[str, str] = {}
-    if campos_faltantes:
-        nombres_faltantes = [c.nombre for c in campos_faltantes]
-        contexto = {
-            "compania": compania.nombre if compania else None,
-            "ramo": ramo.nombre if ramo else None,
-            "subramo": subramo.nombre if subramo else None,
-        }
-        datos_ia = extraer_campos_con_ia(texto, nombres_faltantes, contexto)
-
-    # 5. Combinar resultados
+    # 4. Campos sin regla → no_encontrado (sin IA)
     datos_finales = {}
     por_regla = 0
-    por_ia = 0
     no_encontrados = 0
 
     for nombre, info in datos_reglas.items():
@@ -71,16 +60,11 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         else:
             no_encontrados += 1
 
-    for nombre, valor in datos_ia.items():
-        if nombre not in datos_finales:
-            metodo = "ia" if valor else "no_encontrado"
-            datos_finales[nombre] = {"valor": valor, "metodo": metodo, "regla_id": None}
-            if valor:
-                por_ia += 1
-            else:
-                no_encontrados += 1
+    for campo in campos_faltantes:
+        datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
+        no_encontrados += 1
 
-    # 6. Guardar en historial
+    # 5. Guardar en historial
     extraccion = Extraccion(
         nombre_archivo=nombre_archivo,
         compania_id=compania.id if compania else None,
@@ -91,10 +75,10 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         subramo_detectado=subramo.nombre if subramo else None,
         metodo_deteccion="keywords",
         datos_completos={k: v.get("valor") for k, v in datos_finales.items()},
-        texto_pdf=texto[:50_000],  # guardar hasta 50k chars para el rule builder
+        texto_pdf=texto[:50_000],
         exitoso=True,
         campos_por_regla=por_regla,
-        campos_por_ia=por_ia,
+        campos_por_ia=0,
         campos_no_encontrados=no_encontrados,
     )
     db.add(extraccion)
@@ -120,7 +104,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         "campos": datos_finales,
         "stats": {
             "por_regla": por_regla,
-            "por_ia": por_ia,
+            "por_ia": 0,
             "no_encontrados": no_encontrados,
         },
         "error": None,

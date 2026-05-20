@@ -1,3 +1,9 @@
+export interface ExtractionResponse {
+  success: boolean;
+  data: ResultadoPDF[];
+  error?: string;
+}
+
 export interface CampoExtraido {
   nombre: string;
   valor: string | null;
@@ -25,24 +31,34 @@ export interface ResultadoPDF {
 export interface Compania {
   id: number;
   nombre: string;
+  nombre_exportacion: string | null;
   keywords: string[];
+  patrones_deteccion: string[];
   activo: boolean;
+  prioridad: number | null;
+  porcentaje_docs: number | null;
 }
 
 export interface Ramo {
   id: number;
   nombre: string;
+  nombre_exportacion: string | null;
   compania_id: number;
   keywords: string[];
+  patrones_deteccion: string[];
   activo: boolean;
 }
 
 export interface Subramo {
   id: number;
   nombre: string;
+  nombre_exportacion: string | null;
   ramo_id: number;
   keywords: string[];
+  patrones_deteccion: string[];
   activo: boolean;
+  prioridad: number | null;
+  porcentaje_docs: number | null;
   cobertura: {
     total_campos: number;
     campos_con_regla: number;
@@ -60,6 +76,29 @@ export interface Campo {
   orden: number;
 }
 
+export interface TextoDisponible {
+  id: number;
+  nombre_archivo: string;
+  created_at: string | null;
+  texto_pdf: string;
+}
+
+export interface ResultadoRegexIA {
+  patron_regex: string;
+  explicacion: string;
+  confianza: number;
+  match_test: string | null;
+  match_ok: boolean;
+}
+
+export interface BBox {
+  page: number;
+  x0: number;
+  top: number;
+  x1: number;
+  bottom: number;
+}
+
 export interface Regla {
   id: number;
   subramo_id: number;
@@ -70,4 +109,6 @@ export interface Regla {
   confianza: number;
   creado_por: string;
   activo: boolean;
+  es_borrador: boolean;
+  bbox: BBox | null;
 }
