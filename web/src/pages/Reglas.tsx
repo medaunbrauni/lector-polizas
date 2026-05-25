@@ -78,6 +78,17 @@ export default function Reglas() {
     return () => { if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl); };
   }, [pdfBlobUrl]);
 
+  // Auto-scroll al highlight en el panel de texto extraído cuando se hace una selección
+  useEffect(() => {
+    if (!textoSeleccionado) return;
+    const t = setTimeout(() => {
+      document.getElementById('extracted-text-highlight')?.scrollIntoView({
+        behavior: 'smooth', block: 'nearest',
+      });
+    }, 120);
+    return () => clearTimeout(t);
+  }, [textoSeleccionado]);
+
   useEffect(() => { getCompanias().then(setCompanias); }, []);
 
   useEffect(() => {
@@ -658,15 +669,20 @@ export default function Reglas() {
                     )}
 
                     {mostrarPdfViewer ? (
-                      /* ── Visor PDF real ── */
-                      <div className="relative">
-                        {campoBuild && (
-                          <div className="absolute top-2 right-2 z-10 flex items-center gap-1 text-[10px] text-gray-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg border border-gray-200 pointer-events-none shadow-sm">
-                            <MousePointer2 className="w-3 h-3" />
-                            Selecciona texto del PDF
-                          </div>
+                      /* ── Visor PDF real + panel de texto extraído ── */
+                      <div className="space-y-2">
+                        <div className="relative">
+                          {campoBuild && (
+                            <div className="absolute top-2 right-2 z-10 flex items-center gap-1 text-[10px] text-gray-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg border border-gray-200 pointer-events-none shadow-sm">
+                              <MousePointer2 className="w-3 h-3" />
+                              Selecciona texto del PDF
+                            </div>
+                          )}
+                          <PdfVisor url={pdfBlobUrl!} onSeleccion={handleSeleccion} />
+                        </div>
+                        {textoPdf && (
+                          <TextoValidacion texto={textoPdf} seleccion={textoSeleccionado} />
                         )}
-                        <PdfVisor url={pdfBlobUrl!} onSeleccion={handleSeleccion} />
                       </div>
                     ) : textoPdf ? (
                       /* ── Visor texto extraído ── */
@@ -959,6 +975,83 @@ function PdfVisor({ url, onSeleccion }: { url: string; onSeleccion: () => void }
           </div>
         ))}
       </Document>
+    </div>
+  );
+}
+
+// ── Panel de validación: texto extraído con highlight ─────────────────────────
+
+function TextoValidacion({ texto, seleccion }: { texto: string; seleccion: string }) {
+  const CTX = 260;
+
+  let badge: React.ReactNode = null;
+  let content: React.ReactNode;
+
+  if (!seleccion) {
+    badge = <span className="text-[10px] text-gray-400">Selecciona texto en el PDF ↑</span>;
+    content = (
+      <span className="text-gray-400">
+        {texto.substring(0, 500)}{texto.length > 500 ? '…' : ''}
+      </span>
+    );
+  } else {
+    const idxExact = texto.indexOf(seleccion);
+    const idxLower = texto.toLowerCase().indexOf(seleccion.toLowerCase());
+    const idx = idxExact !== -1 ? idxExact : idxLower;
+    const encontrado = idx !== -1;
+
+    badge = (
+      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 ${
+        encontrado ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+      }`}>
+        {encontrado
+          ? <><CheckCircle2 className="w-3 h-3" />Encontrado en extracción</>
+          : <><AlertCircle className="w-3 h-3" />No encontrado — el regex podría fallar</>
+        }
+      </span>
+    );
+
+    if (!encontrado) {
+      content = (
+        <span className="text-gray-400">
+          {texto.substring(0, 500)}{texto.length > 500 ? '…' : ''}
+        </span>
+      );
+    } else {
+      const start = Math.max(0, idx - CTX);
+      const end = Math.min(texto.length, idx + seleccion.length + CTX);
+      const before = texto.substring(start, idx);
+      const match  = texto.substring(idx, idx + seleccion.length);
+      const after  = texto.substring(idx + seleccion.length, end);
+      content = (
+        <>
+          {start > 0 && <span className="text-gray-400">…</span>}
+          {before}
+          <mark
+            id="extracted-text-highlight"
+            className="bg-yellow-300 text-gray-900 rounded-sm font-semibold not-italic"
+          >
+            {match}
+          </mark>
+          {after}
+          {end < texto.length && <span className="text-gray-400">…</span>}
+        </>
+      );
+    }
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
+        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
+          <FileText className="w-3 h-3" />
+          Texto extraído · validación
+        </span>
+        {badge}
+      </div>
+      <pre className="px-3 py-2.5 text-[10px] font-mono text-gray-600 whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto bg-white">
+        {content}
+      </pre>
     </div>
   );
 }
