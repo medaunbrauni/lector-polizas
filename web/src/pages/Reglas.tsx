@@ -628,12 +628,12 @@ export default function Reglas() {
                   </select>
                 </div>
 
-                {/* Paso 2: visor */}
-                {campoBuild && (
+                {/* Paso 2: visor — siempre visible cuando hay PDF o texto cargado */}
+                {(mostrarPdfViewer || textoPdf || textosDisponibles.length > 0) && (
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                        2 · Selecciona el valor en el PDF
+                        {campoBuild ? '2 · Selecciona el valor en el PDF' : '2 · Vista previa del documento'}
                       </label>
                       {textosDisponibles.length > 0 && (
                         <select
@@ -650,22 +650,33 @@ export default function Reglas() {
                       )}
                     </div>
 
+                    {!campoBuild && (
+                      <div className="mb-2 flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
+                        <MousePointer2 className="w-3.5 h-3.5 flex-shrink-0" />
+                        Elige un campo en el paso 1 y luego selecciona el valor aquí en el PDF
+                      </div>
+                    )}
+
                     {mostrarPdfViewer ? (
                       /* ── Visor PDF real ── */
                       <div className="relative">
-                        <div className="absolute top-2 right-2 z-10 flex items-center gap-1 text-[10px] text-gray-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg border border-gray-200 pointer-events-none shadow-sm">
-                          <MousePointer2 className="w-3 h-3" />
-                          Selecciona texto del PDF
-                        </div>
-                        <PdfVisor url={pdfBlobUrl} onSeleccion={handleSeleccion} />
+                        {campoBuild && (
+                          <div className="absolute top-2 right-2 z-10 flex items-center gap-1 text-[10px] text-gray-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg border border-gray-200 pointer-events-none shadow-sm">
+                            <MousePointer2 className="w-3 h-3" />
+                            Selecciona texto del PDF
+                          </div>
+                        )}
+                        <PdfVisor url={pdfBlobUrl!} onSeleccion={handleSeleccion} />
                       </div>
                     ) : textoPdf ? (
                       /* ── Visor texto extraído ── */
                       <div className="relative">
-                        <div className="absolute top-2 right-2 flex items-center gap-1 text-[10px] text-gray-400 bg-white/90 px-2 py-1 rounded-lg border border-gray-100 z-10 pointer-events-none">
-                          <MousePointer2 className="w-3 h-3" />
-                          Arrastra para seleccionar
-                        </div>
+                        {campoBuild && (
+                          <div className="absolute top-2 right-2 flex items-center gap-1 text-[10px] text-gray-400 bg-white/90 px-2 py-1 rounded-lg border border-gray-100 z-10 pointer-events-none">
+                            <MousePointer2 className="w-3 h-3" />
+                            Arrastra para seleccionar
+                          </div>
+                        )}
                         <pre
                           ref={visorRef}
                           onMouseUp={handleSeleccion}
@@ -681,8 +692,8 @@ export default function Reglas() {
                       </div>
                     )}
 
-                    {/* Valor seleccionado */}
-                    {textoSeleccionado && (
+                    {/* Valor seleccionado — solo si hay campo elegido */}
+                    {campoBuild && textoSeleccionado && (
                       <div className="mt-2 space-y-1.5">
                         <div className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-xl">
                           <span className="text-[10px] font-semibold text-blue-500 uppercase">Seleccionado</span>

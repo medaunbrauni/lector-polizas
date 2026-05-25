@@ -90,6 +90,19 @@ def aplicar_reglas(
                 "regla_id": None,
             }
 
+    # 3. Derivar "entidad" desde el RFC si no fue extraída por regla
+    #    RFC de 13 caracteres → Persona Física (0)
+    #    RFC de 12 caracteres → Persona Moral  (1)
+    rfc_info = resultados.get("rfc")
+    if rfc_info and rfc_info.get("valor"):
+        rfc_limpio = rfc_info["valor"].strip().replace(" ", "").replace("-", "")
+        entidad_actual = resultados.get("entidad", {}).get("valor")
+        if entidad_actual is None:
+            if len(rfc_limpio) == 13:
+                resultados["entidad"] = {"valor": "0", "metodo": "derivado", "regla_id": None}
+            elif len(rfc_limpio) == 12:
+                resultados["entidad"] = {"valor": "1", "metodo": "derivado", "regla_id": None}
+
     return resultados
 
 
