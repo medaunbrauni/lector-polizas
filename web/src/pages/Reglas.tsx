@@ -381,9 +381,13 @@ export default function Reglas() {
 
   const camposConRegla = new Set(reglas.map((r) => r.nombre_campo));
   const camposConBorrador = new Map(borradores.map((r) => [r.nombre_campo, r.id]));
+  // Campos con valor_fijo se consideran "cubiertos" automáticamente
+  const camposValorFijo = new Set(campos.filter((c) => c.valor_fijo !== null).map((c) => c.nombre));
+  const camposCubiertos = new Set([...camposConRegla, ...camposValorFijo]);
+
   const camposOrdenados = [...campos].sort((a, b) => {
-    const aOk = camposConRegla.has(a.nombre);
-    const bOk = camposConRegla.has(b.nombre);
+    const aOk = camposCubiertos.has(a.nombre);
+    const bOk = camposCubiertos.has(b.nombre);
     if (aOk !== bOk) return aOk ? -1 : 1;
     const aBorr = camposConBorrador.has(a.nombre);
     const bBorr = camposConBorrador.has(b.nombre);
@@ -521,35 +525,52 @@ export default function Reglas() {
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-gray-700">Campos del módulo</h2>
               <span className="text-[10px] text-gray-400 font-medium">
-                {camposConRegla.size}/{campos.length} con regla
+                {camposCubiertos.size}/{campos.length} cubiertos
               </span>
             </div>
             <ul className="divide-y divide-gray-50 max-h-[60vh] overflow-y-auto">
               {camposOrdenados.map((c) => {
                 const activo = tab === 'visual' ? campoBuild === c.nombre : form.nombre_campo === c.nombre;
                 const tieneRegla = camposConRegla.has(c.nombre);
-                const tieneBorrador = camposConBorrador.has(c.nombre) && !tieneRegla;
+                const esValorFijo = camposValorFijo.has(c.nombre);
+                const tieneBorrador = camposConBorrador.has(c.nombre) && !tieneRegla && !esValorFijo;
                 const borradoId = camposConBorrador.get(c.nombre);
                 return (
                   <li
                     key={c.id}
-                    onClick={() => clickCampo(c.nombre)}
-                    className={`flex items-center justify-between px-4 py-2.5 cursor-pointer transition-colors ${
-                      activo ? 'bg-blue-50 border-l-2 border-blue-500' : 'hover:bg-gray-50'
+                    onClick={() => !esValorFijo && clickCampo(c.nombre)}
+                    className={`flex items-center justify-between px-4 py-2.5 transition-colors ${
+                      esValorFijo ? 'opacity-60 cursor-default' :
+                      activo ? 'bg-blue-50 border-l-2 border-blue-500 cursor-pointer' : 'hover:bg-gray-50 cursor-pointer'
                     }`}
                   >
                     <div className="min-w-0">
-                      <p className="text-sm text-gray-800 truncate">{c.label}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm text-gray-800 truncate">{c.label}</p>
+                        {c.es_global && !c.grupo && (
+                          <span className="text-[9px] bg-gray-100 text-gray-400 px-1 rounded font-medium">global</span>
+                        )}
+                        {c.grupo === 'vehiculos' && (
+                          <span className="text-[9px] bg-blue-50 text-blue-400 px-1 rounded font-medium">🚗</span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-gray-400 font-mono">{c.nombre}</p>
+                      {c.descripcion && !activo && (
+                        <p className="text-[10px] text-gray-400 truncate max-w-[180px]">{c.descripcion}</p>
+                      )}
                     </div>
                     {tieneRegla ? (
-                      <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-medium whitespace-nowrap">
+                      <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-medium whitespace-nowrap flex-shrink-0">
                         <CheckCircle2 className="w-3 h-3" />OK
+                      </span>
+                    ) : esValorFijo ? (
+                      <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px] font-medium whitespace-nowrap flex-shrink-0">
+                        🔒 {c.valor_fijo}
                       </span>
                     ) : tieneBorrador ? (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleActivarBorrador(borradoId!); }}
-                        className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-medium whitespace-nowrap hover:bg-amber-200 transition-colors"
+                        className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-medium whitespace-nowrap hover:bg-amber-200 transition-colors flex-shrink-0"
                       >
                         <Clock className="w-3 h-3" />Activar
                       </button>
@@ -599,7 +620,7 @@ export default function Reglas() {
                     className="mt-1.5 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Seleccionar campo…</option>
-                    {campos.map((c) => (
+                    {campos.filter((c) => !c.valor_fijo).map((c) => (
                       <option key={c.id} value={c.nombre}>
                         {c.label} {camposConRegla.has(c.nombre) ? '✓' : camposConBorrador.has(c.nombre) ? '⏳' : ''}
                       </option>

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..database import get_db
-from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido
+from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal
 from ..services.rule_engine import cobertura_subramo
 
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
@@ -274,16 +274,81 @@ def codigo_deteccion(db: Session = Depends(get_db)):
     return result
 
 
+# ── Helpers de ramo ────────────────────────────────────────────────────────────
+
+_VEHICULO_KW = ("vehículo", "vehiculo", "auto", "moto", "camión", "camion", "transporte", "carga")
+
+def _es_vehiculo(nombre_ramo: str) -> bool:
+    n = nombre_ramo.lower()
+    return any(kw in n for kw in _VEHICULO_KW)
+
+
+def _ramo_de_subramo(subramo_id: int, db: Session) -> Ramo | None:
+    s = db.query(Subramo).filter(Subramo.id == subramo_id).first()
+    if not s:
+        return None
+    return db.query(Ramo).filter(Ramo.id == s.ramo_id).first()
+
+
+def _campo_global_dict(c: CampoGlobal) -> dict:
+    return {
+        "id": c.id,
+        "nombre": c.nombre,
+        "label": c.label,
+        "tipo": c.tipo,
+        "requerido": c.requerido,
+        "orden": c.orden,
+        "es_global": True,
+        "grupo": c.grupo,
+        "valor_fijo": c.valor_fijo,
+        "descripcion": c.descripcion,
+    }
+
+
+def _campo_def_dict(c: CampoDefinido) -> dict:
+    return {
+        "id": c.id,
+        "nombre": c.nombre,
+        "label": c.label,
+        "tipo": c.tipo,
+        "requerido": c.requerido,
+        "orden": c.orden,
+        "es_global": False,
+        "grupo": None,
+        "valor_fijo": None,
+        "descripcion": None,
+    }
+
+
 # ── Campos definidos ──────────────────────────────────────────────────────────
 
 @router.get("/subramos/{subramo_id}/campos")
 def listar_campos(subramo_id: int, db: Session = Depends(get_db)):
-    return (
+    ramo = _ramo_de_subramo(subramo_id, db)
+    es_veh = _es_vehiculo(ramo.nombre if ramo else "")
+
+    # Campos globales: todos los que aplican (filtrar grupo vehiculos si no corresponde)
+    q_glob = db.query(CampoGlobal)
+    if not es_veh:
+        q_glob = q_glob.filter(
+            (CampoGlobal.grupo == None) | (CampoGlobal.grupo != "vehiculos")
+        )
+    globales = q_glob.order_by(CampoGlobal.orden).all()
+
+    # Campos específicos del subramo (excluir los que ya cubren un global con mismo nombre)
+    nombres_globales = {c.nombre for c in globales}
+    especificos = (
         db.query(CampoDefinido)
-        .filter(CampoDefinido.subramo_id == subramo_id)
+        .filter(
+            CampoDefinido.subramo_id == subramo_id,
+            CampoDefinido.nombre.notin_(nombres_globales),
+        )
         .order_by(CampoDefinido.orden)
         .all()
     )
+
+    return [_campo_global_dict(c) for c in globales] + [_campo_def_dict(c) for c in especificos]
+
 
 @router.post("/subramos/{subramo_id}/campos")
 def crear_campo(subramo_id: int, data: CampoIn, db: Session = Depends(get_db)):
@@ -291,4 +356,4 @@ def crear_campo(subramo_id: int, data: CampoIn, db: Session = Depends(get_db)):
     db.add(c)
     db.commit()
     db.refresh(c)
-    return c
+    return _campo_def_dict(c)

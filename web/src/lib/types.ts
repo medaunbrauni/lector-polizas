@@ -74,6 +74,10 @@ export interface Campo {
   tipo: string;
   requerido: boolean;
   orden: number;
+  es_global: boolean;
+  grupo: string | null;
+  valor_fijo: string | null;
+  descripcion: string | null;
 }
 
 export interface TextoDisponible {

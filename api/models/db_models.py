@@ -56,8 +56,22 @@ class Subramo(Base):
     reglas = relationship("ReglaExtraccion", back_populates="subramo", cascade="all, delete-orphan")
 
 
+class CampoGlobal(Base):
+    """Campos estándar que se exportan para TODOS los subramos (esquema mesa de control Sicas)."""
+    __tablename__ = "campos_globales"
+    id = Column(Integer, primary_key=True)
+    nombre = Column(String(80), nullable=False, unique=True)
+    label = Column(String(120), nullable=False)
+    tipo = Column(String(30), default="texto")       # texto | numero | moneda | fecha | catalogo
+    requerido = Column(Boolean, default=False)
+    orden = Column(Integer, default=0)
+    grupo = Column(String(40), nullable=True)         # None=todos, "vehiculos"=solo ramos de autos
+    valor_fijo = Column(String(120), nullable=True)   # si no es null, siempre este valor (sin necesitar regex)
+    descripcion = Column(Text, nullable=True)
+
+
 class CampoDefinido(Base):
-    """Campos que se deben extraer para un Subramo específico."""
+    """Campos adicionales específicos de un Subramo (complementan los CampoGlobal)."""
     __tablename__ = "campos_definidos"
     id = Column(Integer, primary_key=True)
     subramo_id = Column(Integer, ForeignKey("subramos.id"), nullable=False)

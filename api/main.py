@@ -9,6 +9,7 @@ load_dotenv()
 from .database import init_db, SessionLocal
 from .seed.data import sembrar
 from .routers import extraccion, catalogos, reglas
+from .seed.campos_globales import sembrar_campos_globales
 
 
 @asynccontextmanager
@@ -17,6 +18,7 @@ async def lifespan(app: FastAPI):
     db = SessionLocal()
     try:
         sembrar(db)
+        sembrar_campos_globales(db)
     finally:
         db.close()
     yield
