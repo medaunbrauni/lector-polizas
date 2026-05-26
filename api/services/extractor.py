@@ -1,15 +1,21 @@
 """
 Pipeline principal de extracción.
-Orquesta: texto PDF → detección → reglas → guardar historial.
-Solo usa reglas regex definidas en BD; no llama a IA para extraer datos.
+Orquesta: texto PDF → detección (con score) → reglas → guardar historial.
+Si la detección carece de patrones regex, los genera automáticamente con IA.
 """
 import io
+import re
 import pdfplumber
 from sqlalchemy.orm import Session
 
-from .detector import detectar_jerarquia
+from .detector import detectar_con_score
 from .rule_engine import aplicar_reglas, campos_sin_regla
-from ..models.db_models import Extraccion, CampoExtraido, CampoDefinido
+from .ai_utils import parse_claude_json, make_anthropic_client
+from ..config import MODEL_EXTRACTOR
+from ..models.db_models import (
+    Extraccion, CampoExtraido, CampoDefinido,
+    Compania, Ramo, Subramo,
+)
 
 
 def extraer_texto_pdf(contenido: bytes) -> str:
@@ -22,10 +28,113 @@ def extraer_texto_pdf(contenido: bytes) -> str:
     return "\n".join(texto_paginas)
 
 
+# ── Generación automática de patrones de detección ───────────────────────────
+
+def _necesita_patrones(compania: Compania | None, ramo: Ramo | None, subramo: Subramo | None) -> bool:
+    """True si algún nivel detectado no tiene patrones regex (sólo keywords o nada)."""
+    if compania and not (compania.patrones_deteccion or []):
+        return True
+    if ramo and not (ramo.patrones_deteccion or []):
+        return True
+    if subramo and not (subramo.patrones_deteccion or []):
+        return True
+    return False
+
+
+def _generar_y_guardar_patrones(
+    compania: Compania, ramo: Ramo, subramo: Subramo | None,
+    texto: str, db: Session,
+) -> dict:
+    """
+    Llama a Claude para generar patrones de detección y los guarda en BD (merge).
+    Retorna dict con los patrones generados o {} si falla.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {}
+
+    try:
+        client    = make_anthropic_client()
+        sub_nombre = subramo.nombre if subramo else "No identificado"
+        prompt = f"""Eres un experto en pólizas de seguros mexicanas.
+
+Se sabe que este PDF pertenece a:
+  Compañía: {compania.nombre}
+  Ramo: {ramo.nombre}
+  Subramo: {sub_nombre}
+
+Texto del PDF (primeros 2500 caracteres):
+---
+{texto[:2500]}
+---
+
+Genera patrones regex Python (re.search, IGNORECASE|MULTILINE) para identificar AUTOMÁTICAMENTE este tipo de póliza sin IA en el futuro.
+
+1. **Compañía** (2-3 patrones): frases únicas de {compania.nombre} que no aparecen en otras compañías.
+2. **Ramo** (1-2 patrones): texto que indica el tipo de seguro "{ramo.nombre}".
+3. **Subramo** (1-2 patrones): frase que distingue "{sub_nombre}" de otros planes. Omite si subramo es desconocido.
+
+Preferir frases literales cortas sobre patrones complejos. Sin delimitadores ni flags en el string.
+
+Responde ÚNICAMENTE JSON válido:
+{{
+  "compania": ["patron1", "patron2"],
+  "ramo": ["patron1"],
+  "subramo": ["patron1"],
+  "explicacion": "resumen breve"
+}}"""
+
+        msg = client.messages.create(
+            model=MODEL_EXTRACTOR,
+            max_tokens=600,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        resultado = parse_claude_json(msg.content[0].text)
+    except Exception:
+        return {}
+
+    # Validar regex
+    def _validos(patrones):
+        out = []
+        for p in (patrones or []):
+            try:
+                re.compile(p)
+                out.append(p)
+            except re.error:
+                pass
+        return out
+
+    nuevos_comp = _validos(resultado.get("compania", []))
+    nuevos_ramo = _validos(resultado.get("ramo", []))
+    nuevos_sub  = _validos(resultado.get("subramo", []))
+
+    # Merge — no duplicar
+    def _merge(existentes, nuevos):
+        return list(set(existentes or []) | set(nuevos))
+
+    if nuevos_comp:
+        compania.patrones_deteccion = _merge(compania.patrones_deteccion, nuevos_comp)
+    if nuevos_ramo:
+        ramo.patrones_deteccion = _merge(ramo.patrones_deteccion, nuevos_ramo)
+    if nuevos_sub and subramo:
+        subramo.patrones_deteccion = _merge(subramo.patrones_deteccion, nuevos_sub)
+
+    db.commit()
+
+    return {
+        "compania": nuevos_comp,
+        "ramo":     nuevos_ramo,
+        "subramo":  nuevos_sub,
+        "explicacion": resultado.get("explicacion", ""),
+    }
+
+
+# ── Pipeline principal ────────────────────────────────────────────────────────
+
 def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     """
-    Pipeline completo. Retorna dict con todos los datos y metadata.
-    Extracción solo por reglas regex; no usa IA como fallback.
+    Pipeline completo. Retorna dict con todos los datos, metadata y detección.
+    Si la detección no tiene patrones regex, los genera automáticamente.
     """
     # 1. Extraer texto
     try:
@@ -36,10 +145,23 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     if not texto.strip():
         return _resultado_error(nombre_archivo, "PDF sin texto extraíble (posiblemente escaneado). Se requiere OCR.")
 
-    # 2. Detectar jerarquía
-    compania, ramo, subramo = detectar_jerarquia(texto, db)
+    # 2. Detectar jerarquía con score
+    det = detectar_con_score(texto, db)
 
-    # 3. Aplicar reglas guardadas
+    # Obtener objetos ORM
+    compania = db.query(Compania).filter(Compania.id == det["compania_id"]).first() if det["compania_id"] else None
+    ramo     = db.query(Ramo).filter(Ramo.id == det["ramo_id"]).first()             if det["ramo_id"]     else None
+    subramo  = db.query(Subramo).filter(Subramo.id == det["subramo_id"]).first()    if det["subramo_id"]  else None
+
+    # 3. Auto-generar patrones si algún nivel detectado no los tiene
+    patrones_generados: dict = {}
+    if compania and ramo and _necesita_patrones(compania, ramo, subramo):
+        patrones_generados = _generar_y_guardar_patrones(compania, ramo, subramo, texto, db)
+        # Re-calcular score con los nuevos patrones
+        if patrones_generados:
+            det = detectar_con_score(texto, db)
+
+    # 4. Aplicar reglas guardadas
     datos_reglas: dict[str, dict] = {}
     campos_faltantes: list[CampoDefinido] = []
 
@@ -48,23 +170,20 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         campos_cubiertos = {k for k, v in datos_reglas.items() if v["metodo"] == "regla"}
         campos_faltantes = campos_sin_regla(subramo.id, campos_cubiertos, db)
 
-    # 4. Campos sin regla → no_encontrado (sin IA)
-    datos_finales = {}
-    por_regla = 0
-    no_encontrados = 0
-
-    for nombre, info in datos_reglas.items():
-        datos_finales[nombre] = info
-        if info["metodo"] == "regla":
-            por_regla += 1
-        else:
-            no_encontrados += 1
-
+    # 5. Consolidar resultados
+    datos_finales: dict = {**datos_reglas}
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
-        no_encontrados += 1
 
-    # 5. Guardar en historial
+    # Contadores correctos (una sola pasada, sin doble cómputo)
+    por_regla      = sum(1 for v in datos_finales.values() if v["metodo"] == "regla")
+    no_encontrados = sum(
+        1 for v in datos_finales.values()
+        if v["metodo"] not in ("regla", "valor_fijo", "derivado")
+    )
+
+    # 6. Guardar en historial
+    metodo_det = "patrones" if (det["score_compania"] >= 3) else "keywords"
     extraccion = Extraccion(
         nombre_archivo=nombre_archivo,
         compania_id=compania.id if compania else None,
@@ -73,7 +192,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         compania_detectada=compania.nombre if compania else None,
         ramo_detectado=ramo.nombre if ramo else None,
         subramo_detectado=subramo.nombre if subramo else None,
-        metodo_deteccion="keywords",
+        metodo_deteccion=metodo_det,
         datos_completos={k: v.get("valor") for k, v in datos_finales.items()},
         texto_pdf=texto[:50_000],
         exitoso=True,
@@ -96,16 +215,25 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     db.commit()
 
     return {
-        "id": extraccion.id,
-        "archivo": nombre_archivo,
+        "id":       extraccion.id,
+        "archivo":  nombre_archivo,
         "compania": compania.nombre if compania else None,
-        "ramo": ramo.nombre if ramo else None,
-        "subramo": subramo.nombre if subramo else None,
-        "campos": datos_finales,
+        "ramo":     ramo.nombre if ramo else None,
+        "subramo":  subramo.nombre if subramo else None,
+        "campos":   datos_finales,
         "stats": {
-            "por_regla": por_regla,
-            "por_ia": 0,
+            "por_regla":      por_regla,
+            "por_ia":         0,
             "no_encontrados": no_encontrados,
+        },
+        # ── Metadata de detección ──
+        "deteccion": {
+            "confianza":          det["confianza"],
+            "score_compania":     det["score_compania"],
+            "score_ramo":         det["score_ramo"],
+            "score_subramo":      det["score_subramo"],
+            "patrones_generados": bool(patrones_generados),
+            "patrones_nuevos":    patrones_generados,
         },
         "error": None,
     }
@@ -113,12 +241,17 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
 
 def _resultado_error(nombre_archivo: str, mensaje: str) -> dict:
     return {
-        "id": None,
+        "id":      None,
         "archivo": nombre_archivo,
         "compania": None,
-        "ramo": None,
-        "subramo": None,
-        "campos": {},
-        "stats": {"por_regla": 0, "por_ia": 0, "no_encontrados": 0},
+        "ramo":     None,
+        "subramo":  None,
+        "campos":   {},
+        "stats":    {"por_regla": 0, "por_ia": 0, "no_encontrados": 0},
+        "deteccion": {
+            "confianza": "sin_datos",
+            "score_compania": 0, "score_ramo": 0, "score_subramo": 0,
+            "patrones_generados": False, "patrones_nuevos": {},
+        },
         "error": mensaje,
     }

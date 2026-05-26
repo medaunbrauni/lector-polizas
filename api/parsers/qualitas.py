@@ -32,7 +32,7 @@ class QualitasParser(BaseParser):
             primas=PrimasData(
                 prima_neta=self._re(texto, r"Prima Neta[:\s]+([\d,\.]+)"),
                 tasa_financiamiento=self._re(texto, r"Tasa de Financiamiento[:\s]+([\d,\.%]+)"),
-                gastos_expedicion=self._re(texto, r"Gastos de Expedici[oó]n[:\s]+([\d,\.]+)"),
+                derechos=self._re(texto, r"(?:Gastos de Expedici[oó]n|Derechos de P[oó]liza)[:\s]+([\d,\.]+)"),
                 subtotal=self._re(texto, r"Subtotal[:\s]+([\d,\.]+)"),
                 iva=self._re(texto, r"I\.?V\.?A\.?[:\s]+([\d,\.]+)"),
                 prima_total=self._re(texto, r"Prima Total[:\s]+([\d,\.]+)"),

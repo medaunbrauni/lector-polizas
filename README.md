@@ -8,7 +8,22 @@ y usa Claude AI como fallback para campos sin regla definida.
 
 ## Inicio rápido
 
-### 1. Backend (API Python)
+### Opción A — Doble clic (recomendado)
+
+Ejecuta **`iniciar.bat`** en la raíz del proyecto.  
+Abre dos ventanas de consola (API y Web) y lanza Chrome automáticamente cuando ambos servidores están listos.
+
+Para compilar el launcher como EXE independiente:
+```bat
+venv\Scripts\pip install pyinstaller
+venv\Scripts\pyinstaller --onefile --name IniciarLectorPolizas iniciar.py
+```
+
+---
+
+### Opción B — Manual
+
+#### 1. Backend (API Python)
 
 ```bash
 cd lector-polizas

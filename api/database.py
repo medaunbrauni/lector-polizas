@@ -1,10 +1,23 @@
-from sqlalchemy import create_engine
+import os
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
 
-DATABASE_URL = "sqlite:///./lector_polizas.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./lector_polizas.db")
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+# ── SQLite performance pragmas ────────────────────────────────────────────────
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragmas(dbapi_connection, connection_record):
+    """Habilita WAL y mejora el rendimiento de SQLite."""
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")       # escrituras concurrentes
+    cursor.execute("PRAGMA synchronous=NORMAL")     # balance velocidad/seguridad
+    cursor.execute("PRAGMA cache_size=10000")       # ~10 MB de caché
+    cursor.execute("PRAGMA foreign_keys=ON")        # integridad referencial
+    cursor.close()
 
 
 class Base(DeclarativeBase):
@@ -23,6 +36,7 @@ def init_db():
     from .models import db_models  # noqa: F401
     Base.metadata.create_all(bind=engine)
     _migrate_add_columns()
+    _create_indexes()
 
 
 def _migrate_add_columns():
@@ -47,9 +61,29 @@ def _migrate_add_columns():
     with engine.connect() as conn:
         for table, col, col_type in migrations:
             try:
-                conn.execute(__import__("sqlalchemy").text(
-                    f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"
-                ))
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
                 conn.commit()
             except Exception:
                 pass  # columna ya existe
+
+
+def _create_indexes():
+    """Crea índices en columnas de consulta frecuente. Idempotente (IF NOT EXISTS)."""
+    indexes = [
+        "CREATE INDEX IF NOT EXISTS idx_ext_subramo   ON extracciones(subramo_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ext_created   ON extracciones(created_at DESC)",
+        "CREATE INDEX IF NOT EXISTS idx_ext_compania  ON extracciones(compania_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ext_ramo      ON extracciones(ramo_id)",
+        "CREATE INDEX IF NOT EXISTS idx_regla_sub     ON reglas_extraccion(subramo_id, activo)",
+        "CREATE INDEX IF NOT EXISTS idx_campo_ext_id  ON campos_extraidos(extraccion_id)",
+        "CREATE INDEX IF NOT EXISTS idx_poliza_sub    ON polizas_entrenamiento(subramo_id)",
+        "CREATE INDEX IF NOT EXISTS idx_seleccion_pol ON selecciones_campo(poliza_id)",
+        "CREATE INDEX IF NOT EXISTS idx_campo_def_sub ON campos_definidos(subramo_id)",
+    ]
+    with engine.connect() as conn:
+        for ddl in indexes:
+            try:
+                conn.execute(text(ddl))
+                conn.commit()
+            except Exception:
+                pass

@@ -293,10 +293,41 @@ export async function identificarModulo(file: File) {
     const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
     throw new Error(err.detail ?? `Error ${res.status}`);
   }
-  return res.json() as Promise<{
-    compania_id: number | null; compania_nombre: string | null;
-    ramo_id: number | null; ramo_nombre: string | null;
-    subramo_id: number | null; subramo_nombre: string | null;
-    texto_pdf: string;
-  }>;
+  return res.json() as Promise<import('./types').ResultadoDeteccion & { texto_pdf: string }>;
+}
+
+export async function probarDeteccion(texto_pdf: string) {
+  const res = await fetch(`${BASE}/catalogos/probar-deteccion`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ texto_pdf }),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json() as Promise<import('./types').ResultadoDeteccion>;
+}
+
+export async function reaplicarExtraccion(extraccion_id: number, subramo_id: number) {
+  const res = await fetch(`${BASE}/extraer/reaplicar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ extraccion_id, subramo_id }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json() as Promise<import('./types').ResultadoPDF>;
+}
+
+export async function generarYGuardarPatrones(subramo_id: number, texto_pdf: string, guardar = true) {
+  const res = await fetch(`${BASE}/catalogos/generar-y-guardar-patrones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ subramo_id, texto_pdf, guardar }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json() as Promise<import('./types').PatronesGenerados>;
 }

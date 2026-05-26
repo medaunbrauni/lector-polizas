@@ -22,7 +22,7 @@ class DireccionData(BaseModel):
 class PrimasData(BaseModel):
     prima_neta: Optional[str] = None
     tasa_financiamiento: Optional[str] = None
-    gastos_expedicion: Optional[str] = None
+    derechos: Optional[str] = None          # Gastos de expedición / Derechos de póliza
     subtotal: Optional[str] = None
     iva: Optional[str] = None
     prima_total: Optional[str] = None

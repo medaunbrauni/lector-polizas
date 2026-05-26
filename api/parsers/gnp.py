@@ -31,7 +31,7 @@ class GNPParser(BaseParser):
             ),
             primas=PrimasData(
                 prima_neta=self._re(texto, r"Prima Neta[:\s]+([\d,\.]+)"),
-                gastos_expedicion=self._re(texto, r"Gastos de Expedici[oó]n[:\s]+([\d,\.]+)"),
+                derechos=self._re(texto, r"(?:Gastos de Expedici[oó]n|Derechos de P[oó]liza)[:\s]+([\d,\.]+)"),
                 iva=self._re(texto, r"I\.?V\.?A\.?[:\s]+([\d,\.]+)"),
                 prima_total=self._re(texto, r"Prima Total[:\s]+([\d,\.]+)"),
             ),

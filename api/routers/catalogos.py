@@ -1,3 +1,6 @@
+import os
+import re
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -357,3 +360,127 @@ def crear_campo(subramo_id: int, data: CampoIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(c)
     return _campo_def_dict(c)
+
+
+# ── Detección automática ──────────────────────────────────────────────────────
+
+class ProbarDeteccionIn(BaseModel):
+    texto_pdf: str
+
+
+class GenerarYGuardarPatronesIn(BaseModel):
+    subramo_id: int
+    texto_pdf: str
+    guardar: bool = True   # False = sólo previsualizar, no persiste
+
+
+@router.post("/probar-deteccion")
+def probar_deteccion(data: ProbarDeteccionIn, db: Session = Depends(get_db)):
+    """
+    Corre la detección por reglas sobre el texto dado y devuelve resultado con scores.
+    Usado en el panel de entrenamiento para ver qué tan bien clasificaría esta póliza.
+    """
+    from ..services.detector import detectar_con_score
+    return detectar_con_score(data.texto_pdf, db)
+
+
+@router.post("/generar-y-guardar-patrones")
+def generar_y_guardar_patrones(
+    data: GenerarYGuardarPatronesIn,
+    db: Session = Depends(get_db),
+):
+    """
+    Llama a la IA para generar patrones de detección para compañía, ramo y subramo.
+    Si guardar=True, los AÑADE (merge) a los patrones_deteccion existentes en BD.
+    Retorna los patrones generados con flag de si se guardaron.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise HTTPException(400, "ANTHROPIC_API_KEY no configurada")
+
+    subramo = db.query(Subramo).filter(Subramo.id == data.subramo_id).first()
+    if not subramo:
+        raise HTTPException(404, "Subramo no encontrado")
+    ramo = db.query(Ramo).filter(Ramo.id == subramo.ramo_id).first()
+    compania = db.query(Compania).filter(Compania.id == ramo.compania_id).first()
+
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+
+    prompt = f"""Eres un experto en pólizas de seguros mexicanas.
+
+Se sabe que este PDF pertenece a:
+  Compañía: {compania.nombre}
+  Ramo: {ramo.nombre}
+  Subramo: {subramo.nombre}
+
+Texto del PDF (primeros 3000 caracteres):
+---
+{data.texto_pdf[:3000]}
+---
+
+Genera patrones regex Python (usados con re.search, flags IGNORECASE|MULTILINE) que permitan identificar AUTOMÁTICAMENTE este tipo de póliza en el futuro SIN necesitar IA.
+
+Requisitos:
+1. **Patrones de compañía** (2-3): texto o frase que SÓLO aparece en pólizas de {compania.nombre} y no en otras compañías. Preferir el nombre oficial o slogan.
+2. **Patrones de ramo** (1-2): texto que identifica el tipo de seguro "{ramo.nombre}".
+3. **Patrones de subramo** (1-2): frase que distingue el plan "{subramo.nombre}" de otros planes de la misma compañía.
+
+Cada patrón debe ser un string regex Python válido, sin delimitadores, sin flags.
+Preferir frases literales sobre patrones complejos cuando sea posible.
+
+Responde ÚNICAMENTE con JSON válido, sin texto adicional:
+{{
+  "compania": ["patron1", "patron2"],
+  "ramo": ["patron1"],
+  "subramo": ["patron1"],
+  "explicacion": "breve resumen de qué identifica cada grupo"
+}}"""
+
+    try:
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=700,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        raw = msg.content[0].text.strip()
+        if raw.startswith("```"):
+            raw = "\n".join(raw.split("\n")[1:])
+            if raw.endswith("```"):
+                raw = raw[:-3].strip()
+        resultado = json.loads(raw)
+    except Exception as e:
+        raise HTTPException(500, f"Error al llamar a Claude: {e}")
+
+    # Validar regex
+    for nivel in ("compania", "ramo", "subramo"):
+        validos = []
+        for p in resultado.get(nivel, []):
+            try:
+                re.compile(p)
+                validos.append(p)
+            except re.error:
+                pass
+        resultado[nivel] = validos
+
+    resultado["compania_id"] = compania.id
+    resultado["ramo_id"]     = ramo.id
+    resultado["subramo_id"]  = subramo.id
+    resultado["guardado"]    = False
+
+    # Guardar en BD (merge — no duplicar)
+    if data.guardar:
+        def _merge(existing: list, nuevos: list) -> list:
+            existentes_set = set(existing or [])
+            return list(existentes_set | set(nuevos))
+
+        compania.patrones_deteccion = _merge(compania.patrones_deteccion, resultado["compania"])
+        ramo.patrones_deteccion     = _merge(ramo.patrones_deteccion,     resultado["ramo"])
+        subramo.patrones_deteccion  = _merge(subramo.patrones_deteccion,  resultado["subramo"])
+        db.commit()
+        resultado["guardado"] = True
+        resultado["compania_patrones_total"] = len(compania.patrones_deteccion)
+        resultado["ramo_patrones_total"]     = len(ramo.patrones_deteccion)
+        resultado["subramo_patrones_total"]  = len(subramo.patrones_deteccion)
+
+    return resultado

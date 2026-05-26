@@ -9,15 +9,19 @@ import {
   urlPdfEntrenamiento, urlImagenPagina, getTextoPdf,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
+  probarDeteccion, generarYGuardarPatrones,
+  patchPatrones,
 } from '../lib/api';
 import type {
   Compania, Ramo, Subramo, Campo,
   PolizaEntrenamiento, MapaSelecciones, ResultadoRegexLote, AutoDeteccion, BBox,
+  ResultadoDeteccion, PatronesGenerados, NivelConfianza,
 } from '../lib/types';
 import {
   Upload, Trash2, ChevronLeft, ChevronRight, ScanSearch,
   Zap, CheckCircle2, XCircle, AlertCircle, RefreshCw,
   FileText, MousePointer2, Sparkles, Save, Image,
+  Target, ChevronDown, ChevronUp, Shield, ShieldAlert, ShieldCheck, ShieldOff,
 } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -353,6 +357,81 @@ export default function Reglas() {
     }
   }
 
+  // ── Estado panel detección ────────────────────────────────────────────────
+  const [panelDeteccionAbierto, setPanelDeteccionAbierto] = useState(false);
+  const [deteccionActual, setDeteccionActual] = useState<ResultadoDeteccion | null>(null);
+  const [probandoDeteccion, setProbandoDeteccion] = useState(false);
+  const [generandoPatrones, setGenerandoPatrones] = useState(false);
+  const [patronesPreview, setPatronesPreview] = useState<PatronesGenerados | null>(null);
+  const [patronesEditados, setPatronesEditados] = useState<{compania: string[]; ramo: string[]; subramo: string[]}>({compania:[], ramo:[], subramo:[]});
+  const [guardandoPatrones, setGuardandoPatrones] = useState(false);
+  const [msgPatrones, setMsgPatrones] = useState<{ok: boolean; texto: string} | null>(null);
+
+  // Auto-probar detección cuando cambia subramo y hay pólizas
+  useEffect(() => {
+    if (!selSubramo || polizas.length === 0) { setDeteccionActual(null); return; }
+    const p = polizas[0];
+    if (!p) return;
+    getTextoPdf(p.id).then((texto) => {
+      if (texto) probarDeteccion(texto).then(setDeteccionActual).catch(() => {});
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selSubramo, polizas.length]);
+
+  async function handleProbarDeteccion() {
+    if (!polizaActiva) return;
+    setProbandoDeteccion(true);
+    try {
+      const texto = await getTextoPdf(polizaActiva.id);
+      const res = await probarDeteccion(texto);
+      setDeteccionActual(res);
+    } finally {
+      setProbandoDeteccion(false);
+    }
+  }
+
+  async function handleGenerarPatrones() {
+    if (!polizaActiva || !selSubramo) return;
+    setGenerandoPatrones(true);
+    setMsgPatrones(null);
+    try {
+      const texto = await getTextoPdf(polizaActiva.id);
+      const res = await generarYGuardarPatrones(Number(selSubramo), texto, false); // preview first
+      setPatronesPreview(res);
+      setPatronesEditados({ compania: res.compania, ramo: res.ramo, subramo: res.subramo });
+    } catch (e) {
+      setMsgPatrones({ ok: false, texto: e instanceof Error ? e.message : 'Error' });
+    } finally {
+      setGenerandoPatrones(false);
+    }
+  }
+
+  async function handleGuardarPatrones() {
+    if (!patronesPreview || !selSubramo) return;
+    setGuardandoPatrones(true);
+    setMsgPatrones(null);
+    try {
+      // Guardar nivel por nivel con los valores editados
+      await Promise.all([
+        patchPatrones('companias', patronesPreview.compania_id, patronesEditados.compania),
+        patchPatrones('ramos',     patronesPreview.ramo_id,     patronesEditados.ramo),
+        patchPatrones('subramos',  patronesPreview.subramo_id,  patronesEditados.subramo),
+      ]);
+      setMsgPatrones({ ok: true, texto: 'Patrones guardados. Probando…' });
+      // Re-probar
+      if (polizaActiva) {
+        const texto = await getTextoPdf(polizaActiva.id);
+        const res = await probarDeteccion(texto);
+        setDeteccionActual(res);
+      }
+      setPatronesPreview(null);
+    } catch (e) {
+      setMsgPatrones({ ok: false, texto: e instanceof Error ? e.message : 'Error al guardar' });
+    } finally {
+      setGuardandoPatrones(false);
+    }
+  }
+
   // ── Computed ───────────────────────────────────────────────────────────────
   const camposConRegla = new Set(Object.keys(reglas));
   const camposValorFijo = new Set(campos.filter((c) => c.valor_fijo !== null).map((c) => c.nombre));
@@ -411,6 +490,30 @@ export default function Reglas() {
           {subramos.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
       </div>
+
+      {/* ── Panel de Detección Automática ── */}
+      {selSubramo && (
+        <PanelDeteccion
+          abierto={panelDeteccionAbierto}
+          onToggle={() => setPanelDeteccionAbierto((v) => !v)}
+          deteccion={deteccionActual}
+          probando={probandoDeteccion}
+          generando={generandoPatrones}
+          guardando={guardandoPatrones}
+          preview={patronesPreview}
+          patronesEditados={patronesEditados}
+          onPatronesChange={setPatronesEditados}
+          onProbar={handleProbarDeteccion}
+          onGenerar={handleGenerarPatrones}
+          onGuardar={handleGuardarPatrones}
+          onCancelarPreview={() => setPatronesPreview(null)}
+          msgPatrones={msgPatrones}
+          hayPolizas={polizas.length > 0}
+          companiaNombre={companias.find((c) => c.id === Number(selCompania))?.nombre}
+          ramoNombre={ramos.find((r) => r.id === Number(selRamo))?.nombre}
+          subramoNombre={subramos.find((s) => s.id === Number(selSubramo))?.nombre}
+        />
+      )}
 
       {!selSubramo ? (
         <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -559,15 +662,15 @@ export default function Reglas() {
             {/* Visor principal — flex-1 para ocupar espacio restante */}
             <div
               ref={containerRef}
-              className="flex-1 min-h-0 relative"
+              className="flex-1 min-h-0 relative overflow-hidden"
               onMouseUp={(!modoImagen && polizaActiva) ? handleSeleccion : undefined}
             >
               {!polizaActiva ? (
-                <div className="flex items-center justify-center h-full text-gray-400 text-sm bg-gray-200">
+                <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm bg-gray-200">
                   Agrega pólizas al lote para empezar
                 </div>
               ) : modoImagen ? (
-                <div className="h-full overflow-y-auto bg-gray-200">
+                <div className="absolute inset-0 overflow-y-auto bg-gray-200">
                   <VisorImagen
                     polizaId={polizaActiva.id}
                     page={paginaImagen}
@@ -579,9 +682,7 @@ export default function Reglas() {
                   />
                 </div>
               ) : (
-                <div className="h-full">
-                  <PdfVisor url={pdfUrl!} width={pageWidth} />
-                </div>
+                <PdfVisor url={pdfUrl!} width={pageWidth} />
               )}
             </div>
 
@@ -1023,30 +1124,59 @@ function PdfVisor({ url, width }: { url: string; width: number }) {
   const [numPages, setNumPages] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [cargando, setCargando] = useState(true);
+  const [zoom, setZoom] = useState(1.0);
 
-  // Al cambiar de póliza (url), volver a página 1
-  useEffect(() => { setPagina(1); setCargando(true); }, [url]);
+  // Al cambiar de póliza (url), volver a página 1 y resetear zoom
+  useEffect(() => { setPagina(1); setCargando(true); setZoom(1.0); }, [url]);
+
+  const zoomOut = () => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100));
+  const zoomIn  = () => setZoom((z) => Math.min(3.0,  Math.round((z + 0.25) * 100) / 100));
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Navegación de páginas */}
-      {numPages > 1 && (
-        <div className="flex items-center justify-center gap-3 py-1.5 bg-gray-100 border-b border-gray-300 flex-shrink-0 select-none">
-          <button
-            onClick={() => setPagina((p) => Math.max(1, p - 1))}
-            disabled={pagina <= 1}
-            className="px-2.5 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded-md transition-colors"
-          >‹ Anterior</button>
-          <span className="text-xs font-medium text-gray-600">Página {pagina} / {numPages}</span>
-          <button
-            onClick={() => setPagina((p) => Math.min(numPages, p + 1))}
-            disabled={pagina >= numPages}
-            className="px-2.5 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded-md transition-colors"
-          >Siguiente ›</button>
-        </div>
-      )}
+    <div className="absolute inset-0 flex flex-col overflow-hidden">
 
-      {/* Página actual — scroll vertical dentro del visor */}
+      {/* ── Barra de navegación + zoom ── */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border-b border-gray-300 flex-shrink-0 select-none">
+
+        {/* Páginas */}
+        <button
+          onClick={() => setPagina((p) => Math.max(1, p - 1))}
+          disabled={pagina <= 1 || numPages === 0}
+          className="px-2 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+        >‹</button>
+        <span className="text-xs font-medium text-gray-600 tabular-nums min-w-[72px] text-center">
+          {numPages > 0 ? `Pág. ${pagina} / ${numPages}` : '—'}
+        </span>
+        <button
+          onClick={() => setPagina((p) => Math.min(numPages, p + 1))}
+          disabled={pagina >= numPages || numPages === 0}
+          className="px-2 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+        >›</button>
+
+        {/* Separador */}
+        <div className="w-px h-4 bg-gray-300 mx-1" />
+
+        {/* Zoom */}
+        <button
+          onClick={zoomOut}
+          disabled={zoom <= 0.5}
+          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+          title="Reducir"
+        >−</button>
+        <button
+          onClick={() => setZoom(1.0)}
+          className="text-xs font-mono font-semibold text-gray-700 hover:text-blue-600 bg-white border border-gray-200 rounded px-1.5 py-0.5 transition-colors min-w-[44px] text-center"
+          title="Restablecer zoom"
+        >{Math.round(zoom * 100)}%</button>
+        <button
+          onClick={zoomIn}
+          disabled={zoom >= 3.0}
+          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+          title="Ampliar"
+        >+</button>
+      </div>
+
+      {/* ── Página actual — scroll dentro del visor ── */}
       <div className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-gray-200">
         {cargando && (
           <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
@@ -1061,7 +1191,7 @@ function PdfVisor({ url, width }: { url: string; width: number }) {
         >
           <Page
             pageNumber={pagina}
-            width={width || 700}
+            width={Math.round((width || 700) * zoom)}
             renderTextLayer
             renderAnnotationLayer={false}
           />
@@ -1161,5 +1291,252 @@ function SpinIcon() {
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>
+  );
+}
+
+// ── Panel de Detección Automática ─────────────────────────────────────────────
+
+const CONFIANZA_CONFIG: Record<NivelConfianza, { label: string; cls: string; icon: React.ReactNode }> = {
+  alta:      { label: 'Alta',      cls: 'bg-emerald-50 border-emerald-200 text-emerald-700', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
+  media:     { label: 'Media',     cls: 'bg-amber-50 border-amber-200 text-amber-700',       icon: <Shield className="w-3.5 h-3.5" /> },
+  baja:      { label: 'Baja',      cls: 'bg-red-50 border-red-200 text-red-600',             icon: <ShieldAlert className="w-3.5 h-3.5" /> },
+  sin_datos: { label: 'Sin datos', cls: 'bg-gray-50 border-gray-200 text-gray-500',          icon: <ShieldOff className="w-3.5 h-3.5" /> },
+};
+
+function BadgeConfianza({ confianza }: { confianza: NivelConfianza }) {
+  const cfg = CONFIANZA_CONFIG[confianza];
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${cfg.cls}`}>
+      {cfg.icon} {cfg.label}
+    </span>
+  );
+}
+
+function PatronesList({
+  titulo, patrones, onChange, cls,
+}: {
+  titulo: string;
+  patrones: string[];
+  onChange: (v: string[]) => void;
+  cls?: string;
+}) {
+  return (
+    <div className={`space-y-1.5 ${cls}`}>
+      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{titulo}</p>
+      {patrones.length === 0 && (
+        <p className="text-[10px] text-gray-400 italic">Sin patrones</p>
+      )}
+      {patrones.map((p, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <input
+            value={p}
+            onChange={(e) => { const n = [...patrones]; n[i] = e.target.value; onChange(n); }}
+            className="flex-1 font-mono text-[10px] px-1.5 py-0.5 border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+          <button
+            onClick={() => onChange(patrones.filter((_, j) => j !== i))}
+            className="text-gray-300 hover:text-red-500 flex-shrink-0"
+          >×</button>
+        </div>
+      ))}
+      <button
+        onClick={() => onChange([...patrones, ''])}
+        className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
+      >+ Agregar patrón</button>
+    </div>
+  );
+}
+
+interface PanelDeteccionProps {
+  abierto: boolean;
+  onToggle: () => void;
+  deteccion: ResultadoDeteccion | null;
+  probando: boolean;
+  generando: boolean;
+  guardando: boolean;
+  preview: PatronesGenerados | null;
+  patronesEditados: { compania: string[]; ramo: string[]; subramo: string[] };
+  onPatronesChange: (v: { compania: string[]; ramo: string[]; subramo: string[] }) => void;
+  onProbar: () => void;
+  onGenerar: () => void;
+  onGuardar: () => void;
+  onCancelarPreview: () => void;
+  msgPatrones: { ok: boolean; texto: string } | null;
+  hayPolizas: boolean;
+  companiaNombre?: string;
+  ramoNombre?: string;
+  subramoNombre?: string;
+}
+
+function PanelDeteccion({
+  abierto, onToggle,
+  deteccion, probando, generando, guardando,
+  preview, patronesEditados, onPatronesChange,
+  onProbar, onGenerar, onGuardar, onCancelarPreview,
+  msgPatrones, hayPolizas,
+  companiaNombre, ramoNombre, subramoNombre,
+}: PanelDeteccionProps) {
+  const confianza = deteccion?.confianza ?? 'sin_datos';
+  const alertar = confianza === 'sin_datos' || confianza === 'baja';
+
+  return (
+    <div className={`bg-white border-b flex-shrink-0 ${alertar && !abierto ? 'border-amber-200' : 'border-gray-200'}`}>
+      {/* ── Cabecera colapsable ── */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 transition-colors text-left"
+      >
+        <Target className={`w-3.5 h-3.5 flex-shrink-0 ${alertar ? 'text-amber-500' : 'text-emerald-600'}`} />
+        <span className="text-xs font-semibold text-gray-700">Detección automática</span>
+
+        {/* Resumen en línea */}
+        {deteccion ? (
+          <div className="flex items-center gap-2 text-[10px] text-gray-500">
+            <BadgeConfianza confianza={deteccion.confianza} />
+            <span>
+              {deteccion.compania_nombre
+                ? `${deteccion.compania_nombre} → ${deteccion.ramo_nombre ?? '?'} → ${deteccion.subramo_nombre ?? '?'}`
+                : 'No detectado'}
+            </span>
+            <span className="text-gray-300">
+              ({deteccion.score_compania}+{deteccion.score_ramo}+{deteccion.score_subramo} pts)
+            </span>
+          </div>
+        ) : alertar ? (
+          <span className="text-[10px] text-amber-600 font-medium flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {hayPolizas ? 'Verificando…' : 'Agrega pólizas para probar'}
+          </span>
+        ) : null}
+
+        <span className="ml-auto text-gray-400">
+          {abierto ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        </span>
+      </button>
+
+      {/* ── Contenido expandido ── */}
+      {abierto && (
+        <div className="px-4 pb-4 space-y-4">
+
+          {/* Alerta si la confianza es baja */}
+          {alertar && deteccion && (
+            <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-500" />
+              <div>
+                <p className="font-semibold">Detección con confianza {CONFIANZA_CONFIG[confianza].label.toLowerCase()}</p>
+                <p className="text-[10px] mt-0.5 text-amber-700">
+                  {confianza === 'sin_datos'
+                    ? 'No hay patrones de detección configurados. Sin ellos, el sistema usará IA en cada extracción.'
+                    : 'Los patrones existentes dan un score bajo. Considera generar o mejorar los patrones.'}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Resultado de la última prueba ── */}
+          {deteccion && (
+            <div className="grid grid-cols-3 gap-3">
+              {([
+                { label: 'Compañía', nombre: companiaNombre, detectado: deteccion.compania_nombre, score: deteccion.score_compania },
+                { label: 'Ramo',     nombre: ramoNombre,     detectado: deteccion.ramo_nombre,     score: deteccion.score_ramo },
+                { label: 'Subramo',  nombre: subramoNombre,  detectado: deteccion.subramo_nombre,  score: deteccion.score_subramo },
+              ] as const).map(({ label, nombre, detectado, score }) => {
+                const ok = detectado && nombre && detectado.toLowerCase().includes(nombre.toLowerCase().split(' ')[0]);
+                return (
+                  <div key={label} className={`p-2.5 rounded-lg border text-[10px] ${ok ? 'bg-emerald-50 border-emerald-200' : detectado ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200'}`}>
+                    <p className="font-semibold text-gray-600 uppercase tracking-wide mb-1">{label}</p>
+                    <p className={`font-medium truncate ${ok ? 'text-emerald-700' : 'text-amber-700'}`}>
+                      {detectado ?? '— no detectado'}
+                    </p>
+                    <p className="text-gray-400 mt-0.5">{score} pts</p>
+                    {detectado && nombre && !ok && (
+                      <p className="text-amber-600 mt-0.5 text-[9px]">Esperado: {nombre}</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── Botones de acción ── */}
+          {!preview && (
+            <div className="flex gap-2">
+              <button
+                onClick={onProbar}
+                disabled={probando || !hayPolizas}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-300 hover:bg-gray-50 disabled:opacity-40 rounded-lg transition-colors"
+              >
+                {probando ? <SpinIcon /> : <RefreshCw className="w-3 h-3" />}
+                Probar con PDF activo
+              </button>
+              <button
+                onClick={onGenerar}
+                disabled={generando || !hayPolizas}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+              >
+                {generando ? <SpinIcon /> : <Sparkles className="w-3 h-3" />}
+                {generando ? 'Generando patrones…' : 'Generar patrones con IA'}
+              </button>
+            </div>
+          )}
+
+          {/* ── Preview de patrones generados ── */}
+          {preview && (
+            <div className="border border-purple-200 rounded-lg bg-purple-50 p-3 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-purple-800 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Patrones sugeridos por IA — revisa y edita antes de guardar
+                </p>
+                <button onClick={onCancelarPreview} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
+              </div>
+
+              <p className="text-[10px] text-purple-700 italic">{preview.explicacion}</p>
+
+              <div className="grid grid-cols-3 gap-3">
+                <PatronesList
+                  titulo="Compañía"
+                  patrones={patronesEditados.compania}
+                  onChange={(v) => onPatronesChange({ ...patronesEditados, compania: v })}
+                />
+                <PatronesList
+                  titulo="Ramo"
+                  patrones={patronesEditados.ramo}
+                  onChange={(v) => onPatronesChange({ ...patronesEditados, ramo: v })}
+                />
+                <PatronesList
+                  titulo="Subramo"
+                  patrones={patronesEditados.subramo}
+                  onChange={(v) => onPatronesChange({ ...patronesEditados, subramo: v })}
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={onCancelarPreview}
+                  className="px-3 py-1.5 text-xs border border-gray-300 hover:bg-gray-50 rounded-lg font-medium transition-colors"
+                >Cancelar</button>
+                <button
+                  onClick={onGuardar}
+                  disabled={guardando}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg transition-colors"
+                >
+                  {guardando ? <SpinIcon /> : <Save className="w-3 h-3" />}
+                  Guardar patrones
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Mensaje resultado */}
+          {msgPatrones && (
+            <div className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border ${msgPatrones.ok ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
+              {msgPatrones.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+              {msgPatrones.texto}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -1,3 +1,5 @@
+export type NivelConfianza = 'alta' | 'media' | 'baja' | 'sin_datos';
+
 export interface ExtractionResponse {
   success: boolean;
   data: ResultadoPDF[];
@@ -17,6 +19,20 @@ export interface StatsExtraccion {
   no_encontrados: number;
 }
 
+export interface DeteccionInfo {
+  confianza: NivelConfianza;
+  score_compania: number;
+  score_ramo: number;
+  score_subramo: number;
+  patrones_generados: boolean;
+  patrones_nuevos: {
+    compania?: string[];
+    ramo?: string[];
+    subramo?: string[];
+    explicacion?: string;
+  };
+}
+
 export interface ResultadoPDF {
   id: number | null;
   archivo: string;
@@ -25,6 +41,7 @@ export interface ResultadoPDF {
   subramo: string | null;
   campos: Record<string, { valor: string | null; metodo: string; regla_id: number | null }>;
   stats: StatsExtraccion;
+  deteccion?: DeteccionInfo;
   error: string | null;
 }
 
@@ -179,4 +196,43 @@ export interface AutoDeteccion {
   encontrado: boolean;
   texto_encontrado: string | null;
   contexto: string | null;
+}
+
+// ── Detección automática ──────────────────────────────────────────────────────
+
+export interface CandidatoCompania {
+  id: number;
+  nombre: string;
+  score: number;
+  n_patrones: number;
+  n_keywords: number;
+}
+
+export interface ResultadoDeteccion {
+  compania_id: number | null;
+  compania_nombre: string | null;
+  ramo_id: number | null;
+  ramo_nombre: string | null;
+  subramo_id: number | null;
+  subramo_nombre: string | null;
+  score_compania: number;
+  score_ramo: number;
+  score_subramo: number;
+  confianza: NivelConfianza;
+  candidatos_compania: CandidatoCompania[];
+  texto_pdf?: string;
+}
+
+export interface PatronesGenerados {
+  compania: string[];
+  ramo: string[];
+  subramo: string[];
+  explicacion: string;
+  compania_id: number;
+  ramo_id: number;
+  subramo_id: number;
+  guardado: boolean;
+  compania_patrones_total?: number;
+  ramo_patrones_total?: number;
+  subramo_patrones_total?: number;
 }
