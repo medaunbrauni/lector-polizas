@@ -100,12 +100,46 @@ class ReglaExtraccion(Base):
     activo = Column(Boolean, default=True)
     es_borrador = Column(Boolean, default=False)       # guardado sin confirmar coincidencia
     bbox = Column(JSON, nullable=True)                 # {page,x0,top,x1,bottom} normalizados 0-1
-    creado_por = Column(String(30), default="manual")  # manual | ia | visual
+    ocr_bbox = Column(JSON, nullable=True)             # bbox para extracción OCR desde imagen
+    cobertura_lote = Column(Integer, nullable=True)    # cuántos PDFs del lote matchean
+    total_lote = Column(Integer, nullable=True)        # total PDFs en el lote de entrenamiento
+    creado_por = Column(String(30), default="manual")  # manual | ia | lote
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     subramo = relationship("Subramo", back_populates="reglas")
     campo = relationship("CampoDefinido", back_populates="reglas")
+
+
+class PolizaEntrenamiento(Base):
+    """PDF subido al lote de entrenamiento de un subramo."""
+    __tablename__ = "polizas_entrenamiento"
+    id = Column(Integer, primary_key=True)
+    subramo_id = Column(Integer, ForeignKey("subramos.id"), nullable=False)
+    nombre_archivo = Column(String(255), nullable=False)
+    ruta_archivo = Column(String(512), nullable=False)   # ruta local en disco
+    texto_pdf = Column(Text, nullable=True)              # texto extraído por pdfplumber
+    paginas = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    selecciones = relationship(
+        "SeleccionCampo", back_populates="poliza", cascade="all, delete-orphan"
+    )
+
+
+class SeleccionCampo(Base):
+    """Selección manual de un valor en un PDF de entrenamiento."""
+    __tablename__ = "selecciones_campo"
+    id = Column(Integer, primary_key=True)
+    poliza_id = Column(Integer, ForeignKey("polizas_entrenamiento.id"), nullable=False)
+    nombre_campo = Column(String(80), nullable=False)
+    texto_seleccionado = Column(String(1000), nullable=True)
+    contexto = Column(Text, nullable=True)               # ±300 chars alrededor del valor
+    bbox = Column(JSON, nullable=True)                   # {page, top, bottom} normalizado 0-1
+    es_auto = Column(Boolean, default=False)             # True si fue auto-detectado por el sistema
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    poliza = relationship("PolizaEntrenamiento", back_populates="selecciones")
 
 
 class Extraccion(Base):

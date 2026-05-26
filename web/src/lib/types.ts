@@ -116,3 +116,67 @@ export interface Regla {
   es_borrador: boolean;
   bbox: BBox | null;
 }
+
+// ── Entrenamiento por lotes ───────────────────────────────────────────────────
+
+export interface PolizaEntrenamiento {
+  id: number;
+  subramo_id: number;
+  nombre_archivo: string;
+  paginas: number | null;
+  num_selecciones: number;
+  created_at: string | null;
+}
+
+export interface SeleccionCampo {
+  id: number;
+  poliza_id: number;
+  nombre_campo: string;
+  texto_seleccionado: string;
+  contexto: string | null;
+  bbox: BBox | null;
+  es_auto: boolean;
+}
+
+/** {campo: {poliza_id: SeleccionCampo}} */
+export type MapaSelecciones = Record<string, Record<number, SeleccionCampo>>;
+
+export interface MatchLote {
+  poliza_id: number;
+  nombre_archivo: string;
+  encontrado: boolean;
+  valor_extraido: string | null;
+  error: string | null;
+}
+
+export interface ResultadoRegexLote {
+  patron_regex: string;
+  explicacion: string;
+  confianza: number;
+  matches: MatchLote[];
+  cobertura: number;
+  total: number;
+  pasa_lote: boolean;
+}
+
+export interface ReglaResumen {
+  id: number;
+  patron_regex: string;
+  cobertura_lote: number | null;
+  total_lote: number | null;
+  creado_por: string;
+}
+
+export interface EstadoLote {
+  polizas: PolizaEntrenamiento[];
+  selecciones: MapaSelecciones;
+  reglas: Record<string, ReglaResumen>;
+}
+
+export interface AutoDeteccion {
+  poliza_id: number;
+  nombre_archivo: string;
+  encontrado: boolean;
+  texto_encontrado: string | null;
+  contexto: string | null;
+}

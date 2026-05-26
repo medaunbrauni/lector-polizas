@@ -8,7 +8,7 @@ load_dotenv()
 
 from .database import init_db, SessionLocal
 from .seed.data import sembrar
-from .routers import extraccion, catalogos, reglas
+from .routers import extraccion, catalogos, reglas, entrenamiento
 from .seed.campos_globales import sembrar_campos_globales
 
 
@@ -41,6 +41,7 @@ app.add_middleware(
 app.include_router(extraccion.router)
 app.include_router(catalogos.router)
 app.include_router(reglas.router)
+app.include_router(entrenamiento.router)
 
 
 @app.get("/health")

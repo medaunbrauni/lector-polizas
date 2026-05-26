@@ -185,6 +185,95 @@ export async function getCodigoDeteccion() {
   return res.json();
 }
 
+// ── Entrenamiento por lotes ───────────────────────────────────────────────────
+
+export async function subirPolizasEntrenamiento(subramoId: number, files: File[]) {
+  const form = new FormData();
+  files.forEach((f) => form.append('files', f));
+  const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/polizas`, {
+    method: 'POST', body: form,
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function listarPolizasEntrenamiento(subramoId: number) {
+  const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/polizas`);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export function urlPdfEntrenamiento(polizaId: number) {
+  return `${BASE}/entrenamiento/polizas/${polizaId}/pdf`;
+}
+
+export async function eliminarPolizaEntrenamiento(polizaId: number) {
+  const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function guardarSeleccion(data: {
+  poliza_id: number; nombre_campo: string; texto_seleccionado: string;
+  contexto?: string; bbox?: object | null; es_auto?: boolean;
+}) {
+  const res = await fetch(`${BASE}/entrenamiento/selecciones`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function eliminarSeleccion(selId: number) {
+  const res = await fetch(`${BASE}/entrenamiento/selecciones/${selId}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function getEstadoLote(subramoId: number) {
+  const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/estado`);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function generarRegexLote(subramoId: number, nombre_campo: string, campo_label: string) {
+  const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/generar-regex`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre_campo, campo_label }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function probarRegexLote(subramoId: number, nombre_campo: string, patron_regex: string) {
+  const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/probar-regex`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre_campo, patron_regex }),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function guardarReglaLote(subramoId: number, data: {
+  nombre_campo: string; patron_regex: string; cobertura_lote: number; total_lote: number;
+  bbox?: object | null; ocr_bbox?: object | null; confianza?: number;
+}) {
+  const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/guardar-regla`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
 export async function identificarModulo(file: File) {
   const form = new FormData();
   form.append('file', file);

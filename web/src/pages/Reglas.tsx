@@ -1,21 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import {
-  getCompanias, getRamos, getSubramos, getReglas, getCampos,
-  crearRegla, probarRegla, getTextosDisponibles, generarRegexConIA,
-  reintentarRegex, getBorradores, activarRegla, identificarModulo,
-  generarPatronesDeteccion, patchPatrones,
+  getCompanias, getRamos, getSubramos, getCampos,
+  identificarModulo,
+  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento,
+  urlPdfEntrenamiento, guardarSeleccion, eliminarSeleccion,
+  getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
 } from '../lib/api';
 import type {
-  Compania, Ramo, Subramo, Regla, Campo,
-  TextoDisponible, ResultadoRegexIA, BBox,
+  Compania, Ramo, Subramo, Campo,
+  PolizaEntrenamiento, MapaSelecciones, ResultadoRegexLote, AutoDeteccion, BBox,
 } from '../lib/types';
 import {
-  Zap, Plus, CheckCircle2, XCircle, Cpu, MousePointer2,
-  FileText, ChevronRight, Sparkles, AlertCircle, Edit3,
-  RefreshCw, Clock, ScanSearch, Radio, Save,
+  Upload, Trash2, ChevronLeft, ChevronRight, ScanSearch,
+  Zap, CheckCircle2, XCircle, AlertCircle, RefreshCw,
+  FileText, MousePointer2, Sparkles, Save, Eye,
 } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -23,72 +24,56 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString();
 
-type Tab = 'visual' | 'manual';
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function Reglas() {
-  // ── Catálogos ──────────────────────────────────────────────────────
+  // ── Catálogos ──────────────────────────────────────────────────────────────
   const [companias, setCompanias] = useState<Compania[]>([]);
   const [ramos, setRamos] = useState<Ramo[]>([]);
   const [subramos, setSubramos] = useState<Subramo[]>([]);
   const [campos, setCampos] = useState<Campo[]>([]);
-  const [reglas, setReglas] = useState<Regla[]>([]);
-  const [borradores, setBorradores] = useState<Regla[]>([]);
 
   const [selCompania, setSelCompania] = useState('');
   const [selRamo, setSelRamo] = useState('');
   const [selSubramo, setSelSubramo] = useState('');
 
-  // ── Constructor visual ─────────────────────────────────────────────
-  const [tab, setTab] = useState<Tab>('visual');
-  const [textosDisponibles, setTextosDisponibles] = useState<TextoDisponible[]>([]);
-  const [selTextoId, setSelTextoId] = useState('');
-  const [textoPdf, setTextoPdf] = useState('');
+  // ── Lote de pólizas ────────────────────────────────────────────────────────
+  const [polizas, setPolizas] = useState<PolizaEntrenamiento[]>([]);
+  const [polizaIdx, setPolizaIdx] = useState(0);
+  const [subiendo, setSubiendo] = useState(false);
+
+  // ── Selecciones y reglas ───────────────────────────────────────────────────
+  const [selecciones, setSelecciones] = useState<MapaSelecciones>({});
+  const [reglas, setReglas] = useState<Record<string, { id: number; patron_regex: string; cobertura_lote: number | null; total_lote: number | null; creado_por: string }>>({});
+
+  // ── Estado del campo activo ────────────────────────────────────────────────
+  const [campoActivo, setCampoActivo] = useState('');
   const [textoSeleccionado, setTextoSeleccionado] = useState('');
-  const [contextoTexto, setContextoTexto] = useState('');
-  const [campoBuild, setCampoBuild] = useState('');
-  const [generando, setGenerando] = useState(false);
-  const [reintentando, setReintentando] = useState(false);
-  const [resultadoIA, setResultadoIA] = useState<ResultadoRegexIA | null>(null);
-  const [regexEditado, setRegexEditado] = useState('');
-  const [errorIA, setErrorIA] = useState<string | null>(null);
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [bboxCapturado, setBboxCapturado] = useState<BBox | null>(null);
-  const visorRef = useRef<HTMLPreElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const pendingAutoSelect = useRef<{ ramo_id: number; subramo_id: number } | null>(null);
-  const pdfCargadoRef = useRef<{ nombre: string; texto: string } | null>(null);
+
+  // ── Regex y resultados ─────────────────────────────────────────────────────
+  const [resultados, setResultados] = useState<Record<string, ResultadoRegexLote>>({});
+  const [regexEditado, setRegexEditado] = useState<Record<string, string>>({});
+  const [generando, setGenerando] = useState<string | null>(null);  // nombre_campo en proceso
+  const [probando, setProbando] = useState<string | null>(null);
+  const [guardando, setGuardando] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // ── Auto-detección ─────────────────────────────────────────────────────────
+  const [autoDeteccion, setAutoDeteccion] = useState<AutoDeteccion[]>([]);
+
+  // ── Detección por PDF (identificar módulo) ─────────────────────────────────
   const [detectando, setDetectando] = useState(false);
   const [detectMsg, setDetectMsg] = useState<{ ok: boolean; texto: string } | null>(null);
-  const [detectedIds, setDetectedIds] = useState<{ compania_id: number; ramo_id: number; subramo_id: number } | null>(null);
-  const [generandoPatrones, setGenerandoPatrones] = useState(false);
-  const [patronesSugeridos, setPatronesSugeridos] = useState<{
-    compania: string[]; ramo: string[]; subramo: string[]; explicacion: string;
-    compania_id: number; ramo_id: number; subramo_id: number;
-  } | null>(null);
-  const [patronesGuardados, setPatronesGuardados] = useState(false);
+  const pendingAutoSelect = useRef<{ ramo_id: number; subramo_id: number } | null>(null);
 
-  // ── Constructor manual ─────────────────────────────────────────────
-  const [form, setForm] = useState({ nombre_campo: '', patron_regex: '', contexto_antes: '', contexto_despues: '' });
-  const [testTexto, setTestTexto] = useState('');
-  const [testResult, setTestResult] = useState<{ coincidencia: string | null; encontrado: boolean } | null>(null);
-  const [guardando, setGuardando] = useState(false);
+  // ── Refs ───────────────────────────────────────────────────────────────────
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const loteInputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [pageWidth, setPageWidth] = useState(520);
 
-  // Cleanup blob URL on unmount or when replaced
-  useEffect(() => {
-    return () => { if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl); };
-  }, [pdfBlobUrl]);
-
-  // Auto-scroll al highlight en el panel de texto extraído cuando se hace una selección
-  useEffect(() => {
-    if (!textoSeleccionado) return;
-    const t = setTimeout(() => {
-      document.getElementById('extracted-text-highlight')?.scrollIntoView({
-        behavior: 'smooth', block: 'nearest',
-      });
-    }, 120);
-    return () => clearTimeout(t);
-  }, [textoSeleccionado]);
-
+  // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => { getCompanias().then(setCompanias); }, []);
 
   useEffect(() => {
@@ -117,32 +102,78 @@ export default function Reglas() {
     if (!selSubramo) return;
     const sid = Number(selSubramo);
     getCampos(sid).then(setCampos);
-    getReglas(sid).then(setReglas);
-    getBorradores(sid).then(setBorradores);
-    getTextosDisponibles(sid).then((ts) => {
-      const cargado = pdfCargadoRef.current;
-      const allTextos: TextoDisponible[] = cargado
-        ? [{ id: -1, nombre_archivo: `📄 ${cargado.nombre}`, created_at: null, texto_pdf: cargado.texto }, ...ts]
-        : ts;
-      setTextosDisponibles(allTextos);
-      if (allTextos.length > 0) {
-        setSelTextoId(String(allTextos[0].id));
-        setTextoPdf(allTextos[0].texto_pdf ?? '');
-      } else {
-        setSelTextoId(''); setTextoPdf('');
-      }
-    });
-    setTextoSeleccionado(''); setContextoTexto('');
-    setResultadoIA(null); setRegexEditado(''); setErrorIA(null);
+    cargarEstado(sid);
+    setCampoActivo('');
+    setTextoSeleccionado('');
+    setBboxCapturado(null);
+    setResultados({});
+    setRegexEditado({});
+    setAutoDeteccion([]);
   }, [selSubramo]);
 
-  useEffect(() => {
-    const item = textosDisponibles.find((t) => String(t.id) === selTextoId);
-    setTextoPdf(item?.texto_pdf ?? '');
-    setTextoSeleccionado(''); setContextoTexto(''); setResultadoIA(null);
-  }, [selTextoId]);
+  async function cargarEstado(subramoId: number) {
+    const estado = await getEstadoLote(subramoId);
+    setPolizas(estado.polizas);
+    setSelecciones(estado.selecciones);
+    setReglas(estado.reglas);
+    setPolizaIdx(0);
+  }
 
-  // ── Detectar módulo desde PDF ──────────────────────────────────────
+  // ── ResizeObserver para el ancho del visor PDF ─────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setPageWidth(el.clientWidth - 2);
+    const ro = new ResizeObserver((entries) => {
+      setPageWidth(Math.floor(entries[0].contentRect.width) - 2);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ── Auto-scroll al highlight del texto extraído ────────────────────────────
+  useEffect(() => {
+    if (!textoSeleccionado) return;
+    const t = setTimeout(() => {
+      document.getElementById('extracted-highlight')?.scrollIntoView({
+        behavior: 'smooth', block: 'nearest',
+      });
+    }, 120);
+    return () => clearTimeout(t);
+  }, [textoSeleccionado]);
+
+  // ── Póliza activa ──────────────────────────────────────────────────────────
+  const polizaActiva = polizas[polizaIdx] ?? null;
+  const pdfUrl = polizaActiva ? urlPdfEntrenamiento(polizaActiva.id) : null;
+  const textoPolizaActiva: string = (() => {
+    // Buscamos en el estado de selecciones para obtener contexto
+    // El texto real no se carga al frontend (puede ser grande); se usa solo para validación inline
+    // Lo reconstruimos desde selecciones si está disponible
+    return '';
+  })();
+
+  // ── Subir pólizas al lote ──────────────────────────────────────────────────
+  async function handleSubirPolizas(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length || !selSubramo) return;
+    e.target.value = '';
+    setSubiendo(true);
+    try {
+      const nuevas = await subirPolizasEntrenamiento(Number(selSubramo), files);
+      setPolizas((prev) => {
+        const merged = [...prev];
+        for (const n of nuevas) {
+          if (!merged.find((p) => p.id === n.id)) merged.push(n);
+        }
+        return merged;
+      });
+      if (polizas.length === 0) setPolizaIdx(0);
+    } finally {
+      setSubiendo(false);
+    }
+  }
+
+  // ── Detectar módulo desde PDF ──────────────────────────────────────────────
   async function handleDetectarPDF(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -151,7 +182,7 @@ export default function Reglas() {
     try {
       const res = await identificarModulo(file);
       if (!res.compania_id) {
-        setDetectMsg({ ok: false, texto: 'No se reconoció la compañía en este PDF' });
+        setDetectMsg({ ok: false, texto: 'No se reconoció la compañía' });
         return;
       }
       const [ramosData, subramosData] = await Promise.all([
@@ -160,802 +191,575 @@ export default function Reglas() {
       ]);
       setRamos(ramosData);
       if (res.ramo_id && subramosData.length) setSubramos(subramosData);
-
       const label = [res.compania_nombre, res.ramo_nombre, res.subramo_nombre].filter(Boolean).join(' › ');
       setDetectMsg({ ok: true, texto: `Detectado: ${label}` });
-
-      if (res.texto_pdf) {
-        pdfCargadoRef.current = { nombre: file.name, texto: res.texto_pdf };
-      }
-
-      // Create blob URL so the PDF can be rendered in the viewer
-      if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl);
-      setPdfBlobUrl(URL.createObjectURL(file));
-
-      if (res.compania_id && res.ramo_id && res.subramo_id) {
-        setDetectedIds({ compania_id: res.compania_id, ramo_id: res.ramo_id, subramo_id: res.subramo_id });
-      }
-      setPatronesSugeridos(null);
-      setPatronesGuardados(false);
-
       if (res.ramo_id && res.subramo_id) {
         pendingAutoSelect.current = { ramo_id: res.ramo_id, subramo_id: res.subramo_id };
       }
       setSelCompania(String(res.compania_id));
     } catch (err) {
-      setDetectMsg({ ok: false, texto: err instanceof Error ? err.message : 'Error desconocido' });
+      setDetectMsg({ ok: false, texto: err instanceof Error ? err.message : 'Error' });
     } finally {
       setDetectando(false);
     }
   }
 
-  // ── Generar y guardar patrones de detección ───────────────────────
-  async function handleGenerarPatrones() {
-    if (!detectedIds || !pdfCargadoRef.current) return;
-    setGenerandoPatrones(true);
-    try {
-      const res = await generarPatronesDeteccion(detectedIds.subramo_id, pdfCargadoRef.current.texto);
-      setPatronesSugeridos(res);
-    } catch (e) {
-      setDetectMsg({ ok: false, texto: e instanceof Error ? e.message : 'Error generando patrones' });
-    } finally {
-      setGenerandoPatrones(false);
-    }
+  // ── Eliminar póliza del lote ───────────────────────────────────────────────
+  async function handleEliminarPoliza(id: number) {
+    await eliminarPolizaEntrenamiento(id);
+    setPolizas((prev) => {
+      const next = prev.filter((p) => p.id !== id);
+      if (polizaIdx >= next.length) setPolizaIdx(Math.max(0, next.length - 1));
+      return next;
+    });
   }
 
-  async function handleGuardarPatrones() {
-    if (!patronesSugeridos) return;
-    await Promise.all([
-      patchPatrones('companias', patronesSugeridos.compania_id, patronesSugeridos.compania),
-      patchPatrones('ramos', patronesSugeridos.ramo_id, patronesSugeridos.ramo),
-      patchPatrones('subramos', patronesSugeridos.subramo_id, patronesSugeridos.subramo),
-    ]);
-    setPatronesGuardados(true);
-  }
-
-  // ── Captura de selección ──────────────────────────────────────────
-  function handleSeleccion() {
+  // ── Captura de selección desde el visor PDF ────────────────────────────────
+  const handleSeleccion = useCallback(() => {
+    if (!campoActivo || !polizaActiva) return;
     const sel = window.getSelection();
     if (!sel || !sel.toString().trim()) return;
     const txt = sel.toString().trim();
-    setTextoSeleccionado(txt);
-    setResultadoIA(null); setErrorIA(null);
 
-    // Context lookup in extracted text
-    const idx = textoPdf.indexOf(txt);
-    if (idx !== -1) {
-      const start = Math.max(0, idx - 300);
-      const end = Math.min(textoPdf.length, idx + txt.length + 300);
-      setContextoTexto(textoPdf.substring(start, end));
-    } else {
-      setContextoTexto(txt);
-    }
-
-    // Capture bbox when using the PDF viewer
-    if (mostrarPdfViewer && sel.rangeCount > 0) {
+    // Capturar bbox
+    let bbox: BBox | null = null;
+    if (sel.rangeCount > 0) {
       const range = sel.getRangeAt(0);
       const selRect = range.getBoundingClientRect();
-
-      // Walk up the DOM to find the react-pdf page container
       let node: Node | null = range.startContainer;
       let pageEl: Element | null = null;
       while (node) {
         if (node instanceof Element && node.classList.contains('react-pdf__Page')) {
-          pageEl = node;
-          break;
+          pageEl = node; break;
         }
         node = node.parentNode;
       }
-
-      if (pageEl && selRect.width > 0 && selRect.height > 0) {
+      if (pageEl && selRect.width > 0) {
         const pageNum = parseInt(pageEl.getAttribute('data-page-number') || '1', 10);
         const pageRect = pageEl.getBoundingClientRect();
-        setBboxCapturado({
+        bbox = {
           page: pageNum,
           x0: Math.max(0, (selRect.left - pageRect.left) / pageRect.width),
           top: Math.max(0, (selRect.top - pageRect.top) / pageRect.height),
           x1: Math.min(1, (selRect.right - pageRect.left) / pageRect.width),
           bottom: Math.min(1, (selRect.bottom - pageRect.top) / pageRect.height),
-        });
-      } else {
-        setBboxCapturado(null);
+        };
       }
-    } else {
-      setBboxCapturado(null);
     }
-  }
 
-  // ── Helpers para llamadas a Claude ────────────────────────────────
-  function buildContextoIA() {
-    const campoObj = campos.find((c) => c.nombre === campoBuild);
-    const companiaObj = companias.find((c) => String(c.id) === selCompania);
-    const ramoObj = ramos.find((r) => String(r.id) === selRamo);
-    const subramoObj = subramos.find((s) => String(s.id) === selSubramo);
-    return {
-      subramo_id: Number(selSubramo),
-      nombre_campo: campoBuild,
-      campo_label: campoObj?.label ?? campoBuild,
+    setTextoSeleccionado(txt);
+    setBboxCapturado(bbox);
+    setAutoDeteccion([]);
+  }, [campoActivo, polizaActiva]);
+
+  // ── Guardar selección ──────────────────────────────────────────────────────
+  async function handleGuardarSeleccion() {
+    if (!polizaActiva || !campoActivo || !textoSeleccionado) return;
+    const res = await guardarSeleccion({
+      poliza_id: polizaActiva.id,
+      nombre_campo: campoActivo,
       texto_seleccionado: textoSeleccionado,
-      contexto_texto: contextoTexto,
-      texto_completo: textoPdf,
-      compania: companiaObj?.nombre,
-      ramo: ramoObj?.nombre,
-      subramo: (subramoObj as any)?.nombre,
-    };
+      bbox: bboxCapturado,
+      es_auto: false,
+    });
+    // Actualizar mapa local
+    setSelecciones((prev) => ({
+      ...prev,
+      [campoActivo]: {
+        ...(prev[campoActivo] ?? {}),
+        [polizaActiva.id]: res.seleccion,
+      },
+    }));
+    // Actualizar contador en la lista de pólizas
+    setPolizas((prev) =>
+      prev.map((p) =>
+        p.id === polizaActiva.id
+          ? { ...p, num_selecciones: p.num_selecciones + (selecciones[campoActivo]?.[polizaActiva.id] ? 0 : 1) }
+          : p
+      )
+    );
+    setAutoDeteccion(res.auto_deteccion ?? []);
+    setTextoSeleccionado('');
+    setBboxCapturado(null);
   }
 
-  async function handleGenerarIA() {
-    if (!textoSeleccionado || !campoBuild || !textoPdf) return;
-    setGenerando(true); setErrorIA(null); setResultadoIA(null);
+  // ── Generar regex ──────────────────────────────────────────────────────────
+  async function handleGenerarRegex(nombreCampo: string) {
+    const campoObj = campos.find((c) => c.nombre === nombreCampo);
+    setGenerando(nombreCampo);
+    setErrorMsg(null);
     try {
-      const res = await generarRegexConIA(buildContextoIA());
-      setResultadoIA(res);
-      setRegexEditado(res.patron_regex);
+      const res = await generarRegexLote(Number(selSubramo), nombreCampo, campoObj?.label ?? nombreCampo);
+      setResultados((prev) => ({ ...prev, [nombreCampo]: res }));
+      setRegexEditado((prev) => ({ ...prev, [nombreCampo]: res.patron_regex }));
     } catch (e) {
-      setErrorIA(e instanceof Error ? e.message : 'Error desconocido');
+      setErrorMsg(e instanceof Error ? e.message : 'Error al generar regex');
     } finally {
-      setGenerando(false);
+      setGenerando(null);
     }
   }
 
-  async function handleReintentarIA() {
-    if (!resultadoIA) return;
-    setReintentando(true); setErrorIA(null);
+  // ── Reintentar con regex editado ───────────────────────────────────────────
+  async function handleProbarRegex(nombreCampo: string) {
+    const patron = regexEditado[nombreCampo];
+    if (!patron) return;
+    setProbando(nombreCampo);
     try {
-      const res = await reintentarRegex({
-        ...buildContextoIA(),
-        patron_fallido: resultadoIA.patron_regex,
+      const res = await probarRegexLote(Number(selSubramo), nombreCampo, patron);
+      setResultados((prev) => ({
+        ...prev,
+        [nombreCampo]: { ...prev[nombreCampo], ...res, patron_regex: patron },
+      }));
+    } finally {
+      setProbando(null);
+    }
+  }
+
+  // ── Guardar regla ──────────────────────────────────────────────────────────
+  async function handleGuardarRegla(nombreCampo: string) {
+    const resultado = resultados[nombreCampo];
+    const patron = regexEditado[nombreCampo];
+    if (!resultado || !patron) return;
+    setGuardando(nombreCampo);
+    try {
+      await guardarReglaLote(Number(selSubramo), {
+        nombre_campo: nombreCampo,
+        patron_regex: patron,
+        cobertura_lote: resultado.cobertura,
+        total_lote: resultado.total,
+        confianza: resultado.confianza,
       });
-      setResultadoIA(res);
-      setRegexEditado(res.patron_regex);
-    } catch (e) {
-      setErrorIA(e instanceof Error ? e.message : 'Error desconocido');
+      // Refrescar estado
+      const estado = await getEstadoLote(Number(selSubramo));
+      setReglas(estado.reglas);
+      setResultados((prev) => { const n = { ...prev }; delete n[nombreCampo]; return n; });
     } finally {
-      setReintentando(false);
+      setGuardando(null);
     }
   }
 
-  async function handleGuardarIA() {
-    if (!selSubramo || !campoBuild || !regexEditado) return;
-    setGuardando(true);
-    try {
-      await crearRegla({
-        subramo_id: Number(selSubramo),
-        nombre_campo: campoBuild,
-        patron_regex: regexEditado,
-        confianza: resultadoIA?.confianza ?? 0.9,
-        creado_por: 'ia',
-        es_borrador: false,
-        ejemplos: resultadoIA?.match_test ? [resultadoIA.match_test] : [],
-        bbox: bboxCapturado ?? null,
-      });
-      getReglas(Number(selSubramo)).then(setReglas);
-      getBorradores(Number(selSubramo)).then(setBorradores);
-      setResultadoIA(null); setRegexEditado('');
-      setTextoSeleccionado(''); setContextoTexto(''); setBboxCapturado(null);
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  async function handleGuardarBorrador() {
-    if (!selSubramo || !campoBuild || !regexEditado) return;
-    setGuardando(true);
-    try {
-      await crearRegla({
-        subramo_id: Number(selSubramo),
-        nombre_campo: campoBuild,
-        patron_regex: regexEditado,
-        confianza: resultadoIA?.confianza ?? 0.5,
-        creado_por: 'ia',
-        es_borrador: true,
-        ejemplos: [],
-        bbox: bboxCapturado ?? null,
-      });
-      getBorradores(Number(selSubramo)).then(setBorradores);
-      setResultadoIA(null); setRegexEditado('');
-      setTextoSeleccionado(''); setContextoTexto(''); setBboxCapturado(null);
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  async function handleActivarBorrador(id: number) {
-    await activarRegla(id);
-    getReglas(Number(selSubramo)).then(setReglas);
-    getBorradores(Number(selSubramo)).then(setBorradores);
-  }
-
-  async function handleProbar() {
-    if (!form.patron_regex || !testTexto) return;
-    const r = await probarRegla(form.patron_regex, testTexto);
-    setTestResult(r);
-  }
-
-  async function handleGuardarManual() {
-    if (!selSubramo || !form.nombre_campo || !form.patron_regex) return;
-    setGuardando(true);
-    try {
-      await crearRegla({ subramo_id: Number(selSubramo), ...form });
-      getReglas(Number(selSubramo)).then(setReglas);
-      setForm({ nombre_campo: '', patron_regex: '', contexto_antes: '', contexto_despues: '' });
-      setTestResult(null);
-    } finally {
-      setGuardando(false);
-    }
-  }
-
-  function clickCampo(nombre: string) {
-    if (tab === 'visual') setCampoBuild(nombre);
-    else setForm((f) => ({ ...f, nombre_campo: nombre }));
-  }
-
-  const camposConRegla = new Set(reglas.map((r) => r.nombre_campo));
-  const camposConBorrador = new Map(borradores.map((r) => [r.nombre_campo, r.id]));
-  // Campos con valor_fijo se consideran "cubiertos" automáticamente
+  // ── Computed ───────────────────────────────────────────────────────────────
+  const camposConRegla = new Set(Object.keys(reglas));
   const camposValorFijo = new Set(campos.filter((c) => c.valor_fijo !== null).map((c) => c.nombre));
-  const camposCubiertos = new Set([...camposConRegla, ...camposValorFijo]);
-
   const camposOrdenados = [...campos].sort((a, b) => {
-    const aOk = camposCubiertos.has(a.nombre);
-    const bOk = camposCubiertos.has(b.nombre);
+    const aOk = camposConRegla.has(a.nombre) || camposValorFijo.has(a.nombre);
+    const bOk = camposConRegla.has(b.nombre) || camposValorFijo.has(b.nombre);
     if (aOk !== bOk) return aOk ? -1 : 1;
-    const aBorr = camposConBorrador.has(a.nombre);
-    const bBorr = camposConBorrador.has(b.nombre);
-    if (aBorr !== bBorr) return aBorr ? -1 : 1;
     return a.orden - b.orden;
   });
 
-  const pasoCompleto = (n: 1 | 2 | 3) => {
-    if (n === 1) return !!campoBuild;
-    if (n === 2) return !!textoSeleccionado;
-    return !!resultadoIA;
-  };
-
-  // Show PDF viewer only when the uploaded PDF is selected (id === -1)
-  const mostrarPdfViewer = pdfBlobUrl && selTextoId === '-1';
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Reglas de Extracción</h1>
-        <p className="text-sm text-gray-500 mt-1">Define patrones regex por Compañía · Ramo · Subramo · Campo</p>
-      </div>
+    <div className="flex flex-col h-full min-h-screen bg-gray-50">
 
-      {/* Detectar módulo desde PDF */}
-      <div className="flex items-center gap-3">
-        <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleDetectarPDF} />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={detectando}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors"
-        >
-          {detectando
-            ? <><Loader className="w-4 h-4 animate-spin" />Analizando PDF…</>
-            : <><ScanSearch className="w-4 h-4" />Detectar con PDF</>}
-        </button>
-        {detectMsg && (
-          <span className={`text-sm font-medium ${detectMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
-            {detectMsg.ok ? '✓' : '✕'} {detectMsg.texto}
-          </span>
-        )}
-      </div>
+      {/* ── Header ── */}
+      <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center gap-4 flex-wrap">
+        <div>
+          <h1 className="text-lg font-bold text-gray-900">Entrenamiento de Reglas</h1>
+          <p className="text-xs text-gray-400">Sube pólizas, selecciona valores, genera regex que funcionen en todo el lote</p>
+        </div>
 
-      {/* Patrones de detección sugeridos */}
-      {detectedIds && pdfCargadoRef.current && !patronesGuardados && (
-        <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-indigo-800 flex items-center gap-2">
-              <Radio className="w-4 h-4" />
-              Mejorar detección automática
-            </p>
-            {!patronesSugeridos && (
-              <button
-                onClick={handleGenerarPatrones}
-                disabled={generandoPatrones}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors"
-              >
-                {generandoPatrones
-                  ? <><Loader className="w-3.5 h-3.5 animate-spin" />Analizando…</>
-                  : <><Sparkles className="w-3.5 h-3.5" />Generar patrones regex</>}
-              </button>
-            )}
-          </div>
-          <p className="text-xs text-indigo-600">
-            Genera regex para que el sistema detecte este tipo de póliza sin usar IA en el futuro.
-          </p>
-
-          {patronesSugeridos && (
-            <div className="space-y-2">
-              <p className="text-xs text-indigo-700 italic">{patronesSugeridos.explicacion}</p>
-              {(['compania', 'ramo', 'subramo'] as const).map((nivel) => (
-                <div key={nivel}>
-                  <p className="text-[10px] font-semibold text-indigo-500 uppercase tracking-wide mb-1">
-                    {nivel === 'compania' ? 'Compañía' : nivel === 'ramo' ? 'Ramo' : 'Subramo'}
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {patronesSugeridos[nivel].map((p, i) => (
-                      <code key={i} className="text-[10px] bg-white border border-indigo-200 text-indigo-800 px-2 py-0.5 rounded font-mono">
-                        {p}
-                      </code>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <button
-                onClick={handleGuardarPatrones}
-                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2"
-              >
-                <Save className="w-4 h-4" />
-                Guardar patrones en el catálogo
-              </button>
-            </div>
+        {/* Detectar módulo */}
+        <div className="ml-auto flex items-center gap-3">
+          <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleDetectarPDF} />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={detectando}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors"
+          >
+            <ScanSearch className="w-3.5 h-3.5" />
+            {detectando ? 'Analizando…' : 'Detectar con PDF'}
+          </button>
+          {detectMsg && (
+            <span className={`text-xs font-medium ${detectMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+              {detectMsg.ok ? '✓' : '✕'} {detectMsg.texto}
+            </span>
           )}
         </div>
-      )}
+      </div>
 
-      {patronesGuardados && (
-        <div className="flex items-center gap-2 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-sm text-emerald-700">
-          <CheckCircle2 className="w-4 h-4" />
-          Patrones guardados. El sistema detectará este tipo de póliza automáticamente.
-        </div>
-      )}
-
-      {/* Selector de módulo */}
-      <div className="flex gap-3">
+      {/* ── Selector compañía / ramo / subramo ── */}
+      <div className="px-6 py-3 bg-white border-b border-gray-100 flex gap-3">
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
-          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Compañía…</option>
-          {companias.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.prioridad ? `P${c.prioridad} · ` : ''}{c.nombre}{c.porcentaje_docs ? ` (${(c.porcentaje_docs*100).toFixed(1)}%)` : ''}
-            </option>
-          ))}
+          {companias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
         <select value={selRamo} onChange={(e) => setSelRamo(e.target.value)}
-          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Ramo…</option>
           {ramos.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
         </select>
         <select value={selSubramo} onChange={(e) => setSelSubramo(e.target.value)}
-          className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Subramo…</option>
-          {subramos.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.prioridad ? `P${s.prioridad} · ` : ''}{(s as any).nombre}{s.porcentaje_docs ? ` (${(s.porcentaje_docs*100).toFixed(2)}%)` : ''}
-            </option>
-          ))}
+          {subramos.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
       </div>
 
-      {selSubramo ? (
-        <div className="grid grid-cols-[280px_1fr] gap-6 items-start">
-
-          {/* ── Panel izquierdo: campos ── */}
-          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm sticky top-4">
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-700">Campos del módulo</h2>
-              <span className="text-[10px] text-gray-400 font-medium">
-                {camposCubiertos.size}/{campos.length} cubiertos
-              </span>
-            </div>
-            <ul className="divide-y divide-gray-50 max-h-[60vh] overflow-y-auto">
-              {camposOrdenados.map((c) => {
-                const activo = tab === 'visual' ? campoBuild === c.nombre : form.nombre_campo === c.nombre;
-                const tieneRegla = camposConRegla.has(c.nombre);
-                const esValorFijo = camposValorFijo.has(c.nombre);
-                const tieneBorrador = camposConBorrador.has(c.nombre) && !tieneRegla && !esValorFijo;
-                const borradoId = camposConBorrador.get(c.nombre);
-                return (
-                  <li
-                    key={c.id}
-                    onClick={() => !esValorFijo && clickCampo(c.nombre)}
-                    className={`flex items-center justify-between px-4 py-2.5 transition-colors ${
-                      esValorFijo ? 'opacity-60 cursor-default' :
-                      activo ? 'bg-blue-50 border-l-2 border-blue-500 cursor-pointer' : 'hover:bg-gray-50 cursor-pointer'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <p className="text-sm text-gray-800 truncate">{c.label}</p>
-                        {c.es_global && !c.grupo && (
-                          <span className="text-[9px] bg-gray-100 text-gray-400 px-1 rounded font-medium">global</span>
-                        )}
-                        {c.grupo === 'vehiculos' && (
-                          <span className="text-[9px] bg-blue-50 text-blue-400 px-1 rounded font-medium">🚗</span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-gray-400 font-mono">{c.nombre}</p>
-                      {c.descripcion && !activo && (
-                        <p className="text-[10px] text-gray-400 truncate max-w-[180px]">{c.descripcion}</p>
-                      )}
-                    </div>
-                    {tieneRegla ? (
-                      <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-medium whitespace-nowrap flex-shrink-0">
-                        <CheckCircle2 className="w-3 h-3" />OK
-                      </span>
-                    ) : esValorFijo ? (
-                      <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-500 rounded-full text-[10px] font-medium whitespace-nowrap flex-shrink-0">
-                        🔒 {c.valor_fijo}
-                      </span>
-                    ) : tieneBorrador ? (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleActivarBorrador(borradoId!); }}
-                        className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-[10px] font-medium whitespace-nowrap hover:bg-amber-200 transition-colors flex-shrink-0"
-                      >
-                        <Clock className="w-3 h-3" />Activar
-                      </button>
-                    ) : (
-                      <ChevronRight className="w-3.5 h-3.5 text-gray-300 ml-2 flex-shrink-0" />
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* ── Panel derecho: constructor ── */}
-          <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-
-            {/* Tabs */}
-            <div className="flex border-b border-gray-100">
-              <TabBtn active={tab === 'visual'} onClick={() => setTab('visual')} icon={<Sparkles className="w-3.5 h-3.5" />}>
-                Constructor Visual + IA
-              </TabBtn>
-              <TabBtn active={tab === 'manual'} onClick={() => setTab('manual')} icon={<Edit3 className="w-3.5 h-3.5" />}>
-                Manual
-              </TabBtn>
-            </div>
-
-            {/* ── TAB VISUAL ── */}
-            {tab === 'visual' && (
-              <div className="p-5 space-y-5">
-
-                {/* Pasos indicador */}
-                <div className="flex items-center gap-1 text-xs">
-                  <Paso n={1} ok={pasoCompleto(1)} label="Elegir campo" />
-                  <div className="flex-1 h-px bg-gray-200 mx-1" />
-                  <Paso n={2} ok={pasoCompleto(2)} label="Seleccionar valor" />
-                  <div className="flex-1 h-px bg-gray-200 mx-1" />
-                  <Paso n={3} ok={pasoCompleto(3)} label="Generar regex" />
-                </div>
-
-                {/* Paso 1: campo */}
-                <div>
-                  <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                    1 · Campo a definir
-                  </label>
-                  <select
-                    value={campoBuild}
-                    onChange={(e) => { setCampoBuild(e.target.value); setResultadoIA(null); setTextoSeleccionado(''); }}
-                    className="mt-1.5 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Seleccionar campo…</option>
-                    {campos.filter((c) => !c.valor_fijo).map((c) => (
-                      <option key={c.id} value={c.nombre}>
-                        {c.label} {camposConRegla.has(c.nombre) ? '✓' : camposConBorrador.has(c.nombre) ? '⏳' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Paso 2: visor — siempre visible cuando hay PDF o texto cargado */}
-                {(mostrarPdfViewer || textoPdf || textosDisponibles.length > 0) && (
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                        {campoBuild ? '2 · Selecciona el valor en el PDF' : '2 · Vista previa del documento'}
-                      </label>
-                      {textosDisponibles.length > 0 && (
-                        <select
-                          value={selTextoId}
-                          onChange={(e) => setSelTextoId(e.target.value)}
-                          className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white max-w-[220px] truncate focus:outline-none focus:ring-1 focus:ring-blue-400"
-                        >
-                          {textosDisponibles.map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.nombre_archivo.substring(0, 35)}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </div>
-
-                    {!campoBuild && (
-                      <div className="mb-2 flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-700">
-                        <MousePointer2 className="w-3.5 h-3.5 flex-shrink-0" />
-                        Elige un campo en el paso 1 y luego selecciona el valor aquí en el PDF
-                      </div>
-                    )}
-
-                    {mostrarPdfViewer ? (
-                      /* ── Visor PDF real + panel de texto extraído ── */
-                      <div className="space-y-2">
-                        <div className="relative">
-                          {campoBuild && (
-                            <div className="absolute top-2 right-2 z-10 flex items-center gap-1 text-[10px] text-gray-500 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg border border-gray-200 pointer-events-none shadow-sm">
-                              <MousePointer2 className="w-3 h-3" />
-                              Selecciona texto del PDF
-                            </div>
-                          )}
-                          <PdfVisor url={pdfBlobUrl!} onSeleccion={handleSeleccion} />
-                        </div>
-                        {textoPdf && (
-                          <TextoValidacion texto={textoPdf} seleccion={textoSeleccionado} />
-                        )}
-                      </div>
-                    ) : textoPdf ? (
-                      /* ── Visor texto extraído ── */
-                      <div className="relative">
-                        {campoBuild && (
-                          <div className="absolute top-2 right-2 flex items-center gap-1 text-[10px] text-gray-400 bg-white/90 px-2 py-1 rounded-lg border border-gray-100 z-10 pointer-events-none">
-                            <MousePointer2 className="w-3 h-3" />
-                            Arrastra para seleccionar
-                          </div>
-                        )}
-                        <pre
-                          ref={visorRef}
-                          onMouseUp={handleSeleccion}
-                          className="w-full h-56 overflow-auto border border-gray-200 rounded-xl p-3 text-[11px] font-mono text-gray-700 leading-relaxed bg-gray-50 whitespace-pre-wrap cursor-text select-text"
-                        >
-                          {textoPdf}
-                        </pre>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-                        <FileText className="w-4 h-4 flex-shrink-0" />
-                        No hay PDFs procesados para este subramo. Sube una póliza primero.
-                      </div>
-                    )}
-
-                    {/* Valor seleccionado — solo si hay campo elegido */}
-                    {campoBuild && textoSeleccionado && (
-                      <div className="mt-2 space-y-1.5">
-                        <div className="flex items-center gap-2 p-2.5 bg-blue-50 border border-blue-200 rounded-xl">
-                          <span className="text-[10px] font-semibold text-blue-500 uppercase">Seleccionado</span>
-                          <code className="flex-1 text-sm font-mono font-bold text-blue-800 truncate">
-                            "{textoSeleccionado}"
-                          </code>
-                          <button
-                            onClick={() => { setTextoSeleccionado(''); setContextoTexto(''); setResultadoIA(null); setBboxCapturado(null); }}
-                            className="text-blue-400 hover:text-blue-600 text-xs"
-                          >✕</button>
-                        </div>
-                        {bboxCapturado && (
-                          <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
-                            <span className="text-[10px]">📍</span>
-                            <span className="text-[10px] text-emerald-700 font-medium">
-                              Zona capturada · Pág. {bboxCapturado.page}
-                              {' '}·{' '}
-                              fila {Math.round(bboxCapturado.top * 100)}–{Math.round(bboxCapturado.bottom * 100)}%
-                            </span>
-                            <span className="ml-auto text-[10px] text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded font-medium">
-                              extracción por zona
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Botón generar */}
-                {campoBuild && textoSeleccionado && (
-                  <button
-                    onClick={handleGenerarIA}
-                    disabled={generando}
-                    className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2"
-                  >
-                    {generando ? (
-                      <><Loader className="w-4 h-4 animate-spin" />Generando regex con Claude…</>
-                    ) : (
-                      <><Cpu className="w-4 h-4" />Generar regex con IA</>
-                    )}
-                  </button>
-                )}
-
-                {/* Error IA */}
-                {errorIA && (
-                  <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                    <span>{errorIA}</span>
-                  </div>
-                )}
-
-                {/* Resultado IA */}
-                {resultadoIA && (
-                  <div className="space-y-3 p-4 bg-purple-50 border border-purple-200 rounded-xl">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-purple-700 uppercase tracking-wide flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5" />Regex generado por Claude
-                      </span>
-                      <div className="flex items-center gap-1.5">
-                        {bboxCapturado && (
-                          <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-medium">
-                            📍 zona p.{bboxCapturado.page}
-                          </span>
-                        )}
-                        <span className="text-[10px] px-2 py-0.5 bg-purple-100 text-purple-600 rounded-full font-medium">
-                          Confianza {Math.round(resultadoIA.confianza * 100)}%
-                        </span>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="text-[10px] font-medium text-purple-600 uppercase">Patrón (editable)</label>
-                      <input
-                        value={regexEditado}
-                        onChange={(e) => setRegexEditado(e.target.value)}
-                        className="mt-1 w-full border border-purple-200 bg-white rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-400"
-                      />
-                    </div>
-
-                    <p className="text-xs text-purple-800 leading-relaxed">{resultadoIA.explicacion}</p>
-
-                    <div className={`flex items-center gap-2 p-2.5 rounded-lg text-sm ${
-                      resultadoIA.match_ok ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-700'
-                    }`}>
-                      {resultadoIA.match_ok ? (
-                        <><CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-                          Captura: <strong className="font-mono ml-1">"{resultadoIA.match_test}"</strong></>
-                      ) : (
-                        <><XCircle className="w-4 h-4 flex-shrink-0" />Sin coincidencia en el PDF</>
-                      )}
-                    </div>
-
-                    {resultadoIA.match_ok ? (
-                      <button
-                        onClick={handleGuardarIA}
-                        disabled={guardando || !regexEditado}
-                        className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2"
-                      >
-                        <CheckCircle2 className="w-4 h-4" />
-                        {guardando ? 'Guardando…' : 'Guardar regla'}
-                      </button>
-                    ) : (
-                      <div className="space-y-2">
-                        <button
-                          onClick={handleReintentarIA}
-                          disabled={reintentando || generando}
-                          className="w-full py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2"
-                        >
-                          {reintentando ? (
-                            <><Loader className="w-4 h-4 animate-spin" />Generando variante…</>
-                          ) : (
-                            <><RefreshCw className="w-4 h-4" />Intentar variante más amplia</>
-                          )}
-                        </button>
-                        <div className="flex gap-2">
-                          <button
-                            onClick={handleGuardarBorrador}
-                            disabled={guardando || !regexEditado}
-                            className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
-                          >
-                            <Clock className="w-3.5 h-3.5" />
-                            {guardando ? 'Guardando…' : 'Guardar borrador'}
-                          </button>
-                          <button
-                            onClick={handleGuardarIA}
-                            disabled={guardando || !regexEditado}
-                            className="flex-1 py-2 border border-gray-300 hover:bg-gray-50 disabled:opacity-40 text-gray-700 rounded-xl text-sm font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Guardar igual
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-gray-400 text-center">
-                          Borrador: se guarda para revisión posterior, no se aplica en extracciones
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── TAB MANUAL ── */}
-            {tab === 'manual' && (
-              <div className="p-5 space-y-3">
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Campo</label>
-                  <select
-                    value={form.nombre_campo}
-                    onChange={(e) => setForm((f) => ({ ...f, nombre_campo: e.target.value }))}
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Seleccionar campo…</option>
-                    {campos.map((c) => <option key={c.id} value={c.nombre}>{c.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Patrón Regex</label>
-                  <input
-                    value={form.patron_regex}
-                    onChange={(e) => setForm((f) => ({ ...f, patron_regex: e.target.value }))}
-                    placeholder="ej. N[uú]mero de P[oó]liza[:\s]+([A-Z0-9\-]+)"
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-gray-600">Texto de prueba</label>
-                  <textarea
-                    value={testTexto}
-                    onChange={(e) => setTestTexto(e.target.value)}
-                    rows={4}
-                    placeholder="Pega aquí un fragmento del PDF para probar el patrón…"
-                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono resize-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-
-                {testResult && (
-                  <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
-                    testResult.encontrado ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                  }`}>
-                    {testResult.encontrado
-                      ? <><CheckCircle2 className="w-4 h-4" /> Encontrado: <strong className="font-mono ml-1">{testResult.coincidencia}</strong></>
-                      : <><XCircle className="w-4 h-4" /> Sin coincidencia</>}
-                  </div>
-                )}
-
-                <div className="flex gap-2 pt-1">
-                  <button
-                    onClick={handleProbar}
-                    disabled={!form.patron_regex || !testTexto}
-                    className="flex-1 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 transition-colors"
-                  >
-                    Probar
-                  </button>
-                  <button
-                    onClick={handleGuardarManual}
-                    disabled={guardando || !form.nombre_campo || !form.patron_regex}
-                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium disabled:opacity-40 transition-colors inline-flex items-center justify-center gap-1.5"
-                  >
-                    <Zap className="w-3.5 h-3.5" />
-                    {guardando ? 'Guardando…' : 'Guardar regla'}
-                  </button>
-                </div>
-              </div>
-            )}
+      {!selSubramo ? (
+        <div className="flex-1 flex items-center justify-center text-gray-400">
+          <div className="text-center">
+            <Zap className="w-8 h-8 mx-auto mb-3 opacity-30" />
+            <p className="text-sm">Selecciona Compañía → Ramo → Subramo para empezar</p>
           </div>
         </div>
       ) : (
-        <div className="text-center py-20 text-gray-400">
-          <Zap className="w-8 h-8 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Selecciona Compañía → Ramo → Subramo para construir reglas</p>
+        <div className="flex flex-1 overflow-hidden">
+
+          {/* ══ Panel izquierdo: Lote de pólizas ══ */}
+          <div className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+            <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                Lote de pólizas
+              </span>
+              <span className="text-[10px] text-gray-400 font-medium bg-gray-100 px-1.5 py-0.5 rounded-full">
+                {polizas.length} / 5
+              </span>
+            </div>
+
+            {/* Upload */}
+            <div className="p-3 border-b border-gray-100">
+              <input
+                ref={loteInputRef} type="file" accept=".pdf" multiple className="hidden"
+                onChange={handleSubirPolizas}
+              />
+              <button
+                onClick={() => loteInputRef.current?.click()}
+                disabled={subiendo}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50 rounded-lg text-xs font-medium text-gray-600 hover:text-blue-600 transition-colors"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                {subiendo ? 'Subiendo…' : 'Agregar PDFs'}
+              </button>
+            </div>
+
+            {/* Lista de pólizas */}
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+              {polizas.length === 0 && (
+                <div className="p-4 text-center text-xs text-gray-400">
+                  Sin pólizas. Agrega al menos una para empezar.
+                </div>
+              )}
+              {polizas.map((p, idx) => {
+                const selCount = Object.values(selecciones).filter((m) => m[p.id]).length;
+                const totalCampos = campos.filter((c) => !c.valor_fijo).length;
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setPolizaIdx(idx)}
+                    className={`px-3 py-2.5 cursor-pointer transition-colors flex items-start gap-2 ${
+                      idx === polizaIdx ? 'bg-blue-50 border-l-2 border-blue-500' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-gray-800 truncate leading-tight">
+                        {p.nombre_archivo}
+                      </p>
+                      <div className="flex items-center justify-between mt-0.5">
+                        <span className="text-[10px] text-gray-400">
+                          {p.paginas ? `${p.paginas} págs.` : '–'}
+                        </span>
+                        <span className={`text-[10px] font-medium ${
+                          selCount === totalCampos && totalCampos > 0
+                            ? 'text-emerald-600' : 'text-gray-400'
+                        }`}>
+                          {selCount}/{totalCampos} campos
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleEliminarPoliza(p.id); }}
+                      className="flex-shrink-0 text-gray-300 hover:text-red-500 transition-colors mt-0.5"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ══ Centro: Visor PDF ══ */}
+          <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+            {/* Barra de navegación del visor */}
+            {polizaActiva && (
+              <div className="px-4 py-2 bg-white border-b border-gray-100 flex items-center gap-3">
+                <button
+                  onClick={() => setPolizaIdx((i) => Math.max(0, i - 1))}
+                  disabled={polizaIdx === 0}
+                  className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs font-medium text-gray-700 flex-1 text-center truncate">
+                  {polizaActiva.nombre_archivo}
+                  <span className="text-gray-400 ml-2">({polizaIdx + 1} / {polizas.length})</span>
+                </span>
+                <button
+                  onClick={() => setPolizaIdx((i) => Math.min(polizas.length - 1, i + 1))}
+                  disabled={polizaIdx === polizas.length - 1}
+                  className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-colors"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+
+                {/* Campo activo badge */}
+                {campoActivo && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold">
+                    <MousePointer2 className="w-3 h-3" />
+                    Seleccionando: {campos.find((c) => c.nombre === campoActivo)?.label ?? campoActivo}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Visor PDF */}
+            <div
+              ref={containerRef}
+              className="flex-1 overflow-y-auto bg-gray-200 relative"
+              onMouseUp={polizaActiva ? handleSeleccion : undefined}
+            >
+              {!polizaActiva ? (
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                  Agrega pólizas al lote para empezar
+                </div>
+              ) : (
+                <PdfVisor url={pdfUrl!} width={pageWidth} />
+              )}
+            </div>
+
+            {/* Panel de selección capturada */}
+            {polizaActiva && campoActivo && (
+              <div className="bg-white border-t border-gray-200 px-4 py-3 space-y-2">
+                {textoSeleccionado ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-semibold text-blue-600 uppercase">Capturado</span>
+                      <code className="flex-1 text-sm font-mono font-bold text-blue-900 truncate">
+                        "{textoSeleccionado}"
+                      </code>
+                      {bboxCapturado && (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-medium flex-shrink-0">
+                          📍 p.{bboxCapturado.page}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => { setTextoSeleccionado(''); setBboxCapturado(null); }}
+                        className="text-gray-400 hover:text-gray-600 text-xs"
+                      >✕</button>
+                    </div>
+                    <button
+                      onClick={handleGuardarSeleccion}
+                      className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      Guardar selección para "{campos.find((c) => c.nombre === campoActivo)?.label}"
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 text-center py-1">
+                    Arrastra para seleccionar el valor de <strong>{campos.find((c) => c.nombre === campoActivo)?.label}</strong> en el PDF
+                  </p>
+                )}
+
+                {/* Auto-detección en otras pólizas */}
+                {autoDeteccion.length > 0 && (
+                  <div className="mt-1 space-y-1">
+                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Búsqueda automática en las demás pólizas
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {autoDeteccion.map((ad) => (
+                        <span
+                          key={ad.poliza_id}
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                            ad.encontrado
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-amber-100 text-amber-700'
+                          }`}
+                        >
+                          {ad.encontrado ? '✓' : '?'} {ad.nombre_archivo.substring(0, 20)}
+                          {ad.texto_encontrado ? `: "${ad.texto_encontrado.substring(0, 15)}"` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ══ Panel derecho: Campos ══ */}
+          <div className="w-80 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Campos</span>
+              <span className="text-[10px] text-gray-400">
+                {camposConRegla.size + camposValorFijo.size}/{campos.length} cubiertos
+              </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {camposOrdenados.map((campo) => {
+                const tieneRegla = camposConRegla.has(campo.nombre);
+                const esValorFijo = camposValorFijo.has(campo.nombre);
+                const esActivo = campoActivo === campo.nombre;
+                const sels = selecciones[campo.nombre] ?? {};
+                const numSels = Object.keys(sels).length;
+                const tieneResultado = !!resultados[campo.nombre];
+
+                return (
+                  <div key={campo.id}>
+                    {/* Fila del campo */}
+                    <div
+                      onClick={() => !esValorFijo && setCampoActivo(campo.nombre === campoActivo ? '' : campo.nombre)}
+                      className={`px-4 py-2.5 border-b border-gray-50 transition-colors ${
+                        esValorFijo ? 'opacity-60 cursor-default' :
+                        esActivo ? 'bg-blue-50 border-l-2 border-blue-500 cursor-pointer' :
+                        'hover:bg-gray-50 cursor-pointer'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-gray-800 truncate">{campo.label}</p>
+                          <p className="text-[10px] text-gray-400 font-mono">{campo.nombre}</p>
+                        </div>
+                        <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                          {tieneRegla && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-medium flex items-center gap-0.5">
+                              <CheckCircle2 className="w-2.5 h-2.5" />
+                              {reglas[campo.nombre]?.cobertura_lote != null
+                                ? `${reglas[campo.nombre].cobertura_lote}/${reglas[campo.nombre].total_lote}`
+                                : 'OK'}
+                            </span>
+                          )}
+                          {esValorFijo && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium">
+                              🔒 {campo.valor_fijo}
+                            </span>
+                          )}
+                          {!tieneRegla && !esValorFijo && numSels > 0 && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-blue-100 text-blue-600 rounded-full font-medium">
+                              {numSels} sel.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Mini-matrix de selecciones por póliza */}
+                      {!esValorFijo && polizas.length > 0 && (
+                        <div className="flex gap-0.5 mt-1.5">
+                          {polizas.map((p, i) => {
+                            const sel = sels[p.id];
+                            return (
+                              <div
+                                key={p.id}
+                                title={sel ? `"${sel.texto_seleccionado}"` : p.nombre_archivo}
+                                className={`flex-1 h-1.5 rounded-full ${
+                                  sel ? (sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-gray-200'
+                                }`}
+                              />
+                            );
+                          })}
+                          {Array.from({ length: Math.max(0, 5 - polizas.length) }).map((_, i) => (
+                            <div key={`empty-${i}`} className="flex-1 h-1.5 rounded-full bg-gray-100" />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Expandido: generar regex para este campo */}
+                    {esActivo && !esValorFijo && (
+                      <div className="bg-blue-50 border-b border-blue-100 px-4 py-3 space-y-2">
+                        {/* Selecciones guardadas */}
+                        {numSels > 0 && (
+                          <div className="space-y-1">
+                            {polizas.map((p) => {
+                              const sel = sels[p.id];
+                              if (!sel) return (
+                                <div key={p.id} className="flex items-center gap-1.5 text-[10px] text-gray-400">
+                                  <div className="w-2 h-2 rounded-full bg-gray-200 flex-shrink-0" />
+                                  {p.nombre_archivo.substring(0, 25)} — pendiente
+                                </div>
+                              );
+                              return (
+                                <div key={p.id} className="flex items-center gap-1.5 text-[10px]">
+                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                                  <span className="text-gray-600 truncate">{p.nombre_archivo.substring(0, 20)}</span>
+                                  <code className="font-mono text-blue-700 truncate flex-1">"{sel.texto_seleccionado.substring(0, 20)}"</code>
+                                  {sel.es_auto && <span className="text-amber-600 flex-shrink-0">auto</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Botón generar regex */}
+                        {numSels > 0 && (
+                          <button
+                            onClick={() => handleGenerarRegex(campo.nombre)}
+                            disabled={!!generando}
+                            className="w-full py-1.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
+                          >
+                            {generando === campo.nombre
+                              ? <><SpinIcon />Generando…</>
+                              : <><Sparkles className="w-3.5 h-3.5" />{numSels === 1 ? 'Generar regex (1 ejemplo)' : `Generar regex (${numSels} ejemplos)`}</>
+                            }
+                          </button>
+                        )}
+
+                        {numSels === 0 && (
+                          <p className="text-[10px] text-blue-600 text-center">
+                            Selecciona el valor en el PDF de la izquierda
+                          </p>
+                        )}
+
+                        {/* Resultado del regex */}
+                        {tieneResultado && (
+                          <ResultadoPanel
+                            campo={campo.nombre}
+                            resultado={resultados[campo.nombre]}
+                            regexEditado={regexEditado[campo.nombre] ?? ''}
+                            probando={probando === campo.nombre}
+                            guardando={guardando === campo.nombre}
+                            onChangeRegex={(v) => setRegexEditado((p) => ({ ...p, [campo.nombre]: v }))}
+                            onProbar={() => handleProbarRegex(campo.nombre)}
+                            onGuardar={() => handleGuardarRegla(campo.nombre)}
+                          />
+                        )}
+
+                        {errorMsg && generando === null && (
+                          <div className="flex items-center gap-1.5 p-2 bg-red-50 border border-red-200 rounded-lg text-[10px] text-red-700">
+                            <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                            {errorMsg}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// ── Componentes auxiliares ────────────────────────────────────────────
+// ── Subcomponentes ─────────────────────────────────────────────────────────────
 
-function PdfVisor({ url, onSeleccion }: { url: string; onSeleccion: () => void }) {
+function PdfVisor({ url, width }: { url: string; width: number }) {
   const [numPages, setNumPages] = useState(0);
   const [cargando, setCargando] = useState(true);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pageWidth, setPageWidth] = useState(600);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    setPageWidth(el.clientWidth);
-    const ro = new ResizeObserver((entries) => {
-      setPageWidth(Math.floor(entries[0].contentRect.width));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   return (
-    <div
-      ref={containerRef}
-      onMouseUp={onSeleccion}
-      className="relative w-full h-[560px] overflow-y-auto border border-gray-200 rounded-xl bg-gray-100 select-text"
-    >
+    <div className="relative select-text">
       {cargando && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="text-sm text-gray-400 bg-white px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
+        <div className="absolute inset-0 flex items-center justify-center bg-gray-200 z-10">
+          <span className="text-sm text-gray-500 bg-white px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
         </div>
       )}
       <Document
@@ -965,10 +769,10 @@ function PdfVisor({ url, onSeleccion }: { url: string; onSeleccion: () => void }
         loading={null}
       >
         {Array.from({ length: numPages }, (_, i) => (
-          <div key={i + 1} className={i < numPages - 1 ? 'mb-1 border-b border-gray-300' : ''}>
+          <div key={i + 1} className={i < numPages - 1 ? 'mb-1' : ''}>
             <Page
               pageNumber={i + 1}
-              width={pageWidth}
+              width={width || 520}
               renderTextLayer
               renderAnnotationLayer={false}
             />
@@ -979,117 +783,93 @@ function PdfVisor({ url, onSeleccion }: { url: string; onSeleccion: () => void }
   );
 }
 
-// ── Panel de validación: texto extraído con highlight ─────────────────────────
-
-function TextoValidacion({ texto, seleccion }: { texto: string; seleccion: string }) {
-  const CTX = 260;
-
-  let badge: React.ReactNode = null;
-  let content: React.ReactNode;
-
-  if (!seleccion) {
-    badge = <span className="text-[10px] text-gray-400">Selecciona texto en el PDF ↑</span>;
-    content = (
-      <span className="text-gray-400">
-        {texto.substring(0, 500)}{texto.length > 500 ? '…' : ''}
-      </span>
-    );
-  } else {
-    const idxExact = texto.indexOf(seleccion);
-    const idxLower = texto.toLowerCase().indexOf(seleccion.toLowerCase());
-    const idx = idxExact !== -1 ? idxExact : idxLower;
-    const encontrado = idx !== -1;
-
-    badge = (
-      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 ${
-        encontrado ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-      }`}>
-        {encontrado
-          ? <><CheckCircle2 className="w-3 h-3" />Encontrado en extracción</>
-          : <><AlertCircle className="w-3 h-3" />No encontrado — el regex podría fallar</>
-        }
-      </span>
-    );
-
-    if (!encontrado) {
-      content = (
-        <span className="text-gray-400">
-          {texto.substring(0, 500)}{texto.length > 500 ? '…' : ''}
-        </span>
-      );
-    } else {
-      const start = Math.max(0, idx - CTX);
-      const end = Math.min(texto.length, idx + seleccion.length + CTX);
-      const before = texto.substring(start, idx);
-      const match  = texto.substring(idx, idx + seleccion.length);
-      const after  = texto.substring(idx + seleccion.length, end);
-      content = (
-        <>
-          {start > 0 && <span className="text-gray-400">…</span>}
-          {before}
-          <mark
-            id="extracted-text-highlight"
-            className="bg-yellow-300 text-gray-900 rounded-sm font-semibold not-italic"
-          >
-            {match}
-          </mark>
-          {after}
-          {end < texto.length && <span className="text-gray-400">…</span>}
-        </>
-      );
-    }
-  }
-
-  return (
-    <div className="border border-gray-200 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-100">
-        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1.5">
-          <FileText className="w-3 h-3" />
-          Texto extraído · validación
-        </span>
-        {badge}
-      </div>
-      <pre className="px-3 py-2.5 text-[10px] font-mono text-gray-600 whitespace-pre-wrap leading-relaxed max-h-36 overflow-y-auto bg-white">
-        {content}
-      </pre>
-    </div>
-  );
-}
-
-function TabBtn({ active, onClick, icon, children }: {
-  active: boolean; onClick: () => void;
-  icon: React.ReactNode; children: React.ReactNode;
+function ResultadoPanel({
+  campo, resultado, regexEditado, probando, guardando,
+  onChangeRegex, onProbar, onGuardar,
+}: {
+  campo: string;
+  resultado: ResultadoRegexLote;
+  regexEditado: string;
+  probando: boolean;
+  guardando: boolean;
+  onChangeRegex: (v: string) => void;
+  onProbar: () => void;
+  onGuardar: () => void;
 }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`flex-1 flex items-center justify-center gap-1.5 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
-        active
-          ? 'border-blue-500 text-blue-600 bg-blue-50/50'
-          : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-      }`}
-    >
-      {icon}{children}
-    </button>
-  );
-}
+  const pasaLote = resultado.pasa_lote;
+  const encontrados = resultado.cobertura;
+  const total = resultado.total;
 
-function Paso({ n, ok, label }: { n: number; ok: boolean; label: string }) {
   return (
-    <div className="flex items-center gap-1.5">
-      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${
-        ok ? 'bg-emerald-500 text-white' : 'bg-gray-200 text-gray-500'
-      }`}>
-        {ok ? '✓' : n}
+    <div className="space-y-2 pt-1">
+      {/* Regex editable */}
+      <div>
+        <label className="text-[10px] font-semibold text-purple-700 uppercase">Regex (editable)</label>
+        <input
+          value={regexEditado}
+          onChange={(e) => onChangeRegex(e.target.value)}
+          className="mt-0.5 w-full border border-purple-200 bg-white rounded-lg px-2 py-1.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-purple-400"
+        />
       </div>
-      <span className={`whitespace-nowrap ${ok ? 'text-emerald-600 font-medium' : 'text-gray-400'}`}>{label}</span>
+
+      {/* Explicación */}
+      <p className="text-[10px] text-purple-800 leading-relaxed">{resultado.explicacion}</p>
+
+      {/* Matriz de resultados */}
+      <div className="space-y-0.5">
+        {resultado.matches.map((m) => (
+          <div key={m.poliza_id} className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] ${
+            m.encontrado ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
+          }`}>
+            {m.encontrado
+              ? <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
+              : <XCircle className="w-3 h-3 flex-shrink-0" />
+            }
+            <span className="truncate flex-1">{m.nombre_archivo.substring(0, 22)}</span>
+            {m.encontrado && (
+              <code className="font-mono truncate max-w-[80px]">"{m.valor_extraido}"</code>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Cobertura */}
+      <div className={`text-center text-[10px] font-semibold py-1 rounded-lg ${
+        pasaLote ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+      }`}>
+        {pasaLote
+          ? `✓ Pasa en todas las pólizas (${encontrados}/${total})`
+          : `⚠ Falla en ${total - encontrados} de ${total} pólizas`
+        }
+      </div>
+
+      {/* Acciones */}
+      <div className="flex gap-1.5">
+        <button
+          onClick={onProbar}
+          disabled={probando}
+          className="flex-1 py-1.5 border border-gray-300 hover:bg-gray-50 rounded-lg text-[10px] font-medium text-gray-700 disabled:opacity-40 inline-flex items-center justify-center gap-1"
+        >
+          {probando ? <SpinIcon /> : <RefreshCw className="w-3 h-3" />}
+          Reintentar
+        </button>
+        <button
+          onClick={onGuardar}
+          disabled={guardando || !pasaLote}
+          title={!pasaLote ? 'La regla debe pasar en todas las pólizas del lote' : ''}
+          className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-[10px] font-semibold disabled:cursor-not-allowed inline-flex items-center justify-center gap-1"
+        >
+          {guardando ? <SpinIcon /> : <Save className="w-3 h-3" />}
+          {pasaLote ? 'Guardar regla' : 'No pasa el lote'}
+        </button>
+      </div>
     </div>
   );
 }
 
-function Loader({ className }: { className?: string }) {
+function SpinIcon() {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
+    <svg className="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
     </svg>

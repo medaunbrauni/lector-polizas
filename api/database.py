@@ -40,6 +40,9 @@ def _migrate_add_columns():
         ("subramos",         "patrones_deteccion",   "JSON"),
         ("reglas_extraccion","es_borrador",          "BOOLEAN DEFAULT 0"),
         ("reglas_extraccion","bbox",                 "JSON"),
+        ("reglas_extraccion","ocr_bbox",             "JSON"),
+        ("reglas_extraccion","cobertura_lote",       "INTEGER"),
+        ("reglas_extraccion","total_lote",           "INTEGER"),
     ]
     with engine.connect() as conn:
         for table, col, col_type in migrations:
