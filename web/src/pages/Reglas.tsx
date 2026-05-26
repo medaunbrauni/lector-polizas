@@ -824,18 +824,37 @@ function VisorImagen({
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [imgLoaded, setImgLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [startPt, setStartPt] = useState<{x: number; y: number} | null>(null);
   const [rect, setRect] = useState<{x: number; y: number; w: number; h: number} | null>(null);
   const imgUrl = urlImagenPagina(polizaId, page);
 
-  // Dibuja el rect sobre el canvas
+  // Resetear cuando cambia página o póliza
   useEffect(() => {
+    setImgLoaded(false);
+    setRect(null);
+  }, [polizaId, page]);
+
+  // Sincronizar canvas con imagen
+  function syncCanvas() {
     const canvas = canvasRef.current;
     const img = imgRef.current;
-    if (!canvas || !img) return;
+    if (!canvas || !img || !img.naturalWidth) return;
     canvas.width = img.offsetWidth;
     canvas.height = img.offsetHeight;
+  }
+
+  function handleImgLoad() {
+    syncCanvas();
+    setImgLoaded(true);
+  }
+
+  // Redibujar rect cuando cambia o imagen carga
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !imgLoaded) return;
+    syncCanvas();
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -844,10 +863,10 @@ function VisorImagen({
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 3]);
       ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
-      ctx.fillStyle = 'rgba(37,99,235,0.08)';
+      ctx.fillStyle = 'rgba(37,99,235,0.10)';
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
-  }, [rect]);
+  }, [rect, imgLoaded]);
 
   function getPt(e: React.MouseEvent<HTMLCanvasElement>) {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -875,6 +894,7 @@ function VisorImagen({
     const pt = getPt(e);
     const iw = imgRef.current.offsetWidth;
     const ih = imgRef.current.offsetHeight;
+    if (!iw || !ih) return;
     const x0 = Math.min(startPt.x, pt.x) / iw;
     const y0 = Math.min(startPt.y, pt.y) / ih;
     const x1 = Math.max(startPt.x, pt.x) / iw;
@@ -905,12 +925,18 @@ function VisorImagen({
         </div>
       )}
 
+      {/* Spinner mientras carga */}
+      {!imgLoaded && (
+        <div className="text-xs text-gray-400 py-4">Cargando imagen…</div>
+      )}
+
       {/* Imagen con canvas superpuesto */}
-      <div className="relative inline-block shadow-md rounded overflow-hidden">
+      <div className={`relative inline-block shadow-md rounded overflow-hidden ${!imgLoaded ? 'opacity-0 h-0' : ''}`}>
         <img
           ref={imgRef}
           src={imgUrl}
           alt={`Página ${page}`}
+          onLoad={handleImgLoad}
           className="block max-w-full"
           draggable={false}
         />
