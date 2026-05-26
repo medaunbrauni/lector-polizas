@@ -207,6 +207,17 @@ export function urlPdfEntrenamiento(polizaId: number) {
   return `${BASE}/entrenamiento/polizas/${polizaId}/pdf`;
 }
 
+export function urlImagenPagina(polizaId: number, page: number, escala = 2.0) {
+  return `${BASE}/entrenamiento/polizas/${polizaId}/pagina/${page}/imagen?escala=${escala}`;
+}
+
+export async function getTextoPdf(polizaId: number): Promise<string> {
+  const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}/texto`);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  const data = await res.json();
+  return data.texto as string;
+}
+
 export async function eliminarPolizaEntrenamiento(polizaId: number) {
   const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}`, { method: 'DELETE' });
   if (!res.ok) throw new Error(`Error ${res.status}`);

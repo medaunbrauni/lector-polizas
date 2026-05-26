@@ -6,7 +6,8 @@ import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
   subirPolizasEntrenamiento, eliminarPolizaEntrenamiento,
-  urlPdfEntrenamiento, guardarSeleccion, eliminarSeleccion,
+  urlPdfEntrenamiento, urlImagenPagina, getTextoPdf,
+  guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
 } from '../lib/api';
 import type {
@@ -16,7 +17,7 @@ import type {
 import {
   Upload, Trash2, ChevronLeft, ChevronRight, ScanSearch,
   Zap, CheckCircle2, XCircle, AlertCircle, RefreshCw,
-  FileText, MousePointer2, Sparkles, Save, Eye,
+  FileText, MousePointer2, Sparkles, Save, Image,
 } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -66,6 +67,18 @@ export default function Reglas() {
   const [detectando, setDetectando] = useState(false);
   const [detectMsg, setDetectMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const pendingAutoSelect = useRef<{ ramo_id: number; subramo_id: number } | null>(null);
+
+  // ── Modo imagen / OCR ──────────────────────────────────────────────────────
+  const [modoImagen, setModoImagen] = useState(false);
+  const [paginaImagen, setPaginaImagen] = useState(1);
+  const [textoPdfActivo, setTextoPdfActivo] = useState('');
+  const [mostrarTexto, setMostrarTexto] = useState(false);
+  // Bbox dibujado manualmente sobre la imagen
+  const [ocrBboxDibujando, setOcrBboxDibujando] = useState(false);
+  const [ocrBboxStart, setOcrBboxStart] = useState<{x: number; y: number} | null>(null);
+  const [ocrBbox, setOcrBbox] = useState<{x0: number; y0: number; x1: number; y1: number; page: number} | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   // ── Refs ───────────────────────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -145,12 +158,14 @@ export default function Reglas() {
   // ── Póliza activa ──────────────────────────────────────────────────────────
   const polizaActiva = polizas[polizaIdx] ?? null;
   const pdfUrl = polizaActiva ? urlPdfEntrenamiento(polizaActiva.id) : null;
-  const textoPolizaActiva: string = (() => {
-    // Buscamos en el estado de selecciones para obtener contexto
-    // El texto real no se carga al frontend (puede ser grande); se usa solo para validación inline
-    // Lo reconstruimos desde selecciones si está disponible
-    return '';
-  })();
+
+  // Cargar texto extraído cuando cambia la póliza activa
+  useEffect(() => {
+    if (!polizaActiva) { setTextoPdfActivo(''); return; }
+    getTextoPdf(polizaActiva.id)
+      .then(setTextoPdfActivo)
+      .catch(() => setTextoPdfActivo(''));
+  }, [polizaActiva?.id]);
 
   // ── Subir pólizas al lote ──────────────────────────────────────────────────
   async function handleSubirPolizas(e: React.ChangeEvent<HTMLInputElement>) {
@@ -506,30 +521,75 @@ export default function Reglas() {
                   <ChevronRight className="w-4 h-4" />
                 </button>
 
+                {/* Toggle PDF texto / Imagen */}
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                  <button
+                    onClick={() => setModoImagen(false)}
+                    className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${!modoImagen ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    <FileText className="w-3 h-3" />PDF
+                  </button>
+                  <button
+                    onClick={() => setModoImagen(true)}
+                    className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${modoImagen ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                  >
+                    <Image className="w-3 h-3" />Imagen
+                  </button>
+                </div>
+
+                {/* Toggle texto extraído */}
+                <button
+                  onClick={() => setMostrarTexto((v) => !v)}
+                  className={`px-2.5 py-1 rounded-lg text-xs flex items-center gap-1 transition-colors border ${mostrarTexto ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <FileText className="w-3 h-3" />
+                  Texto extraído
+                </button>
+
                 {/* Campo activo badge */}
                 {campoActivo && (
                   <div className="flex items-center gap-1.5 px-2.5 py-1 bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold">
                     <MousePointer2 className="w-3 h-3" />
-                    Seleccionando: {campos.find((c) => c.nombre === campoActivo)?.label ?? campoActivo}
+                    {campos.find((c) => c.nombre === campoActivo)?.label ?? campoActivo}
                   </div>
                 )}
               </div>
             )}
 
-            {/* Visor PDF */}
+            {/* Visor principal */}
             <div
               ref={containerRef}
-              className="flex-1 overflow-y-auto bg-gray-200 relative"
-              onMouseUp={polizaActiva ? handleSeleccion : undefined}
+              className="flex-1 overflow-y-auto bg-gray-200 relative min-h-0"
+              onMouseUp={(!modoImagen && polizaActiva) ? handleSeleccion : undefined}
             >
               {!polizaActiva ? (
                 <div className="flex items-center justify-center h-full text-gray-400 text-sm">
                   Agrega pólizas al lote para empezar
                 </div>
+              ) : modoImagen ? (
+                <VisorImagen
+                  polizaId={polizaActiva.id}
+                  page={paginaImagen}
+                  totalPages={polizaActiva.paginas ?? 1}
+                  onPageChange={setPaginaImagen}
+                  ocrBbox={ocrBbox}
+                  onBboxChange={setOcrBbox}
+                  campoActivo={campoActivo}
+                />
               ) : (
                 <PdfVisor url={pdfUrl!} width={pageWidth} />
               )}
             </div>
+
+            {/* Panel texto extraído con highlight */}
+            {mostrarTexto && polizaActiva && (
+              <div className="border-t border-gray-200 bg-white flex-shrink-0">
+                <TextoExtraido
+                  texto={textoPdfActivo}
+                  highlight={textoSeleccionado}
+                />
+              </div>
+            )}
 
             {/* Panel de selección capturada */}
             {polizaActiva && campoActivo && (
@@ -750,6 +810,184 @@ export default function Reglas() {
 }
 
 // ── Subcomponentes ─────────────────────────────────────────────────────────────
+
+// ── Visor de imagen (modo OCR) ─────────────────────────────────────────────────
+
+function VisorImagen({
+  polizaId, page, totalPages, onPageChange, ocrBbox, onBboxChange, campoActivo,
+}: {
+  polizaId: number; page: number; totalPages: number;
+  onPageChange: (p: number) => void;
+  ocrBbox: { x0: number; y0: number; x1: number; y1: number; page: number } | null;
+  onBboxChange: (b: { x0: number; y0: number; x1: number; y1: number; page: number } | null) => void;
+  campoActivo: string;
+}) {
+  const imgRef = useRef<HTMLImageElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [startPt, setStartPt] = useState<{x: number; y: number} | null>(null);
+  const [rect, setRect] = useState<{x: number; y: number; w: number; h: number} | null>(null);
+  const imgUrl = urlImagenPagina(polizaId, page);
+
+  // Dibuja el rect sobre el canvas
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const img = imgRef.current;
+    if (!canvas || !img) return;
+    canvas.width = img.offsetWidth;
+    canvas.height = img.offsetHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (rect) {
+      ctx.strokeStyle = '#2563eb';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 3]);
+      ctx.strokeRect(rect.x, rect.y, rect.w, rect.h);
+      ctx.fillStyle = 'rgba(37,99,235,0.08)';
+      ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
+    }
+  }, [rect]);
+
+  function getPt(e: React.MouseEvent<HTMLCanvasElement>) {
+    const r = canvasRef.current!.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function handleMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!campoActivo) return;
+    const pt = getPt(e);
+    setStartPt(pt);
+    setDragging(true);
+    setRect(null);
+    onBboxChange(null);
+  }
+
+  function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!dragging || !startPt) return;
+    const pt = getPt(e);
+    setRect({ x: Math.min(startPt.x, pt.x), y: Math.min(startPt.y, pt.y), w: Math.abs(pt.x - startPt.x), h: Math.abs(pt.y - startPt.y) });
+  }
+
+  function handleMouseUp(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (!dragging || !startPt || !imgRef.current) return;
+    setDragging(false);
+    const pt = getPt(e);
+    const iw = imgRef.current.offsetWidth;
+    const ih = imgRef.current.offsetHeight;
+    const x0 = Math.min(startPt.x, pt.x) / iw;
+    const y0 = Math.min(startPt.y, pt.y) / ih;
+    const x1 = Math.max(startPt.x, pt.x) / iw;
+    const y1 = Math.max(startPt.y, pt.y) / ih;
+    if (x1 - x0 > 0.01 && y1 - y0 > 0.01) {
+      onBboxChange({ x0, y0, x1, y1, page });
+    }
+  }
+
+  return (
+    <div className="flex flex-col items-center py-2 gap-2">
+      {/* Navegación de página */}
+      <div className="flex items-center gap-2 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1 shadow-sm">
+        <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="disabled:opacity-30 hover:text-blue-600">‹</button>
+        <span>Página {page} / {totalPages}</span>
+        <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="disabled:opacity-30 hover:text-blue-600">›</button>
+      </div>
+
+      {!campoActivo && (
+        <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1">
+          Elige un campo en el panel derecho para empezar a dibujar el área
+        </div>
+      )}
+      {campoActivo && (
+        <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1">
+          Arrastra para marcar el área donde aparece el valor
+          {ocrBbox && <span className="ml-2 font-semibold text-emerald-600">✓ Área capturada</span>}
+        </div>
+      )}
+
+      {/* Imagen con canvas superpuesto */}
+      <div className="relative inline-block shadow-md rounded overflow-hidden">
+        <img
+          ref={imgRef}
+          src={imgUrl}
+          alt={`Página ${page}`}
+          className="block max-w-full"
+          draggable={false}
+        />
+        <canvas
+          ref={canvasRef}
+          className={`absolute inset-0 w-full h-full ${campoActivo ? 'cursor-crosshair' : 'cursor-default'}`}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ── Panel de texto extraído con highlight ─────────────────────────────────────
+
+function TextoExtraido({ texto, highlight }: { texto: string; highlight: string }) {
+  const CTX = 300;
+
+  if (!texto) {
+    return (
+      <div className="px-4 py-3 text-xs text-gray-400 italic">Sin texto extraído disponible para esta póliza.</div>
+    );
+  }
+
+  let header: React.ReactNode;
+  let content: React.ReactNode;
+
+  if (!highlight) {
+    header = <span className="text-gray-400">Selecciona texto en el PDF para validar ↑</span>;
+    content = <span className="text-gray-500">{texto.substring(0, 600)}{texto.length > 600 ? '…' : ''}</span>;
+  } else {
+    const idx = texto.indexOf(highlight) !== -1 ? texto.indexOf(highlight) : texto.toLowerCase().indexOf(highlight.toLowerCase());
+    const encontrado = idx !== -1;
+
+    header = (
+      <span className={`font-medium px-2 py-0.5 rounded-full flex items-center gap-1 ${encontrado ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+        {encontrado
+          ? <><CheckCircle2 className="w-3 h-3" />Encontrado — el regex lo capturará</>
+          : <><AlertCircle className="w-3 h-3" />No encontrado en el texto extraído</>}
+      </span>
+    );
+
+    if (!encontrado) {
+      content = <span className="text-gray-500">{texto.substring(0, 600)}{texto.length > 600 ? '…' : ''}</span>;
+    } else {
+      const start = Math.max(0, idx - CTX);
+      const end = Math.min(texto.length, idx + highlight.length + CTX);
+      content = (
+        <>
+          {start > 0 && <span className="text-gray-400">…</span>}
+          {texto.substring(start, idx)}
+          <mark id="extracted-highlight" className="bg-yellow-300 text-gray-900 rounded-sm font-semibold not-italic">
+            {texto.substring(idx, idx + highlight.length)}
+          </mark>
+          {texto.substring(idx + highlight.length, end)}
+          {end < texto.length && <span className="text-gray-400">…</span>}
+        </>
+      );
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100">
+        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+          <FileText className="w-3 h-3" />Texto extraído · validación
+        </span>
+        <span className="text-[10px]">{header}</span>
+      </div>
+      <pre className="px-4 py-2 text-[10px] font-mono text-gray-600 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
+        {content}
+      </pre>
+    </div>
+  );
+}
 
 function PdfVisor({ url, width }: { url: string; width: number }) {
   const [numPages, setNumPages] = useState(0);

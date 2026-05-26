@@ -7,9 +7,11 @@ import os
 import uuid
 from pathlib import Path
 
+import base64
 import pdfplumber
+import pypdfium2
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -201,6 +203,20 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
     if not p:
         raise HTTPException(404, "Póliza no encontrada")
 
+    # Auto-calcular contexto desde el texto extraído del PDF
+    contexto = data.contexto
+    if p.texto_pdf and data.texto_seleccionado:
+        CTX = 350
+        texto = p.texto_pdf
+        idx = texto.lower().find(data.texto_seleccionado.lower())
+        if idx != -1:
+            start = max(0, idx - CTX)
+            end = min(len(texto), idx + len(data.texto_seleccionado) + CTX)
+            contexto = texto[start:end]
+        else:
+            # No se encontró literal: dar el texto seleccionado como mínimo contexto
+            contexto = data.texto_seleccionado
+
     # Upsert
     existente = (
         db.query(SeleccionCampo)
@@ -212,12 +228,19 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
     )
     if existente:
         existente.texto_seleccionado = data.texto_seleccionado
-        existente.contexto = data.contexto
+        existente.contexto = contexto
         existente.bbox = data.bbox
         existente.es_auto = data.es_auto
         sel = existente
     else:
-        sel = SeleccionCampo(**data.model_dump())
+        sel = SeleccionCampo(
+            poliza_id=data.poliza_id,
+            nombre_campo=data.nombre_campo,
+            texto_seleccionado=data.texto_seleccionado,
+            contexto=contexto,
+            bbox=data.bbox,
+            es_auto=data.es_auto,
+        )
         db.add(sel)
 
     db.commit()
@@ -385,6 +408,60 @@ def guardar_regla(subramo_id: int, data: GuardarReglaIn, db: Session = Depends(g
     db.commit()
     db.refresh(regla)
     return {"ok": True, "regla_id": regla.id}
+
+
+# ── Texto extraído de una póliza ─────────────────────────────────────────────
+
+@router.get("/polizas/{poliza_id}/texto")
+def texto_poliza(poliza_id: int, db: Session = Depends(get_db)):
+    """Retorna el texto extraído de una póliza de entrenamiento."""
+    p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == poliza_id).first()
+    if not p:
+        raise HTTPException(404)
+    return {"texto": p.texto_pdf or "", "paginas": p.paginas}
+
+
+# ── Renderizado de página como imagen ─────────────────────────────────────────
+
+@router.get("/polizas/{poliza_id}/pagina/{page_num}/imagen")
+def imagen_pagina(poliza_id: int, page_num: int, escala: float = 2.0, db: Session = Depends(get_db)):
+    """
+    Renderiza una página del PDF como imagen PNG usando pypdfium2.
+    page_num es 1-based. escala controla la resolución (2.0 = ~150 DPI).
+    """
+    p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == poliza_id).first()
+    if not p:
+        raise HTTPException(404)
+    if not os.path.exists(p.ruta_archivo):
+        raise HTTPException(404, "Archivo no encontrado en disco")
+
+    try:
+        doc = pypdfium2.PdfDocument(p.ruta_archivo)
+        if page_num < 1 or page_num > len(doc):
+            raise HTTPException(400, f"Página {page_num} fuera de rango (total: {len(doc)})")
+
+        page = doc[page_num - 1]
+        bitmap = page.render(scale=escala)
+        pil_image = bitmap.to_pil()
+
+        buf = io.BytesIO()
+        pil_image.save(buf, format="PNG", optimize=True)
+        buf.seek(0)
+
+        return Response(
+            content=buf.getvalue(),
+            media_type="image/png",
+            headers={
+                "X-Page-Width": str(int(page.get_width() * escala)),
+                "X-Page-Height": str(int(page.get_height() * escala)),
+                "X-Total-Pages": str(len(doc)),
+                "Access-Control-Expose-Headers": "X-Page-Width, X-Page-Height, X-Total-Pages",
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Error al renderizar: {e}")
 
 
 # ── Estado completo del lote ──────────────────────────────────────────────────
