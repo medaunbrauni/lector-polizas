@@ -365,7 +365,7 @@ export default function Reglas() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-full min-h-screen bg-gray-50">
+    <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
 
       {/* ── Header ── */}
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center gap-4 flex-wrap">
@@ -420,7 +420,7 @@ export default function Reglas() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* ══ Panel izquierdo: Lote de pólizas ══ */}
           <div className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
@@ -556,32 +556,36 @@ export default function Reglas() {
               </div>
             )}
 
-            {/* Visor principal */}
+            {/* Visor principal — flex-1 para ocupar espacio restante */}
             <div
               ref={containerRef}
-              className="flex-1 overflow-y-auto bg-gray-200 relative min-h-0"
+              className="flex-1 min-h-0 relative"
               onMouseUp={(!modoImagen && polizaActiva) ? handleSeleccion : undefined}
             >
               {!polizaActiva ? (
-                <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                <div className="flex items-center justify-center h-full text-gray-400 text-sm bg-gray-200">
                   Agrega pólizas al lote para empezar
                 </div>
               ) : modoImagen ? (
-                <VisorImagen
-                  polizaId={polizaActiva.id}
-                  page={paginaImagen}
-                  totalPages={polizaActiva.paginas ?? 1}
-                  onPageChange={setPaginaImagen}
-                  ocrBbox={ocrBbox}
-                  onBboxChange={setOcrBbox}
-                  campoActivo={campoActivo}
-                />
+                <div className="h-full overflow-y-auto bg-gray-200">
+                  <VisorImagen
+                    polizaId={polizaActiva.id}
+                    page={paginaImagen}
+                    totalPages={polizaActiva.paginas ?? 1}
+                    onPageChange={setPaginaImagen}
+                    ocrBbox={ocrBbox}
+                    onBboxChange={setOcrBbox}
+                    campoActivo={campoActivo}
+                  />
+                </div>
               ) : (
-                <PdfVisor url={pdfUrl!} width={pageWidth} />
+                <div className="h-full">
+                  <PdfVisor url={pdfUrl!} width={pageWidth} />
+                </div>
               )}
             </div>
 
-            {/* Panel texto extraído con highlight */}
+            {/* Panel texto extraído — fijo debajo del visor */}
             {mostrarTexto && polizaActiva && (
               <div className="border-t border-gray-200 bg-white flex-shrink-0">
                 <TextoExtraido
@@ -591,7 +595,7 @@ export default function Reglas() {
               </div>
             )}
 
-            {/* Panel de selección capturada */}
+            {/* Botón guardar selección — SIEMPRE visible cuando hay campo activo */}
             {polizaActiva && campoActivo && (
               <div className="bg-white border-t border-gray-200 px-4 py-3 space-y-2">
                 {textoSeleccionado ? (
@@ -1017,32 +1021,52 @@ function TextoExtraido({ texto, highlight }: { texto: string; highlight: string 
 
 function PdfVisor({ url, width }: { url: string; width: number }) {
   const [numPages, setNumPages] = useState(0);
+  const [pagina, setPagina] = useState(1);
   const [cargando, setCargando] = useState(true);
 
+  // Al cambiar de póliza (url), volver a página 1
+  useEffect(() => { setPagina(1); setCargando(true); }, [url]);
+
   return (
-    <div className="relative select-text">
-      {cargando && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-200 z-10">
-          <span className="text-sm text-gray-500 bg-white px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
+    <div className="flex flex-col h-full">
+      {/* Navegación de páginas */}
+      {numPages > 1 && (
+        <div className="flex items-center justify-center gap-3 py-1.5 bg-gray-100 border-b border-gray-300 flex-shrink-0 select-none">
+          <button
+            onClick={() => setPagina((p) => Math.max(1, p - 1))}
+            disabled={pagina <= 1}
+            className="px-2.5 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded-md transition-colors"
+          >‹ Anterior</button>
+          <span className="text-xs font-medium text-gray-600">Página {pagina} / {numPages}</span>
+          <button
+            onClick={() => setPagina((p) => Math.min(numPages, p + 1))}
+            disabled={pagina >= numPages}
+            className="px-2.5 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded-md transition-colors"
+          >Siguiente ›</button>
         </div>
       )}
-      <Document
-        file={url}
-        onLoadSuccess={({ numPages }) => { setNumPages(numPages); setCargando(false); }}
-        onLoadError={() => setCargando(false)}
-        loading={null}
-      >
-        {Array.from({ length: numPages }, (_, i) => (
-          <div key={i + 1} className={i < numPages - 1 ? 'mb-1' : ''}>
-            <Page
-              pageNumber={i + 1}
-              width={width || 520}
-              renderTextLayer
-              renderAnnotationLayer={false}
-            />
+
+      {/* Página actual — scroll vertical dentro del visor */}
+      <div className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-gray-200">
+        {cargando && (
+          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+            <span className="text-sm text-gray-500 bg-white px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
           </div>
-        ))}
-      </Document>
+        )}
+        <Document
+          file={url}
+          onLoadSuccess={({ numPages }) => { setNumPages(numPages); setCargando(false); }}
+          onLoadError={() => setCargando(false)}
+          loading={null}
+        >
+          <Page
+            pageNumber={pagina}
+            width={width || 700}
+            renderTextLayer
+            renderAnnotationLayer={false}
+          />
+        </Document>
+      </div>
     </div>
   );
 }
