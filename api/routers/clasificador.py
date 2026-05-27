@@ -15,6 +15,7 @@ from ..config import MAX_FILE_MB, UPLOAD_FOLDER
 from ..database import get_db
 from ..models.db_models import ClasificacionCola, Compania, Ramo, Subramo
 from ..services.clasificador_service import (
+    dedup_carpeta,
     enviar_a_entrenamiento,
     extraer_texto_pdf,
     guardar_patrones_aprobados,
@@ -119,6 +120,19 @@ async def upload_pdfs(
 
         dest.write_bytes(contenido)
 
+        # ── Dedup carpeta: eliminar si ya existe un archivo con mismo contenido ──
+        eliminados = dedup_carpeta(UPLOAD_FOLDER)
+        if dest.name in eliminados:
+            # El archivo que acabamos de escribir fue eliminado porque ya existía
+            # uno anterior idéntico. Buscamos ese original en la cola.
+            existente = db.query(ClasificacionCola).filter(ClasificacionCola.sha256 == sha).first()
+            resultados.append({
+                "archivo": nombre_original,
+                "advertencia": "Duplicado eliminado — ya existía en la carpeta",
+                "item": _item_schema(existente, db) if existente else None,
+            })
+            continue
+
         # ── Extraer texto ────────────────────────────────────────────────────
         try:
             texto, paginas = extraer_texto_pdf(str(dest))
@@ -177,6 +191,16 @@ def get_info():
         "carpeta": UPLOAD_FOLDER,
         "watcher": estado_watcher(),
     }
+
+
+@router.post("/dedup")
+def dedup_manual():
+    """
+    Escanea la carpeta de entrada y elimina PDFs duplicados (mismo contenido).
+    Conserva el archivo más antiguo de cada grupo.
+    """
+    eliminados = dedup_carpeta(UPLOAD_FOLDER)
+    return {"eliminados": eliminados, "total": len(eliminados)}
 
 
 # ── Confirmar ─────────────────────────────────────────────────────────────────

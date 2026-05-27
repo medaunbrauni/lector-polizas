@@ -29,6 +29,46 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def dedup_carpeta(carpeta: str) -> list[str]:
+    """
+    Escanea `carpeta` y elimina PDFs con contenido duplicado (mismo SHA-256).
+    Por cada grupo de duplicados conserva el archivo con fecha de modificación
+    más antigua (el "original") y borra los demás.
+
+    Retorna la lista de nombres de archivos eliminados.
+    """
+    folder = Path(carpeta)
+    if not folder.exists():
+        return []
+
+    # Agrupa rutas por hash
+    grupos: dict[str, list[Path]] = {}
+    for pdf in folder.glob("*.pdf"):
+        if not pdf.is_file():
+            continue
+        try:
+            sha = sha256_file(str(pdf))
+        except OSError:
+            continue
+        grupos.setdefault(sha, []).append(pdf)
+
+    eliminados: list[str] = []
+    for sha, archivos in grupos.items():
+        if len(archivos) < 2:
+            continue
+        # Ordenar: más antiguo primero (menor mtime = original)
+        archivos.sort(key=lambda p: p.stat().st_mtime)
+        # Conservar el primero, borrar el resto
+        for duplicado in archivos[1:]:
+            try:
+                duplicado.unlink()
+                eliminados.append(duplicado.name)
+            except OSError:
+                pass
+
+    return eliminados
+
+
 def sha256_file(ruta: str) -> str:
     h = hashlib.sha256()
     with open(ruta, "rb") as f:

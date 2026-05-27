@@ -46,8 +46,18 @@ class _PDFHandler(FileSystemEventHandler):
             from ..database import SessionLocal
             from ..models.db_models import ClasificacionCola
             from ..services.clasificador_service import (
-                sha256_file, extraer_texto_pdf, procesar_pdf,
+                sha256_file, extraer_texto_pdf, procesar_pdf, dedup_carpeta,
             )
+
+            # Dedup: si este archivo es duplicado de otro en la carpeta, se borra
+            carpeta = str(Path(ruta).parent)
+            eliminados = dedup_carpeta(carpeta)
+            if eliminados:
+                logger.info("[watcher] Duplicados eliminados: %s", eliminados)
+            # Si el propio archivo fue eliminado como duplicado, salir
+            if Path(ruta).name in eliminados:
+                logger.info("[watcher] Archivo %s era duplicado y fue eliminado.", ruta)
+                return
 
             sha = sha256_file(ruta)
             db = SessionLocal()
