@@ -142,6 +142,57 @@ class SeleccionCampo(Base):
     poliza = relationship("PolizaEntrenamiento", back_populates="selecciones")
 
 
+class ClasificacionCola(Base):
+    """Cola de PDFs subidos para clasificación antes de ir a entrenamiento."""
+    __tablename__ = "clasificacion_cola"
+    id = Column(Integer, primary_key=True)
+    nombre_archivo = Column(String(255), nullable=False)
+    ruta_archivo = Column(String(512), nullable=False)
+    sha256 = Column(String(64), unique=True, nullable=False)
+    texto_pdf = Column(Text, nullable=True)
+    paginas = Column(Integer, nullable=True)
+
+    # Estado: pendiente | clasificado | requiere_manual | confirmado | enviado | error
+    estado = Column(String(30), default="pendiente")
+    error_msg = Column(Text, nullable=True)
+
+    # Clasificación propuesta (detector o IA)
+    compania_id_prop = Column(Integer, ForeignKey("companias.id"), nullable=True)
+    ramo_id_prop = Column(Integer, ForeignKey("ramos.id"), nullable=True)
+    subramo_id_prop = Column(Integer, ForeignKey("subramos.id"), nullable=True)
+    confianza = Column(String(20), nullable=True)    # alta | media | baja | sin_datos
+    metodo = Column(String(20), nullable=True)        # detector | ia
+    razon_ia = Column(Text, nullable=True)
+    es_compania_nueva = Column(Boolean, default=False)
+    compania_nombre_ia = Column(String(120), nullable=True)
+    ramo_nombre_ia = Column(String(120), nullable=True)
+    subramo_nombre_ia = Column(String(120), nullable=True)
+
+    # Clasificación final (confirmada por usuario)
+    compania_id_final = Column(Integer, ForeignKey("companias.id"), nullable=True)
+    ramo_id_final = Column(Integer, ForeignKey("ramos.id"), nullable=True)
+    subramo_id_final = Column(Integer, ForeignKey("subramos.id"), nullable=True)
+
+    # Patrones de detección generados por IA (para revisión)
+    patrones_generados = Column(JSON, nullable=True)
+    patrones_guardados = Column(Boolean, default=False)
+
+    # Referencia al entrenamiento al que fue enviado
+    poliza_entrenamiento_id = Column(Integer, ForeignKey("polizas_entrenamiento.id"), nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CarpetaVigilada(Base):
+    """Carpetas cuya actividad vigila el watchdog."""
+    __tablename__ = "carpetas_vigiladas"
+    id = Column(Integer, primary_key=True)
+    ruta = Column(String(512), unique=True, nullable=False)
+    activa = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class Extraccion(Base):
     """Historial de cada PDF procesado."""
     __tablename__ = "extracciones"

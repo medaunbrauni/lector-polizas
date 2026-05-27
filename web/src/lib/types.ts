@@ -223,6 +223,67 @@ export interface ResultadoDeteccion {
   texto_pdf?: string;
 }
 
+// ── Clasificador ──────────────────────────────────────────────────────────────
+
+export type EstadoCola =
+  | 'pendiente'
+  | 'clasificado'
+  | 'requiere_manual'
+  | 'confirmado'
+  | 'enviado'
+  | 'error';
+
+export interface ItemCola {
+  id: number;
+  nombre_archivo: string;
+  paginas: number | null;
+  estado: EstadoCola;
+  error_msg: string | null;
+  confianza: NivelConfianza | null;
+  metodo: 'detector' | 'ia' | null;
+  razon_ia: string | null;
+  es_compania_nueva: boolean;
+  compania_nombre_ia: string | null;
+  ramo_nombre_ia: string | null;
+  subramo_nombre_ia: string | null;
+  // Propuesta
+  compania_id_prop: number | null;
+  compania_prop: string | null;
+  ramo_id_prop: number | null;
+  ramo_prop: string | null;
+  subramo_id_prop: number | null;
+  subramo_prop: string | null;
+  // Final
+  compania_id_final: number | null;
+  compania_final: string | null;
+  ramo_id_final: number | null;
+  ramo_final: string | null;
+  subramo_id_final: number | null;
+  subramo_final: string | null;
+  // Patrones
+  patrones_generados: {
+    compania: string[];
+    ramo: string[];
+    subramo: string[];
+    explicacion: string;
+  } | null;
+  patrones_guardados: boolean;
+  poliza_entrenamiento_id: number | null;
+  created_at: string | null;
+}
+
+export interface ResultadoUpload {
+  archivo: string;
+  error?: string;
+  advertencia?: string;
+  item?: ItemCola;
+}
+
+export interface InfoClasificador {
+  carpeta: string;
+  watcher: { activo: boolean };
+}
+
 export interface PatronesGenerados {
   compania: string[];
   ramo: string[];

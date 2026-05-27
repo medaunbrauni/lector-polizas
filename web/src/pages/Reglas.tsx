@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import Clasificador from '../components/reglas/Clasificador';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -89,6 +90,9 @@ export default function Reglas() {
   const loteInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageWidth, setPageWidth] = useState(520);
+
+  // ── Tab activo ─────────────────────────────────────────────────────────────
+  const [tabActivo, setTabActivo] = useState<'reglas' | 'clasificador'>('reglas');
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => { getCompanias().then(setCompanias); }, []);
@@ -449,28 +453,68 @@ export default function Reglas() {
       {/* ── Header ── */}
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center gap-4 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-gray-900">Entrenamiento de Reglas</h1>
-          <p className="text-xs text-gray-400">Sube pólizas, selecciona valores, genera regex que funcionen en todo el lote</p>
+          <h1 className="text-lg font-bold text-gray-900">Reglas</h1>
+          <p className="text-xs text-gray-400">
+            {tabActivo === 'clasificador'
+              ? 'Sube pólizas, clasifícalas con IA y envíalas al entrenamiento automáticamente'
+              : 'Sube pólizas, selecciona valores, genera regex que funcionen en todo el lote'}
+          </p>
         </div>
 
-        {/* Detectar módulo */}
-        <div className="ml-auto flex items-center gap-3">
-          <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleDetectarPDF} />
+        {/* ── Tabs ── */}
+        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
           <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={detectando}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors"
+            onClick={() => setTabActivo('clasificador')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tabActivo === 'clasificador'
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
           >
-            <ScanSearch className="w-3.5 h-3.5" />
-            {detectando ? 'Analizando…' : 'Detectar con PDF'}
+            Clasificador
           </button>
-          {detectMsg && (
-            <span className={`text-xs font-medium ${detectMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
-              {detectMsg.ok ? '✓' : '✕'} {detectMsg.texto}
-            </span>
-          )}
+          <button
+            onClick={() => setTabActivo('reglas')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              tabActivo === 'reglas'
+                ? 'bg-white text-blue-700 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Entrenamiento
+          </button>
         </div>
+
+        {/* Detectar módulo (solo en tab Entrenamiento) */}
+        {tabActivo === 'reglas' && (
+          <div className="ml-auto flex items-center gap-3">
+            <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleDetectarPDF} />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={detectando}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              <ScanSearch className="w-3.5 h-3.5" />
+              {detectando ? 'Analizando…' : 'Detectar con PDF'}
+            </button>
+            {detectMsg && (
+              <span className={`text-xs font-medium ${detectMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+                {detectMsg.ok ? '✓' : '✕'} {detectMsg.texto}
+              </span>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* ── Tab Clasificador ── */}
+      {tabActivo === 'clasificador' && (
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          <Clasificador companias={companias} />
+        </div>
+      )}
+
+      {/* ── Tab Entrenamiento ── */}
+      {tabActivo === 'reglas' && (<>
 
       {/* ── Selector compañía / ramo / subramo ── */}
       <div className="px-6 py-3 bg-white border-b border-gray-100 flex gap-3">
@@ -910,6 +954,8 @@ export default function Reglas() {
           </div>
         </div>
       )}
+    </>)} {/* fin tab Entrenamiento */}
+
     </div>
   );
 }

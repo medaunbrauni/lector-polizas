@@ -331,3 +331,80 @@ export async function generarYGuardarPatrones(subramo_id: number, texto_pdf: str
   }
   return res.json() as Promise<import('./types').PatronesGenerados>;
 }
+
+// ── Clasificador ──────────────────────────────────────────────────────────────
+
+import type { ItemCola, ResultadoUpload, InfoClasificador } from './types';
+
+export async function clasificadorInfo(): Promise<InfoClasificador> {
+  const res = await fetch(`${BASE}/clasificador/info`);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function uploadClasificador(files: File[]): Promise<ResultadoUpload[]> {
+  const form = new FormData();
+  files.forEach((f) => form.append('archivos', f));
+  const res = await fetch(`${BASE}/clasificador/upload`, { method: 'POST', body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function getColaClasificador(estado?: string): Promise<ItemCola[]> {
+  const url = estado
+    ? `${BASE}/clasificador/cola?estado=${estado}`
+    : `${BASE}/clasificador/cola`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function confirmarItemCola(
+  id: number,
+  override?: { compania_id?: number; ramo_id?: number; subramo_id?: number },
+  enviar = true,
+): Promise<ItemCola> {
+  const res = await fetch(`${BASE}/clasificador/cola/${id}/confirmar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      compania_id: override?.compania_id ?? null,
+      ramo_id:     override?.ramo_id     ?? null,
+      subramo_id:  override?.subramo_id  ?? null,
+      enviar_entrenamiento: enviar,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function confirmarLoteCola(): Promise<{ confirmados: number; errores: unknown[] }> {
+  const res = await fetch(`${BASE}/clasificador/cola/confirmar-lote`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function aprobarPatronesCola(
+  id: number,
+  patrones: { compania: string[]; ramo: string[]; subramo: string[] },
+): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/clasificador/cola/${id}/patrones/aprobar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patrones),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function descartarItemCola(id: number): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/clasificador/cola/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
