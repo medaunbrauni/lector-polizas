@@ -14,4 +14,4 @@ jobs:
           host: 62.151.183.45
           username: root
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script: /var/www/vhosts/movi.digital/lector.movi.digital/deploy.sh
+          script: /var/www/vhosts/movi.digital/lector.movi.digital/app/deploy.sh
