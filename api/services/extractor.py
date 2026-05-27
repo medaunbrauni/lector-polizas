@@ -129,6 +129,49 @@ Responde ÚNICAMENTE JSON válido:
     }
 
 
+# ── Derivación de campos ──────────────────────────────────────────────────────
+
+def _derivar_campos(datos: dict) -> dict:
+    """
+    Calcula campos cuyo valor se infiere de otros campos ya extraídos.
+    Modifica `datos` en-lugar y retorna el mismo dict.
+
+    Reglas actuales
+    ───────────────
+    entidad  ← rfc
+        13 caracteres → "Persona Física"
+        12 caracteres → "Persona Moral"
+        (RFC mexicano estándar: 4 letras + 6 dígitos fecha + 3 homoclave = 13 PF
+                                 3 letras + 6 dígitos fecha + 3 homoclave = 12 PM)
+
+    Reglas futuras (pendientes de implementación):
+    ───────────────────────────────────────────────
+    ejecutivo_cuenta  ← vendedor  (referencia a tabla de catálogo)
+    despacho          ← vendedor  (referencia a tabla de catálogo)
+    """
+    # ── entidad ───────────────────────────────────────────────────────────────
+    rfc_info = datos.get("rfc")
+    rfc_val  = (rfc_info.get("valor") or "").strip() if rfc_info else ""
+
+    if rfc_val and "entidad" not in datos or (datos.get("entidad", {}).get("valor") is None):
+        n = len(rfc_val)
+        if n == 13:
+            entidad_val = "Persona Física"
+        elif n == 12:
+            entidad_val = "Persona Moral"
+        else:
+            entidad_val = None          # RFC con longitud inesperada — no derivar
+
+        if entidad_val is not None:
+            datos["entidad"] = {
+                "valor":    entidad_val,
+                "metodo":   "derivado",
+                "regla_id": None,
+            }
+
+    return datos
+
+
 # ── Pipeline principal ────────────────────────────────────────────────────────
 
 def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
@@ -174,6 +217,9 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     datos_finales: dict = {**datos_reglas}
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
+
+    # 5b. Derivar campos calculables (entidad ← rfc, etc.)
+    _derivar_campos(datos_finales)
 
     # Contadores correctos (una sola pasada, sin doble cómputo)
     por_regla      = sum(1 for v in datos_finales.values() if v["metodo"] == "regla")

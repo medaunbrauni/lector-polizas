@@ -1,4 +1,4 @@
-import { X, Car, MapPin, CreditCard, Calendar, Cpu, Layers, Heart } from 'lucide-react';
+import { X, Car, MapPin, CreditCard, Calendar, Cpu, Layers, Heart, Zap } from 'lucide-react';
 import type { ResultadoPDF } from '../../lib/types';
 import { fieldLabel } from '../../lib/fieldConfig';
 
@@ -10,7 +10,7 @@ interface Props {
 // Campos que se muestran en secciones específicas (no en "Otros")
 const CAMPOS_CONOCIDOS = new Set([
   // Póliza
-  'documento', 'numero_poliza', 'nombre_cliente', 'rfc', 'forma_pago', 'moneda',
+  'documento', 'numero_poliza', 'nombre_cliente', 'rfc', 'entidad', 'forma_pago', 'moneda',
   // Vehículo
   'descripcion_veh', 'descripcion_vehiculo', 'placas', 'serie', 'motor',
   'tipo_vehiculo', 'nacional_importado', 'modelo',
@@ -101,6 +101,7 @@ export default function PolizaDetalle({ data, onClose }: Props) {
             <Row label="N° Póliza"    value={c('documento', 'numero_poliza')} metodo={mt('documento', 'numero_poliza')} mono />
             <Row label="Cliente"      value={c('nombre_cliente')}  metodo={mt('nombre_cliente')} />
             <Row label="RFC"          value={c('rfc')}             metodo={mt('rfc')} mono />
+            <Row label="Entidad"      value={c('entidad')}         metodo={mt('entidad')} />
             <Row label="Forma Pago"   value={c('forma_pago')}      metodo={mt('forma_pago')} />
             <Row label="Moneda"       value={c('moneda')}          metodo={mt('moneda')} />
           </Section>
@@ -226,7 +227,8 @@ function Row({ label, value, metodo, mono, bold }: {
       <dd className={`flex-1 text-sm break-words ${bold ? 'font-bold text-gray-900' : 'text-gray-700'} ${mono ? 'font-mono' : ''}`}>
         <span className="flex items-center gap-1.5">
           {value}
-          {metodo === 'ia' && <Cpu className="w-3 h-3 text-purple-400 flex-shrink-0" />}
+          {metodo === 'ia'       && <Cpu className="w-3 h-3 text-purple-400 flex-shrink-0" />}
+          {metodo === 'derivado' && <Zap className="w-3 h-3 text-amber-400  flex-shrink-0" />}
         </span>
       </dd>
     </div>

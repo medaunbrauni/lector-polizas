@@ -106,6 +106,7 @@ export const EXCEL_COLS: Array<{ campo: string; header: string }> = [
   { campo: 'documento',          header: 'N° Póliza' },
   { campo: 'nombre_cliente',     header: 'Cliente' },
   { campo: 'rfc',                header: 'RFC' },
+  { campo: 'entidad',            header: 'Entidad' },       // derivado de RFC
   { campo: 'forma_pago',         header: 'Forma Pago' },
   { campo: 'moneda',             header: 'Moneda' },
   // Vigencia

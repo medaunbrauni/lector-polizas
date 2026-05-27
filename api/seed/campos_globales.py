@@ -8,8 +8,8 @@ from ..models.db_models import CampoGlobal
 
 CAMPOS = [
     # ── Asegurado ───────────────────────────────────────────────────────
-    dict(nombre="entidad",           label="Entidad",              tipo="numero",   orden=1,  requerido=True,
-         descripcion="0 = Persona física  |  1 = Persona moral"),
+    dict(nombre="entidad",           label="Entidad",              tipo="catalogo", orden=1,  requerido=True,
+         descripcion="Auto-derivado del RFC: 13 chars → Persona Física · 12 chars → Persona Moral"),
     dict(nombre="apellido_paterno",  label="Apellido Paterno",     tipo="texto",    orden=2),
     dict(nombre="apellido_materno",  label="Apellido Materno",     tipo="texto",    orden=3),
     dict(nombre="nombre",            label="Nombre",               tipo="texto",    orden=4),
