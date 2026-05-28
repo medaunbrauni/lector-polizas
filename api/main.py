@@ -9,7 +9,7 @@ load_dotenv()
 from .config import ALLOWED_ORIGINS, UPLOAD_FOLDER
 from .database import init_db, SessionLocal
 from .seed.data import sembrar
-from .routers import extraccion, catalogos, reglas, entrenamiento, clasificador
+from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador
 from .seed.campos_globales import sembrar_campos_globales
 from .services.folder_watcher import iniciar_watcher, detener_watcher
 
@@ -49,6 +49,8 @@ app.add_middleware(
     allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
+from .routers import auth
+app.include_router(auth.router)
 app.include_router(extraccion.router)
 app.include_router(catalogos.router)
 app.include_router(reglas.router)
