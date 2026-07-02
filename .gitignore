@@ -21,3 +21,9 @@ __pycache__/
 Thumbs.db
 *.db-wal
 *.db-shm
+
+# Base de datos local
+lector_polizas.db
+
+# Archivos de entrenamiento / temporales
+storage/

@@ -5,6 +5,7 @@ Si la detección carece de patrones regex, los genera automáticamente con IA.
 """
 import io
 import re
+import os
 import pdfplumber
 from sqlalchemy.orm import Session
 
