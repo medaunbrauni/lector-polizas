@@ -6,3 +6,5 @@ anthropic>=0.40.0
 pydantic>=2.11.0
 sqlalchemy>=2.0.36
 python-dotenv>=1.0.1
+watchdog>=6.0.0
+pypdfium2>=5.11.0

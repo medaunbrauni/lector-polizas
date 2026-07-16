@@ -1,11 +1,12 @@
 
+import os
 from fastapi import APIRouter, Response, Request
 from fastapi.responses import JSONResponse
 import secrets
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-PASSWORD = "Marsella14"
+PASSWORD = os.getenv("AUTH_PASSWORD", "Marsella14")
 SESSION_COOKIE = "lector_session"
 valid_tokens: set = set()
 

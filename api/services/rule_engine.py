@@ -7,7 +7,8 @@ import re
 import pdfplumber
 from sqlalchemy.orm import Session
 from ..models.db_models import ReglaExtraccion, CampoDefinido, CampoGlobal, Subramo, Ramo
-
+from collections import Counter
+from time import perf_counter
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -46,13 +47,7 @@ def aplicar_reglas(
     db: Session,
     pdf_bytes: bytes | None = None,
 ) -> dict[str, dict]:
-    """
-    Retorna dict: {nombre_campo: {"valor": ..., "metodo": ..., "regla_id": ...}}
-    Cubre:
-      - Reglas regex activas del subramo (con soporte bbox opcional)
-      - Campos globales con valor_fijo (retornados directamente sin regex)
-    """
-    # 1. Aplicar reglas regex
+
     reglas = (
         db.query(ReglaExtraccion)
         .filter(
@@ -64,12 +59,16 @@ def aplicar_reglas(
     )
 
     resultados: dict[str, dict] = {}
+
     for regla in reglas:
         valor = None
+
         if regla.bbox and pdf_bytes:
             texto_zona = _extraer_texto_bbox(pdf_bytes, regla.bbox)
+
             if texto_zona:
                 valor = _aplicar_patron(regla.patron_regex, texto_zona)
+
             if valor is None:
                 valor = _aplicar_patron(regla.patron_regex, texto)
         else:
@@ -81,7 +80,6 @@ def aplicar_reglas(
             "regla_id": regla.id,
         }
 
-    # 2. Campos globales con valor_fijo → siempre presentes sin regex
     for campo in _globales_para_subramo(subramo_id, db):
         if campo.valor_fijo is not None and campo.nombre not in resultados:
             resultados[campo.nombre] = {
@@ -90,13 +88,11 @@ def aplicar_reglas(
                 "regla_id": None,
             }
 
-    # 3. Derivar "entidad" desde el RFC si no fue extraída por regla
-    #    RFC de 13 caracteres → Persona Física (0)
-    #    RFC de 12 caracteres → Persona Moral  (1)
     rfc_info = resultados.get("rfc")
     if rfc_info and rfc_info.get("valor"):
         rfc_limpio = rfc_info["valor"].strip().replace(" ", "").replace("-", "")
         entidad_actual = resultados.get("entidad", {}).get("valor")
+
         if entidad_actual is None:
             if len(rfc_limpio) == 13:
                 resultados["entidad"] = {"valor": "0", "metodo": "derivado", "regla_id": None}
