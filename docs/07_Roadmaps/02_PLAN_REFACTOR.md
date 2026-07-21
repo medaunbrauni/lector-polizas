@@ -1,6 +1,6 @@
 # Plan de Refactors — Priorizado por Relación Beneficio/Riesgo
 
-**Base:** `AUDITORIA_PROYECTO.md` (código) y `MODELO_DATOS_V2.md` (esquema).
+**Base:** `docs/06_Auditorias/03_AUDITORIA_TECNICA_CODIGO.md` (código) y `docs/08_Proyecto_Actual/01_MODELO_DATOS_V2.md` (esquema).
 **Alcance de este documento:** priorización y análisis de riesgo. **Ningún refactor fue implementado.**
 
 Criterio de clasificación: riesgo = probabilidad de romper comportamiento existente × dificultad de detectar la rotura (no hay suite de tests automatizada en el repo, así que todo riesgo aquí es más alto de lo que sería en un proyecto con cobertura de tests — se pondera con eso en mente).
@@ -114,7 +114,7 @@ Cambios que tocan lógica usada en producción (llamadas a IA, integridad de dat
 
 Cambios que implican migración real de datos, tocan múltiples capas del sistema simultáneamente, o dependen de decisiones de producto/infraestructura fuera del control exclusivo del código. Requieren plan de rollback explícito antes de intentarse.
 
-### 1. Unificar `campos_globales` + `campos_definidos` en un catálogo único (`campo` + `subramo_campo`), propuesta de `MODELO_DATOS_V2.md`
+### 1. Unificar `campos_globales` + `campos_definidos` en un catálogo único (`campo` + `subramo_campo`), propuesta de `docs/08_Proyecto_Actual/01_MODELO_DATOS_V2.md`
 - **Archivos afectados:** `api/models/db_models.py` (nuevo modelo de tablas), `api/services/rule_engine.py` (`_globales_para_subramo`, `campos_sin_regla`, `cobertura_subramo` — todos razonan hoy sobre 2 tablas distintas), `api/routers/catalogos.py` (CRUD de campos), `api/routers/reglas.py` y `api/routers/entrenamiento.py` (todo lo que resuelve `nombre_campo` → campo), `api/seed/campos_globales.py` y `api/seed/data.py` (rehacer el seed contra el esquema nuevo), y cualquier vista del frontend que liste campos (`web/src/pages/Catalogos.tsx`, `web/src/pages/Reglas.tsx` probablemente).
 - **Complejidad:** Alta. Requiere: (1) migración de datos con deduplicación real (los `CampoDefinido` con el mismo `nombre` en distintos subramos deben colapsar a una fila de catálogo), (2) resolver `campo_id` para las `ReglaExtraccion` existentes que hoy solo tienen `nombre_campo` poblado (las que apuntan a un campo global, que hoy no tiene FK), (3) reescribir toda la lógica de `rule_engine.py` que hoy distingue "global" vs. "definido" con dos queries distintas.
 - **Tiempo estimado:** 3-5 días de desarrollo + al menos 1 día de validación exhaustiva contra una copia de la BD de producción antes de aplicar en real.
@@ -123,7 +123,7 @@ Cambios que implican migración real de datos, tocan múltiples capas del sistem
 
 ### 2. Migrar autenticación a almacenamiento de sesión persistente/compartido
 - **Archivos afectados:** `api/routers/auth.py`, `api/main.py` (posible nueva dependencia de infraestructura: Redis, o una tabla nueva en la misma BD SQLite), `api/config.py`.
-- **Complejidad:** Alta relativa al tamaño del sistema — no es complejo en abstracto (guardar tokens en una tabla en vez de un `set()` en memoria es sencillo), pero es alto riesgo porque **cambia el modelo de despliegue implícito** del sistema: hoy asume un solo proceso Python; introducir sesión compartida es la señal de que el sistema se está preparando para correr con más de un worker/réplica, lo cual tiene implicaciones más allá de `auth.py` (SQLite con `check_same_thread=False` y un solo archivo también es un techo para multi-proceso, ver `MODELO_DATOS_V2.md` §5.3 de la auditoría de código).
+- **Complejidad:** Alta relativa al tamaño del sistema — no es complejo en abstracto (guardar tokens en una tabla en vez de un `set()` en memoria es sencillo), pero es alto riesgo porque **cambia el modelo de despliegue implícito** del sistema: hoy asume un solo proceso Python; introducir sesión compartida es la señal de que el sistema se está preparando para correr con más de un worker/réplica, lo cual tiene implicaciones más allá de `auth.py` (SQLite con `check_same_thread=False` y un solo archivo también es un techo para multi-proceso, ver `docs/08_Proyecto_Actual/01_MODELO_DATOS_V2.md` §5.3 de la auditoría de código).
 - **Tiempo estimado:** 1-2 días de código; indeterminado el tiempo de decisión previa (depende de si ya hay un plan de escalar a múltiples workers/instancias o no).
 - **Beneficios:** Solo tiene sentido si efectivamente se planea correr más de un worker o réplica — en ese escenario, es indispensable (hoy las sesiones simplemente no funcionarían de forma confiable en multi-worker).
 - **Efectos secundarios posibles:** Es el ítem de este documento con mayor riesgo de ser una **optimización prematura** si el sistema seguirá corriendo como proceso único (como parece ser el caso hoy, dado el uso de PyInstaller/`.exe` para distribución local) — implementarlo sin necesidad real añade una dependencia de infraestructura (Redis) o una tabla más para resolver un problema que no existe todavía. Recomendado: no iniciar este refactor sin primero confirmar el plan de despliegue a futuro.
