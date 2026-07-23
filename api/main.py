@@ -39,6 +39,8 @@ app = FastAPI(
     description="Extracción multi-compañía de pólizas PDF — GNP, Quálitas, ANA, HDI, Banorte…",
     version="2.1.0",
     lifespan=lifespan,
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
 )
 
 app.add_middleware(
