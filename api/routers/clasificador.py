@@ -3,6 +3,7 @@ Router del Clasificador de PDFs.
 Gestiona: upload a carpeta local, cola de revisión, confirmación,
 aprobación de patrones y envío a entrenamiento.
 """
+from __future__ import annotations
 import hashlib
 import uuid
 from pathlib import Path

@@ -2,6 +2,7 @@
 Motor de reglas: aplica los patrones regex guardados en BD
 para extraer campos de una póliza.
 """
+from __future__ import annotations
 import io
 import re
 import pdfplumber

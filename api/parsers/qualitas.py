@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 from .base import BaseParser
 from ..models.poliza import PolizaExtraida, VehiculoData, DireccionData, PrimasData, VigenciaData

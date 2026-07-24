@@ -2,6 +2,7 @@
 Router de entrenamiento por lotes.
 Gestiona: PDFs de entrenamiento, selecciones de campo, generación y prueba de regex.
 """
+from __future__ import annotations
 import io
 import os
 import uuid
