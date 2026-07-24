@@ -1,3 +1,4 @@
+from __future__ import annotations
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session

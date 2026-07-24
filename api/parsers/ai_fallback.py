@@ -1,6 +1,7 @@
 """
 Extracción con Claude Haiku para campos sin regla definida.
 """
+from __future__ import annotations
 import os
 import json
 import anthropic

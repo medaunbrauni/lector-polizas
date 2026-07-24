@@ -3,6 +3,7 @@ Vigilancia de carpeta en tiempo real con watchdog.
 Cuando aparece un PDF nuevo en la carpeta vigilada, lo agrega
 automáticamente a la cola de clasificación y ejecuta el pipeline.
 """
+from __future__ import annotations
 import logging
 import threading
 import time
