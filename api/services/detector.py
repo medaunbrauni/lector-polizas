@@ -3,6 +3,7 @@ Detección en cascada: Compañía → Ramo → Subramo.
 Usa patrones_deteccion (regex, 3 pts) y keywords (1 pt) como fallback.
 Expone scores para que la UI muestre confianza.
 """
+from __future__ import annotations
 import re
 from sqlalchemy.orm import Session
 from ..models.db_models import Compania, Ramo, Subramo

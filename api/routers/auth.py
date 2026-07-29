@@ -1,12 +1,17 @@
 
-import os
 from fastapi import APIRouter, Response, Request
 from fastapi.responses import JSONResponse
+import os
 import secrets
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-PASSWORD = os.getenv("AUTH_PASSWORD", "Marsella14")
+PASSWORD = os.getenv("AUTH_PASSWORD")
+if not PASSWORD:
+    raise RuntimeError(
+        "AUTH_PASSWORD no está definido en el entorno (.env). "
+        "Define una contraseña fuerte antes de iniciar la API."
+    )
 SESSION_COOKIE = "lector_session"
 valid_tokens: set = set()
 

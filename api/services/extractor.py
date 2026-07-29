@@ -3,6 +3,8 @@ Pipeline principal de extracción.
 Orquesta: texto PDF → detección (con score) → reglas → guardar historial.
 Si la detección carece de patrones regex, los genera automáticamente con IA.
 """
+from __future__ import annotations
+import os
 import io
 import re
 import os

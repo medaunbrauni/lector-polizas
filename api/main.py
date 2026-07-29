@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -39,6 +39,8 @@ app = FastAPI(
     description="Extracción multi-compañía de pólizas PDF — GNP, Quálitas, ANA, HDI, Banorte…",
     version="2.1.0",
     lifespan=lifespan,
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
 )
 
 app.add_middleware(
@@ -49,15 +51,26 @@ app.add_middleware(
     allow_headers=["Content-Type", "Accept", "Authorization"],
 )
 
-from .routers import auth
-app.include_router(auth.router)
-app.include_router(extraccion.router)
-app.include_router(catalogos.router)
-app.include_router(reglas.router)
-app.include_router(entrenamiento.router)
-app.include_router(clasificador.router)
+# ── Todas las rutas de negocio se agrupan bajo /api ──────────────
+# El reverse proxy en producción (Plesk) reenvía el path completo
+# tal cual (https://lector.movi.digital/api/x -> 127.0.0.1:8000/api/x),
+# por lo que FastAPI debe exponer sus rutas bajo ese mismo prefijo.
+api_router = APIRouter(prefix="/api")
+api_router.include_router(auth.router)
+api_router.include_router(extraccion.router)
+api_router.include_router(catalogos.router)
+api_router.include_router(reglas.router)
+api_router.include_router(entrenamiento.router)
+api_router.include_router(clasificador.router)
 
-
-@app.get("/health")
+@api_router.get("/health")
 def health():
+    return {"status": "ok", "version": "2.1.0"}
+
+app.include_router(api_router)
+
+# Alias sin prefijo, solo para checks locales/monitoreo directo
+# contra uvicorn en 127.0.0.1:8000 (systemd, healthchecks internos).
+@app.get("/health")
+def health_root():
     return {"status": "ok", "version": "2.1.0"}
