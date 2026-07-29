@@ -820,7 +820,7 @@ export default function Reglas() {
                 const tieneResultado = !!resultados[campo.nombre];
 
                 return (
-                  <div key={campo.id}>
+                  <div key={`${campo.es_global ? 'g' : 'e'}-${campo.id}`}>
                     {/* Fila del campo */}
                     <div
                       onClick={() => !esValorFijo && setCampoActivo(campo.nombre === campoActivo ? '' : campo.nombre)}
