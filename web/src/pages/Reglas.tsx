@@ -23,6 +23,7 @@ import {
   Zap, CheckCircle2, XCircle, AlertCircle, RefreshCw,
   FileText, MousePointer2, Sparkles, Save, Image,
   Target, ChevronDown, ChevronUp, Shield, ShieldAlert, ShieldCheck, ShieldOff,
+  ZoomIn, ZoomOut, RotateCcw,
 } from 'lucide-react';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -93,6 +94,92 @@ export default function Reglas() {
 
   // ── Tab activo ─────────────────────────────────────────────────────────────
   const [tabActivo, setTabActivo] = useState<'reglas' | 'clasificador'>('reglas');
+
+  // ── Paneles redimensionables ─────────────────────────────────────────────────
+  const [anchoIzquierdo, setAnchoIzquierdo] = useState<number>(
+    Number(localStorage.getItem('reglas-ancho-izq')) || 256
+  );
+  const [anchoDerecho, setAnchoDerecho] = useState<number>(
+    Number(localStorage.getItem('reglas-ancho-der')) || 320
+  );
+  const [redimensionando, setRedimensionando] = useState<'izq' | 'der' | null>(null);
+  const filaPanelesRef = useRef<HTMLDivElement>(null);
+  const anchoActualRef = useRef({ izq: anchoIzquierdo, der: anchoDerecho });
+
+  useEffect(() => {
+    if (!redimensionando) return;
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+
+    const onMouseMove = (e: MouseEvent) => {
+      const rect = filaPanelesRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      if (redimensionando === 'izq') {
+        const nuevo = Math.min(500, Math.max(180, e.clientX - rect.left));
+        anchoActualRef.current.izq = nuevo;
+        setAnchoIzquierdo(nuevo);
+      } else {
+        const nuevo = Math.min(600, Math.max(240, rect.right - e.clientX));
+        anchoActualRef.current.der = nuevo;
+        setAnchoDerecho(nuevo);
+      }
+    };
+
+    const onMouseUp = () => {
+      setRedimensionando(null);
+      localStorage.setItem('reglas-ancho-izq', String(anchoActualRef.current.izq));
+      localStorage.setItem('reglas-ancho-der', String(anchoActualRef.current.der));
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [redimensionando]);
+
+  // ── Alto del panel de texto extraído (redimensionable verticalmente) ────────
+  const [altoTextoExtraido, setAltoTextoExtraido] = useState<number>(
+    Number(localStorage.getItem('reglas-alto-texto')) || 240
+  );
+  const [redimensionandoAlto, setRedimensionandoAlto] = useState(false);
+  const altoDragRef = useRef({ startY: 0, startAlto: altoTextoExtraido });
+  const altoActualRef = useRef(altoTextoExtraido);
+
+  useEffect(() => {
+    if (!redimensionandoAlto) return;
+
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'row-resize';
+
+    const onMouseMove = (e: MouseEvent) => {
+      const delta = altoDragRef.current.startY - e.clientY; // arrastrar hacia arriba = crecer
+      const nuevo = Math.min(600, Math.max(100, altoDragRef.current.startAlto + delta));
+      altoActualRef.current = nuevo;
+      setAltoTextoExtraido(nuevo);
+    };
+
+    const onMouseUp = () => {
+      setRedimensionandoAlto(false);
+      localStorage.setItem('reglas-alto-texto', String(altoActualRef.current));
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [redimensionandoAlto]);
 
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => { getCompanias().then(setCompanias); }, []);
@@ -567,10 +654,10 @@ export default function Reglas() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div ref={filaPanelesRef} className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* ══ Panel izquierdo: Lote de pólizas ══ */}
-          <div className="w-64 flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
+          <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
             <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 Lote de pólizas
@@ -642,6 +729,12 @@ export default function Reglas() {
               })}
             </div>
           </div>
+
+          {/* Handle de arrastre — panel izquierdo */}
+          <div
+            onMouseDown={() => setRedimensionando('izq')}
+            className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
+          />
 
           {/* ══ Centro: Visor PDF ══ */}
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
@@ -730,14 +823,29 @@ export default function Reglas() {
               )}
             </div>
 
-            {/* Panel texto extraído — fijo debajo del visor */}
+            {/* Panel texto extraído — debajo del visor, alto ajustable */}
             {mostrarTexto && polizaActiva && (
-              <div className="border-t border-gray-200 bg-white flex-shrink-0">
+              <>
+                {/* Handle de arrastre — alto del panel de texto extraído */}
+                <div
+                  onMouseDown={(e) => {
+                    altoDragRef.current = { startY: e.clientY, startAlto: altoTextoExtraido };
+                    setRedimensionandoAlto(true);
+                  }}
+                  className="h-1 flex-shrink-0 cursor-row-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
+                />
+                <div className="border-t border-gray-200 bg-white flex-shrink-0">
                 <TextoExtraido
                   texto={textoPdfActivo}
                   highlight={textoSeleccionado}
+                  alto={altoTextoExtraido}
+                  onCapturarTexto={(texto) => {
+                    setTextoSeleccionado(texto);
+                    setBboxCapturado(null); // no hay bbox porque no viene del PDF visual
+                  }}
                 />
-              </div>
+                </div>
+              </>
             )}
 
             {/* Botón guardar selección — SIEMPRE visible cuando hay campo activo */}
@@ -801,8 +909,14 @@ export default function Reglas() {
             )}
           </div>
 
+          {/* Handle de arrastre — panel derecho */}
+          <div
+            onMouseDown={() => setRedimensionando('der')}
+            className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
+          />
+
           {/* ══ Panel derecho: Campos ══ */}
-          <div className="w-80 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+          <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
             <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Campos</span>
               <span className="text-[10px] text-gray-400">
@@ -1105,8 +1219,15 @@ function VisorImagen({
 
 // ── Panel de texto extraído con highlight ─────────────────────────────────────
 
-function TextoExtraido({ texto, highlight }: { texto: string; highlight: string }) {
-  const CTX = 300;
+function TextoExtraido({
+  texto, highlight, alto = 384, onCapturarTexto,
+}: {
+  texto: string;
+  highlight: string;
+  alto?: number;
+  onCapturarTexto?: (texto: string) => void;
+}) {
+  const [zoomTexto, setZoomTexto] = useState(100);
 
   if (!texto) {
     return (
@@ -1114,41 +1235,40 @@ function TextoExtraido({ texto, highlight }: { texto: string; highlight: string 
     );
   }
 
+  const lineas = texto.split('\n');
+
+  // ── Ubicar la línea que contiene el highlight (primera coincidencia) ────────
+  let lineaHighlightIdx = -1;
+  let localIdx = -1;
+  if (highlight) {
+    lineaHighlightIdx = lineas.findIndex((l) => l.includes(highlight));
+    if (lineaHighlightIdx !== -1) {
+      localIdx = lineas[lineaHighlightIdx].indexOf(highlight);
+    } else {
+      const hlLower = highlight.toLowerCase();
+      lineaHighlightIdx = lineas.findIndex((l) => l.toLowerCase().includes(hlLower));
+      if (lineaHighlightIdx !== -1) {
+        localIdx = lineas[lineaHighlightIdx].toLowerCase().indexOf(hlLower);
+      }
+    }
+  }
+  const encontrado = lineaHighlightIdx !== -1;
+
   let header: React.ReactNode;
-  let content: React.ReactNode;
-
   if (!highlight) {
-    header = <span className="text-gray-400">Selecciona texto en el PDF para validar ↑</span>;
-    content = <span className="text-gray-500">{texto.substring(0, 600)}{texto.length > 600 ? '…' : ''}</span>;
-  } else {
-    const idx = texto.indexOf(highlight) !== -1 ? texto.indexOf(highlight) : texto.toLowerCase().indexOf(highlight.toLowerCase());
-    const encontrado = idx !== -1;
-
+    header = <span className="text-gray-400">Selecciona texto en el PDF o aquí abajo ↓</span>;
+  } else if (encontrado) {
     header = (
-      <span className={`font-medium px-2 py-0.5 rounded-full flex items-center gap-1 ${encontrado ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-        {encontrado
-          ? <><CheckCircle2 className="w-3 h-3" />Encontrado — el regex lo capturará</>
-          : <><AlertCircle className="w-3 h-3" />No encontrado en el texto extraído</>}
+      <span className="font-medium px-2 py-0.5 rounded-full flex items-center gap-1 bg-emerald-100 text-emerald-700">
+        <CheckCircle2 className="w-3 h-3" />Encontrado — el regex lo capturará
       </span>
     );
-
-    if (!encontrado) {
-      content = <span className="text-gray-500">{texto.substring(0, 600)}{texto.length > 600 ? '…' : ''}</span>;
-    } else {
-      const start = Math.max(0, idx - CTX);
-      const end = Math.min(texto.length, idx + highlight.length + CTX);
-      content = (
-        <>
-          {start > 0 && <span className="text-gray-400">…</span>}
-          {texto.substring(start, idx)}
-          <mark id="extracted-highlight" className="bg-yellow-300 text-gray-900 rounded-sm font-semibold not-italic">
-            {texto.substring(idx, idx + highlight.length)}
-          </mark>
-          {texto.substring(idx + highlight.length, end)}
-          {end < texto.length && <span className="text-gray-400">…</span>}
-        </>
-      );
-    }
+  } else {
+    header = (
+      <span className="font-medium px-2 py-0.5 rounded-full flex items-center gap-1 bg-amber-100 text-amber-700">
+        <AlertCircle className="w-3 h-3" />No encontrado en el texto extraído
+      </span>
+    );
   }
 
   return (
@@ -1157,11 +1277,74 @@ function TextoExtraido({ texto, highlight }: { texto: string; highlight: string 
         <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
           <FileText className="w-3 h-3" />Texto extraído · validación
         </span>
-        <span className="text-[10px]">{header}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px]">{header}</span>
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => setZoomTexto((z) => Math.max(60, z - 10))}
+              title="Disminuir tamaño de texto"
+              className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+            >
+              <ZoomOut className="w-3 h-3" />
+            </button>
+            <span className="text-[10px] text-gray-400 w-8 text-center select-none">{zoomTexto}%</span>
+            <button
+              type="button"
+              onClick={() => setZoomTexto((z) => Math.min(200, z + 10))}
+              title="Aumentar tamaño de texto"
+              className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+            >
+              <ZoomIn className="w-3 h-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoomTexto(100)}
+              title="Restaurar tamaño de texto"
+              className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+            >
+              <RotateCcw className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
       </div>
-      <pre className="px-4 py-2 text-[10px] font-mono text-gray-600 whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto">
-        {content}
-      </pre>
+      <div
+        style={{ height: alto, fontSize: `${(10 * zoomTexto) / 100}px` }}
+        className="overflow-y-auto font-mono leading-relaxed"
+        onMouseUp={() => {
+          const seleccion = window.getSelection()?.toString().trim();
+          if (seleccion) onCapturarTexto?.(seleccion);
+        }}
+      >
+        {lineas.map((linea, i) => {
+          const numero = i + 1;
+          const tieneHighlightAqui = i === lineaHighlightIdx;
+
+          return (
+            <div
+              key={i}
+              className="grid grid-cols-[2.5rem_1fr] hover:bg-gray-50"
+            >
+              <span className="select-none text-right pr-2 text-gray-400 border-r border-gray-100">
+                {numero}
+              </span>
+              <span className="px-2 text-gray-600 whitespace-pre-wrap break-words">
+                {tieneHighlightAqui ? (
+                  <>
+                    {linea.substring(0, localIdx)}
+                    <mark id="extracted-highlight" className="bg-yellow-300 text-gray-900 rounded-sm font-semibold not-italic">
+                      {linea.substring(localIdx, localIdx + highlight.length)}
+                    </mark>
+                    {linea.substring(localIdx + highlight.length)}
+                  </>
+                ) : (
+                  linea || ' '
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
