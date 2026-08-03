@@ -47,8 +47,12 @@ def aplicar_reglas(
     subramo_id: int,
     db: Session,
     pdf_bytes: bytes | None = None,
+    campos_excluir: set[str] | None = None,
 ) -> dict[str, dict]:
-
+    """
+    campos_excluir: nombres de campos que ya resolvió un extractor
+    especializado (nivel 1) — no se buscan ni se sobrescriben aquí.
+    """
     reglas = (
         db.query(ReglaExtraccion)
         .filter(
@@ -62,6 +66,9 @@ def aplicar_reglas(
     resultados: dict[str, dict] = {}
 
     for regla in reglas:
+        if campos_excluir and regla.nombre_campo in campos_excluir:
+            continue
+
         valor = None
 
         if regla.bbox and pdf_bytes:
@@ -82,6 +89,8 @@ def aplicar_reglas(
         }
 
     for campo in _globales_para_subramo(subramo_id, db):
+        if campo.nombre in (campos_excluir or ()):
+            continue
         if campo.valor_fijo is not None and campo.nombre not in resultados:
             resultados[campo.nombre] = {
                 "valor": campo.valor_fijo,

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from .detector import detectar_con_score
 from .rule_engine import aplicar_reglas, campos_sin_regla
 from .ai_utils import parse_claude_json, make_anthropic_client
+from ..extractores_especializados.registry import obtener_extractor
 from ..config import MODEL_EXTRACTOR
 from ..models.db_models import (
     Extraccion, CampoExtraido, CampoDefinido,
@@ -207,21 +208,47 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         if patrones_generados:
             det = detectar_con_score(texto, db)
 
-    # 4. Aplicar reglas guardadas
+    # 4. Nivel 1 — extractor especializado por compañía (si existe)
     datos_reglas: dict[str, dict] = {}
     campos_faltantes: list[CampoDefinido] = []
+    campos_extractor_dedicado: set[str] = set()
 
+    extractor_dedicado = obtener_extractor(compania.nombre) if compania else None
+    if extractor_dedicado:
+        try:
+            campos_extraidos = extractor_dedicado(texto, contenido) or {}
+        except Exception:
+            campos_extraidos = {}
+        for nombre, valor in campos_extraidos.items():
+            if not valor:
+                continue
+            datos_reglas[nombre] = {
+                "valor": valor,
+                "metodo": "extractor_dedicado",
+                "regla_id": None,
+            }
+            campos_extractor_dedicado.add(nombre)
+
+    # 5. Nivel 2 — motor de reglas de BD, solo para lo que el nivel 1 no resolvió
     if subramo:
-        datos_reglas = aplicar_reglas(texto, subramo.id, db, pdf_bytes=contenido)
-        campos_cubiertos = {k for k, v in datos_reglas.items() if v["metodo"] == "regla"}
+        datos_reglas.update(
+            aplicar_reglas(
+                texto, subramo.id, db, pdf_bytes=contenido,
+                campos_excluir=campos_extractor_dedicado or None,
+            )
+        )
+        campos_cubiertos = {
+            k for k, v in datos_reglas.items()
+            if v["metodo"] in ("regla", "extractor_dedicado")
+        }
         campos_faltantes = campos_sin_regla(subramo.id, campos_cubiertos, db)
 
-    # 5. Consolidar resultados
+    # 6. Consolidar resultados
     datos_finales: dict = {**datos_reglas}
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
 
-    # 5b. Derivar campos calculables (entidad ← rfc, etc.)
+    # 6b. Derivar campos calculables (entidad ← rfc, etc.)
     _derivar_campos(datos_finales)
 
     # Contadores correctos (una sola pasada, sin doble cómputo)
@@ -231,7 +258,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         if v["metodo"] not in ("regla", "valor_fijo", "derivado")
     )
 
-    # 6. Guardar en historial
+    # 7. Guardar en historial
     metodo_det = "patrones" if (det["score_compania"] >= 3) else "keywords"
     extraccion = Extraccion(
         nombre_archivo=nombre_archivo,

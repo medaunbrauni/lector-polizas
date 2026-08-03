@@ -54,7 +54,8 @@ export default function LectorPolizas() {
   const [procesandoMsg, setProcesandoMsg] = useState('Extrayendo datos…');
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
-  const [detalle, setDetalle] = useState<ResultadoPDF | null>(null);
+  const [detalleIndex, setDetalleIndex] = useState<number | null>(null);
+  const detalle = detalleIndex !== null ? resultados[detalleIndex] : null;
   const inputRef = useRef<HTMLInputElement>(null);
 
   /* Correction state */
@@ -256,7 +257,7 @@ export default function LectorPolizas() {
         )}
       </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-5">
+      <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-5">
 
         {/* ── Drop zone ── */}
         <div
@@ -506,7 +507,7 @@ export default function LectorPolizas() {
                             {/* Acciones */}
                             <td className="px-3 py-2.5">
                               <div className="flex items-center gap-2">
-                                <button onClick={() => setDetalle(r)} className="text-blue-600 hover:text-blue-800 text-xs font-medium inline-flex items-center gap-1">
+                                <button onClick={() => setDetalleIndex(i)} className="text-blue-600 hover:text-blue-800 text-xs font-medium inline-flex items-center gap-1">
                                   <Eye className="w-3.5 h-3.5" />Ver
                                 </button>
                                 {!r.error && r.id != null && (
@@ -621,7 +622,16 @@ export default function LectorPolizas() {
         )}
       </main>
 
-      {detalle && <PolizaDetalle data={detalle} onClose={() => setDetalle(null)} />}
+      {detalle && (
+        <PolizaDetalle
+          data={detalle}
+          onClose={() => setDetalleIndex(null)}
+          onAnterior={() => setDetalleIndex((i) => (i !== null && i > 0 ? i - 1 : i))}
+          onSiguiente={() => setDetalleIndex((i) => (i !== null && i < resultados.length - 1 ? i + 1 : i))}
+          indiceActual={detalleIndex! + 1}
+          totalPolizas={resultados.length}
+        />
+      )}
     </div>
   );
 }

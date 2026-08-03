@@ -56,3 +56,4 @@ dbeaver-debug*.log
 
 # Artefactos de debug
 debug_texto_poliza.txt
+migrate_qualitas_conocimiento.py
