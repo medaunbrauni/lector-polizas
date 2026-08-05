@@ -519,6 +519,33 @@ def extraer_serie(texto: str) -> str:
     return "S/N"
 
 
+def extraer_modelo(texto: str) -> str | None:
+    """
+    El año del vehículo NO aparece como "Modelo: 2018" en la misma
+    línea (las etiquetas Tipo/Modelo/Serie/... vienen en un bloque
+    separado del bloque de valores en el texto plano extraído). El
+    año aparece como línea suelta justo después del valor de "Tipo"
+    (ej. "Automoviles Nacionales\n2018\nOcupantes:\n05"), así que se
+    reutiliza el mismo ancla que ya usa extraer_tipo_vehiculo.
+    """
+    lineas = texto.splitlines()
+    patrones_tipo = [
+        r'^Autom[oó]viles\s+Nacionales',
+        r'^Autom[oó]viles\s+Importados',
+        r'^Camiones-Panel',
+        r'^Motocicletas',
+        r'^Tractocami[oó]n',
+    ]
+    for i, linea in enumerate(lineas):
+        posible = linea.strip()
+        if any(re.match(p, posible, re.IGNORECASE) for p in patrones_tipo):
+            if i + 1 < len(lineas):
+                siguiente = lineas[i + 1].strip()
+                if re.fullmatch(r'(19|20)\d{2}', siguiente):
+                    return siguiente
+    return None
+
+
 def extraer_placas(texto, paginas_dict):
 
     if re.search(r'tr[áa]mite', texto, re.IGNORECASE):
@@ -1082,6 +1109,11 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
     vigencia = extraer_vigencia_por_frecuencia(texto)
     clave_agente, nombre_agente = extraer_agente(texto)
 
+    # Descuento: en el PDF la tasa de financiamiento viene negativa
+    # (resta a la prima neta); SICAS espera 'descuento' como magnitud.
+    tasa_financiamiento = extraer_tasa_financiamiento(texto)
+    descuento = tasa_financiamiento.lstrip('-') if _valido(tasa_financiamiento) else None
+
     candidatos = {
         "documento":       extraer_numero_poliza_qualitas(texto),
         "rfc":             extraer_rfc_mas_repetido(texto),
@@ -1106,6 +1138,15 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "direccion_completa": extraer_direccion(texto),
         "agente_clave":    clave_agente,
         "agente_nombre":   nombre_agente,
+        "modelo":          extraer_modelo(texto),
+        "descuento":       descuento,
     }
 
-    return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
+    resultado = {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
+
+    # fecha_antiguedad: no existe como tal en pólizas de auto nuevas;
+    # se usa el inicio de vigencia como antigüedad por defecto.
+    if 'desde' in resultado and 'fecha_antiguedad' not in resultado:
+        resultado['fecha_antiguedad'] = resultado['desde']
+
+    return resultado

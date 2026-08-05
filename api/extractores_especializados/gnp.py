@@ -690,4 +690,11 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "direccion_completa": extraer_direccion(texto, paginas_dict),
     }
 
-    return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
+    resultado = {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
+
+    # fecha_antiguedad: no existe como tal en pólizas de auto nuevas;
+    # se usa el inicio de vigencia como antigüedad por defecto.
+    if 'desde' in resultado and 'fecha_antiguedad' not in resultado:
+        resultado['fecha_antiguedad'] = resultado['desde']
+
+    return resultado
