@@ -953,6 +953,95 @@ def extraer_colonia(texto: str) -> str:
     return "No se encontró colonia"
 
 
+def extraer_direccion(texto):
+    lineas = texto.splitlines()
+
+    inicio_idx = None
+    fin_idx = None
+
+    for i, linea in enumerate(lineas):
+        if re.search(r'INFORMACIÓN DEL ASEGURADO', linea, re.IGNORECASE):
+            inicio_idx = i
+        if re.search(r'DESCRIPCIÓN DEL VEHÍCULO ASEGURADO', linea, re.IGNORECASE):
+            fin_idx = i
+            break
+
+    if inicio_idx is not None and fin_idx is not None:
+        bloque = "\n".join(lineas[inicio_idx:fin_idx])
+        cp = extraer_cp(bloque)
+        if cp:
+            lineas_bloque = bloque.splitlines()
+            for i, linea in enumerate(lineas_bloque):
+                if cp in linea:
+                    if i - 1 >= 0:
+                        return lineas_bloque[i - 1].strip()
+
+    vigencias = extraer_vigencia_por_frecuencia(texto)
+    primera_fecha = vigencias.get("Inicio Vigencia")
+    if primera_fecha and primera_fecha != "No encontrada":
+        fecha_idx = None
+        fin_idx = None
+
+        for i, linea in enumerate(lineas):
+            if primera_fecha in linea:
+                fecha_idx = i
+                break
+
+        for i, linea in enumerate(lineas):
+            if re.search(r'INFORMACIÓN DEL ASEGURADO', linea, re.IGNORECASE):
+                fin_idx = i
+                break
+
+        if fecha_idx is not None and fin_idx is not None and fecha_idx < fin_idx:
+            for desplazamiento in range(2, 6):
+                target_idx = fecha_idx + desplazamiento
+                if target_idx < fin_idx and target_idx < len(lineas):
+                    posible = lineas[target_idx].strip()
+                    if re.search(r'\b(MZA|MZ|MANZANA|LTE|LOTE|CALLE|AV\.?|AVENIDA|NO\.?\s*EXT|NO\.?\s*INT|COLONIA)\b', posible, re.IGNORECASE):
+                        return posible
+
+            cp = extraer_cp(texto)
+            if cp:
+                for i, linea in enumerate(lineas):
+                    if cp in linea:
+                        if i - 1 >= 0:
+                            return lineas[i - 1].strip()
+
+    return ""
+
+
+def extraer_agente(texto: str) -> tuple[str | None, str | None]:
+    """
+    En Quálitas, dentro de la sección "OFICINA DE ATENCIÓN DE SERVICIO",
+    el nombre del agente y su clave aparecen en líneas consecutivas
+    (no en la misma línea como en un principio se asumió):
+
+        Agente:
+        CIUDAD DE MEXICO          <- ciudad de la oficina, se ignora
+        JIRO Y ASOCIADOS,AGENTE DE SEGUROS Y FIANZAS,S.A. DE C.V.
+        57335                     <- clave (4-6 dígitos)
+        5-46-14-58                <- teléfono, no nos interesa
+
+    Se busca la primera línea que sea íntegramente una clave numérica
+    dentro de las líneas siguientes a "Agente:"; el nombre es la línea
+    inmediatamente anterior a esa clave.
+    """
+    idx = texto.find("Agente:")
+    if idx == -1:
+        return None, None
+
+    fragmento = texto[idx:idx + 400]
+    lineas = [l.strip() for l in fragmento.splitlines() if l.strip()]
+
+    for i in range(1, len(lineas)):
+        if re.fullmatch(r"\d{4,6}", lineas[i]):
+            clave = lineas[i]
+            nombre = lineas[i - 1] if i - 1 >= 1 else None
+            return clave, nombre
+
+    return None, None
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Punto de entrada usado por el pipeline (nivel 1)
 # ────────────────────────────────────────────────────────────────────────────
@@ -991,6 +1080,7 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
     texto, paginas_dict = _leer_con_fitz(pdf_bytes)
 
     vigencia = extraer_vigencia_por_frecuencia(texto)
+    clave_agente, nombre_agente = extraer_agente(texto)
 
     candidatos = {
         "documento":       extraer_numero_poliza_qualitas(texto),
@@ -1013,6 +1103,9 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "descripcion_veh": extraer_descripcion_vehiculo(texto),
         "colonia":         extraer_colonia(texto),
         "municipio":       extraer_municipio(texto),
+        "direccion_completa": extraer_direccion(texto),
+        "agente_clave":    clave_agente,
+        "agente_nombre":   nombre_agente,
     }
 
     return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}

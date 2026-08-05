@@ -596,6 +596,55 @@ def extraer_clave_agente(texto, paginas_dict):
     return "No encontrado"
 
 
+def extraer_nombre_agente(texto, paginas_dict):
+    spans = _spans_seccion_agente(paginas_dict)
+    etiqueta = _encontrar_etiqueta(spans, "Agente", coincidencia_exacta=True)
+    valor = _valor_por_posicion(spans, etiqueta, etiquetas_excluir={"clave", "fecha de expedición"},
+                                 permitir_misma_fila=False)
+    if valor and len(valor) > 5:
+        return valor.strip()
+
+    # Fallback: método original
+    lineas = texto.splitlines()
+    for i, linea in enumerate(lineas):
+        if "agente" in linea.lower():
+            idx_nombre = i + 5
+            if idx_nombre < len(lineas):
+                nombre = lineas[idx_nombre].strip()
+                if nombre and len(nombre) > 5:
+                    return nombre
+            break
+    return "No encontrado"
+
+
+def extraer_direccion(texto, paginas_dict):
+    seccion, _ = _spans_seccion_contratante(paginas_dict)
+    etiqueta = _encontrar_etiqueta(seccion, "Dirección", coincidencia_exacta=True)
+    excluir = {"código de cliente", "nombre", "r.f.c.", "referencia"}
+    valor = _valores_multilinea_por_posicion(seccion, etiqueta, etiquetas_excluir=excluir,
+                                              tolerancia_x=20, max_distancia_y=90, max_lineas=3)
+    if valor:
+        return valor.strip()
+
+    # Fallback: método original
+    lineas = texto.splitlines()
+    direccion = []
+    for i, linea in enumerate(lineas):
+        if "dirección" in linea.lower():
+            inicio = i + 4
+            for offset in range(0, 3):
+                idx = inicio + offset
+                if idx >= len(lineas):
+                    break
+                contenido = lineas[idx].strip()
+                if contenido:
+                    direccion.append(contenido)
+                    if re.search(r"c\s*\.?\s*p\s*\.?[:\s]*\d{4,5}", contenido.lower()):
+                        break
+            return " ".join(direccion).strip() if direccion else "No encontrado"
+    return "No encontrado"
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Punto de entrada usado por el pipeline (nivel 1)
 # ────────────────────────────────────────────────────────────────────────────
@@ -636,7 +685,9 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "serie":           extraer_serie(texto, paginas_dict),
         "modelo":          extraer_modelo(texto, paginas_dict),
         "placas":          extraer_placas(texto, paginas_dict),
-        "agente":          extraer_clave_agente(texto, paginas_dict),
+        "agente_clave":    extraer_clave_agente(texto, paginas_dict),
+        "agente_nombre":   extraer_nombre_agente(texto, paginas_dict),
+        "direccion_completa": extraer_direccion(texto, paginas_dict),
     }
 
     return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
