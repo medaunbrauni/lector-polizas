@@ -5,9 +5,10 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
 from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal
-from ..services.rule_engine import cobertura_subramo
+from ..services.rule_engine import cobertura_subramo, _es_vehiculo, _ramo_de_subramo
 
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
 
@@ -278,22 +279,6 @@ def codigo_deteccion(db: Session = Depends(get_db)):
     return result
 
 
-# ── Helpers de ramo ────────────────────────────────────────────────────────────
-
-_VEHICULO_KW = ("vehículo", "vehiculo", "auto", "moto", "camión", "camion", "transporte", "carga")
-
-def _es_vehiculo(nombre_ramo: str) -> bool:
-    n = nombre_ramo.lower()
-    return any(kw in n for kw in _VEHICULO_KW)
-
-
-def _ramo_de_subramo(subramo_id: int, db: Session) -> Ramo | None:
-    s = db.query(Subramo).filter(Subramo.id == subramo_id).first()
-    if not s:
-        return None
-    return db.query(Ramo).filter(Ramo.id == s.ramo_id).first()
-
-
 def _campo_global_dict(c: CampoGlobal) -> dict:
     return {
         "id": c.id,
@@ -440,7 +425,7 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
 
     try:
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=MODEL_PATTERN_GEN,
             max_tokens=700,
             messages=[{"role": "user", "content": prompt}],
         )

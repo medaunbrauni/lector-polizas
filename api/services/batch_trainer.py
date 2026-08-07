@@ -9,6 +9,7 @@ import json
 import anthropic
 from sqlalchemy.orm import Session
 
+from ..config import MODEL_BATCH_TRAINER
 from ..models.db_models import PolizaEntrenamiento, ReglaExtraccion, Subramo, Ramo, Compania
 from .rule_engine import _aplicar_patron
 
@@ -150,7 +151,7 @@ Responde SOLO con JSON válido, sin markdown:
 
     client = anthropic.Anthropic(api_key=api_key)
     message = client.messages.create(
-        model="claude-opus-4-7",
+        model=MODEL_BATCH_TRAINER,
         max_tokens=600,
         messages=[{"role": "user", "content": prompt}],
     )

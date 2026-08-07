@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
 from ..models.db_models import ReglaExtraccion, Extraccion
 from ..services.rule_engine import _aplicar_patron, cobertura_subramo
@@ -292,7 +293,7 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
 
     try:
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=MODEL_PATTERN_GEN,
             max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )

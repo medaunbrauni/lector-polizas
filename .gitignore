@@ -5,6 +5,13 @@ venv/
 .env
 *.egg-info/
 
+# Caches de herramientas Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 # Node
 node_modules/
 dist/
@@ -21,3 +28,32 @@ __pycache__/
 Thumbs.db
 *.db-wal
 *.db-shm
+*.db-journal
+
+# Base de datos local
+lector_polizas.db
+
+# Archivos de entrenamiento / temporales
+storage/
+
+# IDEs / editores
+.idea/
+.vscode/
+
+# DBeaver (workspace local de conexiones/scripts SQL)
+workspace/
+*.dbeaver
+dbeaver-debug*.log
+
+# Logs y archivos temporales
+*.log
+*.tmp
+*.bak
+
+# Archivos comprimidos sueltos (no forman parte del código fuente)
+*.zip
+*.rar
+
+# Artefactos de debug
+debug_texto_poliza.txt
+migrate_qualitas_conocimiento.py

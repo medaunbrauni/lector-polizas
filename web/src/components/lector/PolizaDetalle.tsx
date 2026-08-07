@@ -1,10 +1,15 @@
-import { X, Car, MapPin, CreditCard, Calendar, Cpu, Layers, Heart, Zap } from 'lucide-react';
+import { useEffect } from 'react';
+import { X, Car, MapPin, CreditCard, Calendar, Cpu, Layers, Heart, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ResultadoPDF } from '../../lib/types';
 import { fieldLabel } from '../../lib/fieldConfig';
 
 interface Props {
   data: ResultadoPDF;
   onClose: () => void;
+  onAnterior?: () => void;
+  onSiguiente?: () => void;
+  indiceActual?: number;
+  totalPolizas?: number;
 }
 
 // Campos que se muestran en secciones específicas (no en "Otros")
@@ -26,7 +31,24 @@ const CAMPOS_CONOCIDOS = new Set([
   'colonia', 'municipio', 'cp', 'estado',
 ]);
 
-export default function PolizaDetalle({ data, onClose }: Props) {
+export default function PolizaDetalle({
+  data, onClose, onAnterior, onSiguiente, indiceActual, totalPolizas,
+}: Props) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const activo = document.activeElement;
+      const escribiendo = activo instanceof HTMLElement &&
+        (activo.tagName === 'INPUT' || activo.tagName === 'TEXTAREA');
+      if (escribiendo) return;
+
+      if (e.key === 'ArrowLeft' && onAnterior) onAnterior();
+      if (e.key === 'ArrowRight' && onSiguiente) onSiguiente();
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onAnterior, onSiguiente, onClose]);
+
   // Helper: valor por campo, acepta alias (nuevo nombre primero, viejo como fallback)
   const c  = (...keys: string[]) => {
     for (const k of keys) {
@@ -73,9 +95,36 @@ export default function PolizaDetalle({ data, onClose }: Props) {
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-            <X className="w-4 h-4 text-gray-500" />
-          </button>
+          <div className="flex items-center gap-1">
+            {totalPolizas != null && totalPolizas > 1 && (
+              <>
+                <button
+                  onClick={onAnterior}
+                  disabled={indiceActual === 1}
+                  className={`p-2 rounded-lg transition-colors ${
+                    indiceActual === 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100'
+                  }`}
+                >
+                  <ChevronLeft className="w-4 h-4 text-gray-500" />
+                </button>
+                <span className="text-xs text-gray-400 px-1 tabular-nums">
+                  {indiceActual} / {totalPolizas}
+                </span>
+                <button
+                  onClick={onSiguiente}
+                  disabled={indiceActual === totalPolizas}
+                  className={`p-2 rounded-lg transition-colors ${
+                    indiceActual === totalPolizas ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100'
+                  }`}
+                >
+                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                </button>
+              </>
+            )}
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+              <X className="w-4 h-4 text-gray-500" />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

@@ -37,6 +37,7 @@ def init_db():
     Base.metadata.create_all(bind=engine)
     _migrate_add_columns()
     _create_indexes()
+    _create_regla_activa_constraint()
 
 
 def _migrate_add_columns():
@@ -87,3 +88,23 @@ def _create_indexes():
                 conn.commit()
             except Exception:
                 pass
+
+
+def _create_regla_activa_constraint():
+    """
+    Garantiza en el esquema la invariante que ya aplica el código de negocio
+    (routers/reglas.py::crear_regla, routers/entrenamiento.py::guardar_regla):
+    solo puede haber una regla activa (no borrador) por campo por subramo.
+
+    A diferencia de _create_indexes(), no se silencia la excepción: si falla
+    aquí es porque ya existen reglas activas duplicadas en la BD, y eso debe
+    corregirse manualmente antes de que la restricción pueda aplicarse
+    (no se resuelve solo, ya que no es una decisión de código sino de datos).
+    """
+    with engine.connect() as conn:
+        conn.execute(text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_regla_activa_unica "
+            "ON reglas_extraccion(subramo_id, nombre_campo) "
+            "WHERE activo = 1 AND es_borrador = 0"
+        ))
+        conn.commit()
