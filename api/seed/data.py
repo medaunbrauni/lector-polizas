@@ -35,7 +35,6 @@ CAMPOS_VEHICULOS = [
     {"nombre": "serie",            "label": "N° de Serie",             "tipo": "texto",  "requerido": False, "orden": 6},
     {"nombre": "motor",            "label": "N° de Motor",             "tipo": "texto",  "requerido": False, "orden": 7},
     {"nombre": "tipo_vehiculo",    "label": "Tipo de Vehículo",        "tipo": "texto",  "requerido": False, "orden": 8},
-    {"nombre": "nacional_importado","label": "Nacional / Importado",   "tipo": "texto",  "requerido": False, "orden": 9},
     # — Pago —
     {"nombre": "forma_pago",       "label": "Forma de Pago",           "tipo": "texto",  "requerido": False, "orden": 10},
     {"nombre": "moneda",           "label": "Moneda",                  "tipo": "texto",  "requerido": False, "orden": 11},

@@ -74,7 +74,6 @@ export const FIELD_LABELS: Record<string, string> = {
   modelo:             'Modelo (año)',
   descripcion_veh:    'Descripción Vehículo',
   tipo_vehiculo:      'Tipo Vehículo',
-  nacional_importado: 'Nacional/Importado',
 
   // — Dirección —
   colonia:            'Colonia',
@@ -118,7 +117,6 @@ export const EXCEL_COLS: Array<{ campo: string; header: string }> = [
   { campo: 'motor',              header: 'N° Motor' },
   { campo: 'descripcion_veh',    header: 'Descripción Vehículo' },
   { campo: 'tipo_vehiculo',      header: 'Tipo Vehículo' },
-  { campo: 'nacional_importado', header: 'Nacional/Importado' },
   // GMM / AYE
   { campo: 'suma_asegurada',     header: 'Suma Asegurada' },
   { campo: 'deducible',          header: 'Deducible' },

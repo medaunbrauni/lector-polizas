@@ -750,7 +750,8 @@ def extraer_cp(texto):
                     conteo_cp[cp] = conteo_cp.get(cp, 0) + 1
 
     if conteo_cp:
-        return max(conteo_cp, key=conteo_cp.get)
+        cp = max(conteo_cp, key=conteo_cp.get)
+        return cp.zfill(5)  # CP mexicano siempre 5 dígitos; PDF a veces omite el 0 inicial
     return ""
 
 

@@ -18,7 +18,7 @@ const CAMPOS_CONOCIDOS = new Set([
   'documento', 'numero_poliza', 'nombre_cliente', 'rfc', 'entidad', 'forma_pago', 'moneda',
   // Vehículo
   'descripcion_veh', 'descripcion_vehiculo', 'placas', 'serie', 'motor',
-  'tipo_vehiculo', 'nacional_importado', 'modelo',
+  'tipo_vehiculo', 'modelo',
   // Cobertura / GMM
   'nombre_asegurado', 'suma_asegurada', 'deducible', 'coaseguro',
   'fecha_nacimiento', 'beneficiarios', 'objeto_asegurado',
@@ -164,7 +164,6 @@ export default function PolizaDetalle({
               <Row label="N° Motor"           value={c('motor')}            metodo={mt('motor')} mono />
               <Row label="Modelo (año)"       value={c('modelo')}           metodo={mt('modelo')} />
               <Row label="Tipo"               value={c('tipo_vehiculo')}    metodo={mt('tipo_vehiculo')} />
-              <Row label="Nacional/Importado" value={c('nacional_importado')} metodo={mt('nacional_importado')} />
             </Section>
           )}
 

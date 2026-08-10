@@ -8,7 +8,6 @@ class VehiculoData(BaseModel):
     serie: Optional[str] = None
     motor: Optional[str] = None
     tipo: Optional[str] = None
-    nacional_importado: Optional[str] = None
 
 
 class DireccionData(BaseModel):
