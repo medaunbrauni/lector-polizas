@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { X, Car, MapPin, CreditCard, Calendar, Cpu, Layers, Heart, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ResultadoPDF } from '../../lib/types';
-import { fieldLabel } from '../../lib/fieldConfig';
+import { fieldLabel, formatEntidad } from '../../lib/fieldConfig';
 
 interface Props {
   data: ResultadoPDF;
@@ -150,7 +150,7 @@ export default function PolizaDetalle({
             <Row label="N° Póliza"    value={c('documento', 'numero_poliza')} metodo={mt('documento', 'numero_poliza')} mono />
             <Row label="Cliente"      value={c('nombre_cliente')}  metodo={mt('nombre_cliente')} />
             <Row label="RFC"          value={c('rfc')}             metodo={mt('rfc')} mono />
-            <Row label="Entidad"      value={c('entidad')}         metodo={mt('entidad')} />
+            <Row label="Entidad"      value={c('entidad') !== undefined ? formatEntidad(c('entidad')) : undefined} metodo={mt('entidad')} />
             <Row label="Forma Pago"   value={c('forma_pago')}      metodo={mt('forma_pago')} />
             <Row label="Moneda"       value={c('moneda')}          metodo={mt('moneda')} />
           </Section>

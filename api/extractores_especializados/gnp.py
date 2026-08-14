@@ -17,9 +17,12 @@ propósito, no se capturan por este nivel):
       ambos compiten por el mismo campo "agente")
 """
 from __future__ import annotations
+import logging
 import re
 
 import fitz  # PyMuPDF
+
+from .figuras_juridicas import es_persona_moral_por_nombre, normalizar_siglas_razon_social
 
 
 def _leer_con_fitz(pdf_bytes: bytes) -> tuple[str, list[dict]]:
@@ -332,9 +335,46 @@ def extraer_prima_neta(texto, paginas_dict):
         _campo_por_etiqueta(paginas_dict, "Prima Neta", etiquetas_excluir={"prima neta con descuento"})
 
 
+def extraer_prima_neta_con_descuento(texto):
+    """"Prima Neta con Descuento": valor de Prima Neta ya con los
+    descuentos detallados (Experiencia GNP, Renovación GNP, Cliente
+    Integral GNP, Campañas, ...) aplicados. Solo aparece en el layout de
+    GNP que desglosa esos descuentos por tipo (ver _tiene_descuentos_detallados_gnp)."""
+    match = re.search(r'Prima\s*Neta\s*con\s*Descuento\s*\$?\s*([0-9,]+\.\d{2})', texto, re.IGNORECASE)
+    return match.group(1).replace(",", "") if match else None
+
+
+_DESCUENTOS_DETALLADOS_GNP = re.compile(
+    r'(?:Experiencia|Renovaci[oó]n|Cliente\s+Integral)\s+GNP|Campañas', re.IGNORECASE
+)
+
+
+def _tiene_descuentos_detallados_gnp(texto) -> bool:
+    return bool(_DESCUENTOS_DETALLADOS_GNP.search(texto))
+
+
 def extraer_derecho_poliza(texto, paginas_dict):
     valor = extraer_por_lineas_regex(texto, [r'Derecho\s+(?:de\s+)?P[oó]liza\s*[:\-]?\s*\$?\s*([0-9,]+\.\d{2})'])
     return valor or buscar_valor_monetario(paginas_dict, "derecho")
+
+
+_ETIQUETAS_TABLA_PAGO = {"forma de pago", "moneda", "plazo para el pago", "conducto de pago", "intermediario"}
+
+
+def extraer_forma_pago(texto, paginas_dict):
+    """Tabla de 2 filas (labels arriba, valores debajo, alineados por columna):
+    'Conducto de Pago | Forma de Pago | Moneda | Plazo para el Pago' sobre
+    'Intermediario | <forma> | <moneda> | <plazo>' — el valor de cada
+    columna queda desalineado con su propia etiqueta de texto plano
+    (ej. el valor bajo 'Conducto de Pago' es literalmente 'Intermediario'),
+    por eso se resuelve por posición y no por regex de texto."""
+    return _campo_por_etiqueta(paginas_dict, "Forma de Pago", etiquetas_excluir=_ETIQUETAS_TABLA_PAGO,
+                                permitir_misma_fila=False, max_distancia_y=20)
+
+
+def extraer_moneda(texto, paginas_dict):
+    return _campo_por_etiqueta(paginas_dict, "Moneda", etiquetas_excluir=_ETIQUETAS_TABLA_PAGO,
+                                permitir_misma_fila=False, max_distancia_y=20)
 
 
 def extraer_iva(texto, paginas_dict):
@@ -350,6 +390,94 @@ def extraer_importe_pagar(texto, paginas_dict):
 def extraer_recargo_fraccionado(texto, paginas_dict):
     valor = extraer_por_lineas_regex(texto, [r'Recargo\s+por\s+pago\s+fraccionado\s*[:\-]?\s*\$?([0-9,]+\.\d{2})'])
     return valor or buscar_valor_monetario(paginas_dict, "recargo")
+
+
+def _a_float(valor) -> float:
+    """Convierte un monto extraído ("6,490.48", None, "") a float; 0.0 si falta o no es numérico."""
+    if not valor:
+        return 0.0
+    try:
+        return float(str(valor).replace(",", ""))
+    except ValueError:
+        return 0.0
+
+
+def calcular_subtotal(prima_neta, descuento, recargos, derechos):
+    """
+    Sub Total es un campo CALCULADO según el catálogo Sicas, no se extrae
+    de ninguna etiqueta del PDF: Sub Total = Prima Neta - Descuento +
+    Recargos + Derechos. El desglose "MONTO A PAGAR" de GNP nunca imprime
+    la etiqueta "Subtotal" (va directo de Prima Neta/Recargo/Derecho a
+    I.V.A. a Importe por Pagar), y GNP tampoco extrae "Descuento" (queda
+    en 0 en la fórmula). Verificado contra un PDF real: 7146.70 - 0 +
+    0.00 + 590.00 = 7736.70, y 7736.70 × 1.16 = 8974.55 ≈ 8974.56 (el
+    Importe por Pagar real de esa póliza), con el I.V.A. real de esa
+    póliza (1237.87) correspondiendo exactamente a esa base.
+    """
+    if not prima_neta:
+        return None
+    total = _a_float(prima_neta) - _a_float(descuento) + _a_float(recargos) + _a_float(derechos)
+    return f"{total:,.2f}"
+
+
+def extraer_subtotal_pdf(texto: str) -> str | None:
+    """
+    Valor de "Subtotal" tal como aparece impreso literalmente en el PDF
+    (a diferencia de calcular_subtotal, que lo reconstruye a partir de
+    otros campos). Se usa como referencia cruzada — ver validar_subtotal.
+    Hasta ahora ningún PDF real de GNP disponible imprime esta etiqueta
+    (su desglose "MONTO A PAGAR" va directo de Prima Neta/Recargo/
+    Derecho a I.V.A. a Importe por Pagar, sin Subtotal intermedio) — esta
+    función existe por completitud y por si algún layout de GNP sí la
+    imprime; normalmente retornará None y validar_subtotal usará el
+    cálculo directamente.
+
+    Mismo criterio que en Qualitas: intenta primero línea única (regex
+    acotado a no cruzar "\\n"), y si no, bloques separados (etiqueta sola
+    en su línea, valor 8 líneas más abajo).
+    """
+    match = re.search(r'Subtotal[^\n]*?(-?[\d,]+\.\d{2})', texto, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    lineas = texto.splitlines()
+    for i, linea in enumerate(lineas):
+        if linea.strip().lower() == "subtotal":
+            idx = i + 8
+            if idx < len(lineas):
+                posible = lineas[idx].strip()
+                if re.fullmatch(r'-?[\d,]+\.\d{2}', posible):
+                    return posible
+            break
+
+    return None
+
+
+def validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva):
+    """
+    Cruza el cálculo constructivo de Sub Total (Prima Neta - Descuento +
+    Recargos + Derechos) contra una referencia independiente (Prima Total
+    - IVA), por si el cálculo se contamina por un campo mal extraído.
+    Mismo criterio que en Qualitas — ver ahí para el detalle completo.
+    """
+    referencia = None
+    if prima_total and iva:
+        referencia = _a_float(prima_total) - _a_float(iva)
+
+    if subtotal_calculado and referencia is not None and round(abs(_a_float(subtotal_calculado) - referencia), 2) <= 0.01:
+        return subtotal_calculado
+
+    if subtotal_pdf:
+        return subtotal_pdf
+
+    if subtotal_calculado:
+        logging.getLogger(__name__).warning(
+            "GNP: Sub Total calculado (%s) no coincide con la referencia "
+            "Prima Total - IVA, y no se encontró el valor impreso en el PDF; "
+            "se usa el calculado sin poder validarlo.",
+            subtotal_calculado,
+        )
+    return subtotal_calculado
 
 
 def extraer_vigencia(texto, paginas_dict):
@@ -378,6 +506,34 @@ def _spans_seccion_vehiculo(paginas_dict):
     y0 = inicio["y0"]
     y1 = fin["y0"] if fin else y0 + 200
     return [s for s in spans if y0 <= s["y0"] < y1]
+
+
+def _normalizar_tipo_vehiculo_gnp(valor_crudo: str) -> str:
+    """GNP imprime la procedencia del vehículo (campo 'Tipo Vehículo')
+    con el prefijo 'VEHÍCULOS' (ej. 'VEHÍCULOS RESIDENTES'). Se normaliza
+    a los mismos valores que usa Quálitas para el mismo concepto:
+    'Residentes' o 'Fronterizos/Legalizados' (esta última no se ha visto
+    en los PDFs de prueba disponibles, pero se cubre por si el layout la
+    imprime junta o separada — cualquiera de las dos palabras basta para
+    detectarla)."""
+    v = valor_crudo.upper()
+    if "FRONTERIZ" in v or "LEGALIZAD" in v:
+        return "Fronterizos/Legalizados"
+    if "RESIDENTE" in v:
+        return "Residentes"
+    return valor_crudo.strip()
+
+
+def extraer_tipo_vehiculo(texto, paginas_dict):
+    """Etiqueta 'Procedencia' en la sección VEHÍCULO ASEGURADO, con su
+    valor en la misma fila (ej. 'VEHÍCULOS RESIDENTES'). El campo se
+    llama 'Tipo Vehículo' en el esquema (mismo nombre ya usado en
+    Quálitas), aunque en el PDF de GNP la etiqueta impresa es
+    'Procedencia'."""
+    seccion = _spans_seccion_vehiculo(paginas_dict)
+    etiqueta = _encontrar_etiqueta(seccion, "Procedencia", coincidencia_exacta=True)
+    valor = _valor_por_posicion(seccion, etiqueta, etiquetas_excluir={"circula en"})
+    return _normalizar_tipo_vehiculo_gnp(valor) if valor else ""
 
 
 def extraer_descripcion(texto, paginas_dict):
@@ -425,7 +581,36 @@ def extraer_serie(texto, paginas_dict):
     return valor.strip()
 
 
+def extraer_motor(texto, paginas_dict):
+    # Layout de línea única "Serie:... Motor:<valor> Color:<valor?> Placas:...":
+    # el valor de Motor no tiene longitud ni tipo de carácter fijo (puede ser
+    # "20607541", "11294130144935" o "KA24016688M"), así que se delimita con
+    # un lookahead hacia la siguiente etiqueta conocida en vez de un rango de
+    # longitud. "Color:" puede venir vacío (seguido inmediatamente de
+    # "Placas:"), por eso la alternancia no asume que Color siempre tiene valor.
+    match = re.search(
+        r'Motor\s*:\s*([A-Za-z0-9]+?)\s*(?=Color\s*:|Placas\s*:|\n|$)',
+        texto, re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).upper()
+
+    # Fallback por posición, si el layout es de tabla (Modelo/Placas/Motor)
+    seccion = _spans_seccion_vehiculo(paginas_dict)
+    etiqueta = _encontrar_etiqueta(seccion, "Motor", coincidencia_exacta=True)
+    valor = _valor_por_posicion(seccion, etiqueta, etiquetas_excluir={"modelo", "placas"},
+                                 permitir_misma_fila=False, max_distancia_y=18)
+    return valor.strip()
+
+
 def extraer_modelo(texto, paginas_dict):
+    # Layout de línea única "Tipo:... Modelo:<año> Ocupantes:...": se
+    # intenta primero porque es el caso simple; si no aparece así, se cae
+    # al layout posicional (tabla Modelo/Placas/Motor) de abajo.
+    match = re.search(r'Modelo\s*:\s*((?:19|20)\d{2})\b', texto, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
     seccion = _spans_seccion_vehiculo(paginas_dict)
     etiqueta = _encontrar_etiqueta(seccion, "Modelo", coincidencia_exacta=True)
     # max_distancia_y acotado a ~18pt: el valor SIEMPRE está en la fila
@@ -645,6 +830,30 @@ def extraer_direccion(texto, paginas_dict):
     return "No encontrado"
 
 
+_PARTES_DIRECCION_GNP = re.compile(
+    r'^.*?,\s*(?P<colonia>[^,]+),\s*(?P<municipio>[^,]+),\s*[^,]+,\s*C\.?\s*P\.?\s*(?P<cp>\d{4,5})\s*$',
+    re.IGNORECASE,
+)
+
+
+def extraer_colonia_municipio_cp(direccion_completa):
+    """Descompone "direccion_completa" (formato observado en los PDFs de
+    GNP: "<calle y número>, <colonia>, <municipio>, <estado>, C.P.
+    <cp>") en sus partes, sin volver a leer el PDF. No hay extracción
+    independiente de Colonia/Municipio/C.P. para GNP: son un parseo del
+    valor ya extraído por extraer_direccion."""
+    if not direccion_completa:
+        return {}
+    match = _PARTES_DIRECCION_GNP.match(direccion_completa)
+    if not match:
+        return {}
+    return {
+        "colonia":   match.group("colonia").strip(),
+        "municipio": match.group("municipio").strip(),
+        "cp":        match.group("cp"),
+    }
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Punto de entrada usado por el pipeline (nivel 1)
 # ────────────────────────────────────────────────────────────────────────────
@@ -669,32 +878,64 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
 
     vigencia = extraer_vigencia(texto, paginas_dict)
 
+    # Si la razón social contiene una figura jurídica (S.A., A.C., etc.),
+    # el asegurado es Persona Moral: normalizamos las siglas a mayúsculas
+    # sin puntos (ej. "S.A. de C.V." -> "SA de CV"), dejando el resto del
+    # nombre y los conectores ("de"/"en"/"por") exactamente igual.
+    nombre_cliente = extraer_nombre_cliente(texto, paginas_dict)
+    if nombre_cliente and es_persona_moral_por_nombre(nombre_cliente):
+        nombre_cliente = normalizar_siglas_razon_social(nombre_cliente)
+
+    prima_neta = extraer_prima_neta(texto, paginas_dict)
+
+    # TEMPORAL: ajuste para layout GNP con descuentos detallados, revisar
+    # cuando se defina manejo definitivo de este layout. Cuando el PDF
+    # desglosa descuentos por tipo (Experiencia GNP, Renovación GNP,
+    # Cliente Integral GNP, Campañas...), "Prima Neta" impresa es el
+    # monto SIN esos descuentos; el resto del pipeline (incl. Sub Total)
+    # debe usar "Prima Neta con Descuento" en su lugar.
+    if _tiene_descuentos_detallados_gnp(texto):
+        prima_neta_con_descuento = extraer_prima_neta_con_descuento(texto)
+        if prima_neta_con_descuento:
+            prima_neta = prima_neta_con_descuento
+
+    derechos = extraer_derecho_poliza(texto, paginas_dict)
+    recargos = extraer_recargo_fraccionado(texto, paginas_dict)
+    iva = extraer_iva(texto, paginas_dict)
+    prima_total = extraer_importe_pagar(texto, paginas_dict)
+
+    subtotal_calculado = calcular_subtotal(prima_neta, None, recargos, derechos)
+    subtotal_pdf = extraer_subtotal_pdf(texto)
+    subtotal = validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva)
+
     candidatos = {
         "renovacion":      extraer_renovacion(texto, paginas_dict),
         "documento":       extraer_numero_poliza(texto, paginas_dict),
-        "nombre_cliente":  extraer_nombre_cliente(texto, paginas_dict),
+        "nombre_cliente":  nombre_cliente,
         "rfc":             extraer_rfc(texto, paginas_dict),
         "desde":           vigencia.get("Inicio Vigencia"),
         "hasta":           vigencia.get("Fin Vigencia"),
-        "prima_neta":      extraer_prima_neta(texto, paginas_dict),
-        "derechos":        extraer_derecho_poliza(texto, paginas_dict),
-        "iva":             extraer_iva(texto, paginas_dict),
-        "prima_total":     extraer_importe_pagar(texto, paginas_dict),
-        "recargos":        extraer_recargo_fraccionado(texto, paginas_dict),
+        "prima_neta":      prima_neta,
+        "derechos":        derechos,
+        "iva":             iva,
+        "prima_total":     prima_total,
+        "recargos":        recargos,
+        "sub_total":       subtotal,
         "descripcion_veh": extraer_descripcion(texto, paginas_dict),
         "serie":           extraer_serie(texto, paginas_dict),
         "modelo":          extraer_modelo(texto, paginas_dict),
+        "motor":           extraer_motor(texto, paginas_dict),
         "placas":          extraer_placas(texto, paginas_dict),
         "agente_clave":    extraer_clave_agente(texto, paginas_dict),
         "agente_nombre":   extraer_nombre_agente(texto, paginas_dict),
         "direccion_completa": extraer_direccion(texto, paginas_dict),
+        "forma_pago":      extraer_forma_pago(texto, paginas_dict),
+        "moneda":          extraer_moneda(texto, paginas_dict),
+        "tipo_vehiculo":   extraer_tipo_vehiculo(texto, paginas_dict),
     }
 
-    resultado = {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
+    # Colonia/Municipio/C.P.: no se extraen de forma independiente, se
+    # parsean del "direccion_completa" ya extraído arriba.
+    candidatos.update(extraer_colonia_municipio_cp(candidatos["direccion_completa"]))
 
-    # fecha_antiguedad: no existe como tal en pólizas de auto nuevas;
-    # se usa el inicio de vigencia como antigüedad por defecto.
-    if 'desde' in resultado and 'fecha_antiguedad' not in resultado:
-        resultado['fecha_antiguedad'] = resultado['desde']
-
-    return resultado
+    return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}

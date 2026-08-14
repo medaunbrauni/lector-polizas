@@ -15,6 +15,7 @@ from .detector import detectar_con_score
 from .rule_engine import aplicar_reglas, campos_sin_regla
 from .ai_utils import parse_claude_json, make_anthropic_client
 from ..extractores_especializados.registry import obtener_extractor
+from ..extractores_especializados.figuras_juridicas import es_persona_moral_por_nombre
 from ..config import MODEL_EXTRACTOR
 from ..models.db_models import (
     Extraccion, CampoExtraido, CampoDefinido,
@@ -142,11 +143,22 @@ def _derivar_campos(datos: dict) -> dict:
 
     Reglas actuales
     ───────────────
-    entidad  ← rfc
-        13 caracteres → "Persona Física"
-        12 caracteres → "Persona Moral"
+    entidad  ← rfc, nombre_cliente
+        13 caracteres de RFC → "Persona Física"
+        12 caracteres de RFC → "Persona Moral"
         (RFC mexicano estándar: 4 letras + 6 dígitos fecha + 3 homoclave = 13 PF
                                  3 letras + 6 dígitos fecha + 3 homoclave = 12 PM)
+
+        Señal adicional: catálogo de figuras jurídicas/razones sociales
+        mexicanas (S.A., A.C., Sindicato, Gobierno Municipal, etc.) buscado
+        en nombre_cliente — ver extractores_especializados/figuras_juridicas.py.
+        El RFC tiene prioridad cuando ambas señales están disponibles y se
+        contradicen: es un identificador oficial con una regla estructural
+        fija, mientras que la coincidencia por nombre es heurística
+        (substring) y puede dar falsos positivos/negativos por OCR,
+        truncamiento o coincidencias de texto. La señal por nombre solo
+        decide cuando el RFC no permite derivar nada (longitud inesperada
+        o ausente).
 
     Reglas futuras (pendientes de implementación):
     ───────────────────────────────────────────────
@@ -157,6 +169,9 @@ def _derivar_campos(datos: dict) -> dict:
     rfc_info = datos.get("rfc")
     rfc_val  = (rfc_info.get("valor") or "").strip() if rfc_info else ""
 
+    nombre_info = datos.get("nombre_cliente")
+    nombre_val  = (nombre_info.get("valor") or "").strip() if nombre_info else ""
+
     if rfc_val and "entidad" not in datos or (datos.get("entidad", {}).get("valor") is None):
         n = len(rfc_val)
         if n == 13:
@@ -165,6 +180,12 @@ def _derivar_campos(datos: dict) -> dict:
             entidad_val = "Persona Moral"
         else:
             entidad_val = None          # RFC con longitud inesperada — no derivar
+
+        # El RFC manda cuando decide algo. Solo si no pudo derivar nada
+        # (RFC ausente o de longitud inesperada) se usa el nombre/razón
+        # social como respaldo — ver docstring arriba.
+        if entidad_val is None and es_persona_moral_por_nombre(nombre_val):
+            entidad_val = "Persona Moral"
 
         if entidad_val is not None:
             datos["entidad"] = {

@@ -41,7 +41,9 @@ CAMPOS_VEHICULOS = [
     # — Primas —
     {"nombre": "prima_neta",       "label": "Prima Neta",              "tipo": "moneda", "requerido": True,  "orden": 12},
     {"nombre": "derechos",         "label": "Derechos / Gastos Exp.",  "tipo": "moneda", "requerido": False, "orden": 13},
-    {"nombre": "subtotal",         "label": "Subtotal",                "tipo": "moneda", "requerido": False, "orden": 14},
+    # "subtotal" (específico) fue duplicado del global "sub_total" — se
+    # unificó al global (campo calculado, ver calcular_subtotal en los
+    # extractores). No agregar de nuevo aquí.
     {"nombre": "iva",              "label": "IVA",                     "tipo": "moneda", "requerido": False, "orden": 15},
     {"nombre": "prima_total",      "label": "Prima Total",             "tipo": "moneda", "requerido": True,  "orden": 16},
     # — Vigencia —
