@@ -32,6 +32,7 @@ Thumbs.db
 
 # Base de datos local
 lector_polizas.db
+lector_polizas.db.bak-*
 
 # Archivos de entrenamiento / temporales
 storage/

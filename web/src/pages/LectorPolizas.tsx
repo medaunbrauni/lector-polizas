@@ -10,7 +10,7 @@ import { Link } from 'react-router-dom';
 import type { ResultadoPDF, ExtractionResponse, NivelConfianza, Compania, Ramo, Subramo } from '../lib/types';
 import PolizaDetalle from '../components/lector/PolizaDetalle';
 import { getCompanias, getRamos, getSubramos, reaplicarExtraccion } from '../lib/api';
-import { EXCEL_COLS } from '../lib/fieldConfig';
+import { EXCEL_COLS, formatEntidad } from '../lib/fieldConfig';
 
 const API_URL = '/api/extraer';
 
@@ -196,7 +196,10 @@ export default function LectorPolizas() {
   function exportarExcel() {
     if (!resultados.length) return;
 
-    const c = (r: ResultadoPDF, k: string) => r.campos?.[k]?.valor ?? null;
+    const c = (r: ResultadoPDF, k: string) => {
+      const v = r.campos?.[k]?.valor ?? null;
+      return k === 'entidad' && v !== null ? formatEntidad(v) : v;
+    };
 
     // Cabeceras: metadatos fijos + todas las columnas de fieldConfig
     const metaHeaders  = ['Archivo', 'Compañía', 'Ramo', 'Subramo'];

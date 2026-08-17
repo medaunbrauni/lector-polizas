@@ -35,14 +35,15 @@ CAMPOS_VEHICULOS = [
     {"nombre": "serie",            "label": "N° de Serie",             "tipo": "texto",  "requerido": False, "orden": 6},
     {"nombre": "motor",            "label": "N° de Motor",             "tipo": "texto",  "requerido": False, "orden": 7},
     {"nombre": "tipo_vehiculo",    "label": "Tipo de Vehículo",        "tipo": "texto",  "requerido": False, "orden": 8},
-    {"nombre": "nacional_importado","label": "Nacional / Importado",   "tipo": "texto",  "requerido": False, "orden": 9},
     # — Pago —
     {"nombre": "forma_pago",       "label": "Forma de Pago",           "tipo": "texto",  "requerido": False, "orden": 10},
     {"nombre": "moneda",           "label": "Moneda",                  "tipo": "texto",  "requerido": False, "orden": 11},
     # — Primas —
     {"nombre": "prima_neta",       "label": "Prima Neta",              "tipo": "moneda", "requerido": True,  "orden": 12},
     {"nombre": "derechos",         "label": "Derechos / Gastos Exp.",  "tipo": "moneda", "requerido": False, "orden": 13},
-    {"nombre": "subtotal",         "label": "Subtotal",                "tipo": "moneda", "requerido": False, "orden": 14},
+    # "subtotal" (específico) fue duplicado del global "sub_total" — se
+    # unificó al global (campo calculado, ver calcular_subtotal en los
+    # extractores). No agregar de nuevo aquí.
     {"nombre": "iva",              "label": "IVA",                     "tipo": "moneda", "requerido": False, "orden": 15},
     {"nombre": "prima_total",      "label": "Prima Total",             "tipo": "moneda", "requerido": True,  "orden": 16},
     # — Vigencia —

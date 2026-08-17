@@ -19,10 +19,6 @@ export const FIELD_LABELS: Record<string, string> = {
 
   // — Asegurado / Cliente —
   nombre_cliente:     'Cliente',          // campo legacy de especificos
-  nombre:             'Nombre',
-  apellido_paterno:   'Ap. Paterno',
-  apellido_materno:   'Ap. Materno',
-  razon_social:       'Razón Social',
   rfc:                'RFC',
   entidad:            'Entidad',
   ejecutivo_cuenta:   'Ejecutivo Cuenta',
@@ -40,7 +36,6 @@ export const FIELD_LABELS: Record<string, string> = {
   // — Vigencia (nombres canónicos = globales) —
   desde:              'Inicio Vigencia',
   hasta:              'Fin Vigencia',
-  fecha_antiguedad:   'Fecha Antigüedad',
   estatus:            'Estatus',
 
   // — Pago —
@@ -74,7 +69,6 @@ export const FIELD_LABELS: Record<string, string> = {
   modelo:             'Modelo (año)',
   descripcion_veh:    'Descripción Vehículo',
   tipo_vehiculo:      'Tipo Vehículo',
-  nacional_importado: 'Nacional/Importado',
 
   // — Dirección —
   colonia:            'Colonia',
@@ -86,6 +80,19 @@ export const FIELD_LABELS: Record<string, string> = {
 /** Devuelve el label legible para un nombre de campo. */
 export function fieldLabel(nombre: string): string {
   return FIELD_LABELS[nombre] ?? nombre;
+}
+
+/**
+ * Traduce el valor crudo de "entidad" ("0"/"1", código de catálogo Sicas)
+ * a texto legible para el usuario. El valor "0"/"1" se conserva tal cual
+ * en el dato interno/exportado a Sicas — esto es solo para presentación
+ * (frontend y Excel).
+ */
+export function formatEntidad(valor: unknown): string {
+  const v = String(valor ?? '').trim();
+  if (v === '0') return 'Persona Física';
+  if (v === '1') return 'Persona Moral';
+  return v;
 }
 
 // ── Columnas de la tabla resumen en Extractor ─────────────────────────────────
@@ -107,6 +114,7 @@ export const EXCEL_COLS: Array<{ campo: string; header: string }> = [
   { campo: 'nombre_cliente',     header: 'Cliente' },
   { campo: 'rfc',                header: 'RFC' },
   { campo: 'entidad',            header: 'Entidad' },       // derivado de RFC
+  { campo: 'agente_clave',       header: 'Clave Agente' },
   { campo: 'forma_pago',         header: 'Forma Pago' },
   { campo: 'moneda',             header: 'Moneda' },
   // Vigencia
@@ -116,15 +124,16 @@ export const EXCEL_COLS: Array<{ campo: string; header: string }> = [
   { campo: 'placas',             header: 'Placas' },
   { campo: 'serie',              header: 'N° Serie' },
   { campo: 'motor',              header: 'N° Motor' },
+  { campo: 'modelo',             header: 'Modelo (año)' },
   { campo: 'descripcion_veh',    header: 'Descripción Vehículo' },
   { campo: 'tipo_vehiculo',      header: 'Tipo Vehículo' },
-  { campo: 'nacional_importado', header: 'Nacional/Importado' },
   // GMM / AYE
   { campo: 'suma_asegurada',     header: 'Suma Asegurada' },
   { campo: 'deducible',          header: 'Deducible' },
   { campo: 'coaseguro',          header: 'Coaseguro %' },
   // Primas
   { campo: 'prima_neta',         header: 'Prima Neta' },
+  { campo: 'descuento',          header: 'Descuento' },
   { campo: 'derechos',           header: 'Derechos/Gastos Exp.' },
   { campo: 'sub_total',          header: 'Subtotal' },
   { campo: 'iva',                header: 'IVA' },

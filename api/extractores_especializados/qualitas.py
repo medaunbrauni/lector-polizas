@@ -15,11 +15,14 @@ propósito, no se capturan por este nivel):
     - "Dirección" (solo existen colonia/municipio/cp por separado)
 """
 from __future__ import annotations
+import logging
 import re
 import unicodedata
 from collections import Counter
 
 import fitz  # PyMuPDF
+
+from .figuras_juridicas import es_persona_moral_por_nombre, normalizar_siglas_razon_social
 
 
 def _leer_con_fitz(pdf_bytes: bytes) -> tuple[str, list[dict]]:
@@ -221,31 +224,8 @@ def extraer_gastos_expedicion(texto: str) -> str:
     return "No se encontró gastos de expedición"
 
 
-def extraer_subtotal(texto: str) -> str:
-    texto_upper = texto.upper()
-    lineas = texto_upper.splitlines()
-    monto_regex = r'-?\d{1,3}(?:,\d{3})*\.\d{2}'
-
-    def es_monto_valido(valor: str) -> bool:
-        return re.match(monto_regex, valor) is not None
-
-    for i, linea in enumerate(lineas):
-        if "SUBTOTAL" in linea:
-            idx_primario = i + 8
-            if idx_primario < len(lineas):
-                linea_primaria = lineas[idx_primario]
-                montos = re.findall(monto_regex, linea_primaria)
-                if montos and es_monto_valido(montos[0]):
-                    return montos[0]
-
-            idx_fallback = i + 1
-            if idx_fallback < len(lineas):
-                linea_fallback = lineas[idx_fallback]
-                montos = re.findall(monto_regex, linea_fallback)
-                if montos and es_monto_valido(montos[0]):
-                    return montos[0]
-
-    return "No se encontró subtotal"
+# Nota: Sub Total ya NO se extrae del texto del PDF — es un campo
+# CALCULADO (ver calcular_subtotal más abajo), según el catálogo Sicas.
 
 
 def extraer_prima_total(texto: str) -> str:
@@ -470,6 +450,52 @@ def extraer_moneda(texto: str) -> str:
 
 
 def extraer_motor(texto: str) -> str:
+    """
+    Motor tiene (al menos) dos layouts reales en Quálitas:
+
+    1. Línea única "Serie:... Motor:<valor> Color:<valor?> Placas:...", ej.
+       "Motor:11294130144935 Color: Placas:NXG2146" — el valor de Motor no
+       tiene longitud ni tipo de carácter fijo (visto: "20607541" 8 dígitos,
+       "11294130144935" 14 dígitos, "KA24016688M" alfanumérico), así que se
+       delimita con un lookahead hacia la siguiente etiqueta conocida en vez
+       de un rango de longitud. "Color:" puede venir vacío (seguido
+       inmediatamente de "Placas:"), por eso la alternancia no asume que
+       Color siempre tiene valor.
+
+    2. Bloques separados: etiquetas (Tipo/Modelo/Serie/Motor/Placas/Color)
+       todas juntas, valores en otro bloque más abajo — verificado con 16
+       pólizas reales que el valor de Motor SIEMPRE es la línea inmediata
+       después del valor de Serie (el VIN de 17 caracteres), sin importar
+       cuántas otras etiquetas ("Ocupantes:", etc.) se intercalen antes.
+       Antes se buscaba la etiqueta "Motor" por substring y se contaba un
+       offset fijo de líneas desde ahí — eso fallaba cuando "MOTOR" aparecía
+       como substring de otra palabra antes de la etiqueta real (ej.
+       "GMOTORS" en la descripción del vehículo), y el offset fijo tampoco
+       acertaba siempre. Anclarse al VIN de Serie (ya extraído de forma
+       confiable) es más robusto que buscar la etiqueta de Motor misma.
+    """
+    match = re.search(
+        r'Motor\s*:\s*([A-Za-z0-9]+?)\s*(?=Color\s*:|Placas\s*:|\n|$)',
+        texto, re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).upper()
+
+    vin_match = re.search(r'\b([A-HJ-NPR-Z0-9]{17})\b', texto)
+    if vin_match:
+        lineas = texto.splitlines()
+        for i, linea in enumerate(lineas):
+            if vin_match.group(1) in linea:
+                if i + 1 < len(lineas):
+                    valor = lineas[i + 1].strip()
+                    if valor.lower().startswith(("hecho en", "fabricado en", "ensamblado en")):
+                        return valor.title()
+                    if valor:
+                        return valor
+                break
+
+    # Último fallback: offset fijo de líneas desde la etiqueta "Motor"
+    # (impreciso, conservado solo por si ninguno de los layouts anteriores aplica).
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
 
@@ -521,28 +547,37 @@ def extraer_serie(texto: str) -> str:
 
 def extraer_modelo(texto: str) -> str | None:
     """
-    El año del vehículo NO aparece como "Modelo: 2018" en la misma
-    línea (las etiquetas Tipo/Modelo/Serie/... vienen en un bloque
-    separado del bloque de valores en el texto plano extraído). El
-    año aparece como línea suelta justo después del valor de "Tipo"
-    (ej. "Automoviles Nacionales\n2018\nOcupantes:\n05"), así que se
-    reutiliza el mismo ancla que ya usa extraer_tipo_vehiculo.
+    Qualitas tiene (al menos) dos layouts de texto distintos para este
+    campo, según el tipo de póliza/vehículo:
+
+    1. Línea única, etiquetas y valores concatenados en el mismo renglón
+       (ej. "Tipo:Camiones Particulares Modelo:2000 Ocupantes: 05") — se
+       intenta primero, es el caso simple.
+    2. Bloques separados: las etiquetas (Tipo/Modelo/Serie/Motor/Placas/
+       Color) vienen todas juntas, y los valores en un bloque aparte más
+       abajo. Verificado con 16 pólizas reales: el año SIEMPRE está 3
+       líneas después de la línea exacta "Color:" (descripción del
+       vehículo, luego el valor de Tipo, luego el año). Antes se anclaba
+       al VALOR de Tipo con una lista de categorías conocidas
+       ("Automoviles Nacionales/Importados", "Camiones-Panel", ...), pero
+       esa lista estaba incompleta — fallaba con categorías reales no
+       contempladas como "Automoviles Especiales" o "Camiones
+       Particulares". Anclarse a la etiqueta "Color:" evita depender de
+       conocer de antemano todas las categorías de vehículo posibles.
     """
+    match = re.search(r'Modelo\s*:\s*((?:19|20)\d{2})\b', texto, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
     lineas = texto.splitlines()
-    patrones_tipo = [
-        r'^Autom[oó]viles\s+Nacionales',
-        r'^Autom[oó]viles\s+Importados',
-        r'^Camiones-Panel',
-        r'^Motocicletas',
-        r'^Tractocami[oó]n',
-    ]
     for i, linea in enumerate(lineas):
-        posible = linea.strip()
-        if any(re.match(p, posible, re.IGNORECASE) for p in patrones_tipo):
-            if i + 1 < len(lineas):
-                siguiente = lineas[i + 1].strip()
-                if re.fullmatch(r'(19|20)\d{2}', siguiente):
-                    return siguiente
+        if linea.strip() == "Color:":
+            if i + 3 < len(lineas):
+                posible = lineas[i + 3].strip()
+                if re.fullmatch(r'(19|20)\d{2}', posible):
+                    return posible
+            break
+
     return None
 
 
@@ -750,7 +785,8 @@ def extraer_cp(texto):
                     conteo_cp[cp] = conteo_cp.get(cp, 0) + 1
 
     if conteo_cp:
-        return max(conteo_cp, key=conteo_cp.get)
+        cp = max(conteo_cp, key=conteo_cp.get)
+        return cp.zfill(5)  # CP mexicano siempre 5 dígitos; PDF a veces omite el 0 inicial
     return ""
 
 
@@ -1069,6 +1105,103 @@ def extraer_agente(texto: str) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _a_float(valor) -> float:
+    """Convierte un monto extraído ("6,490.48", None, "") a float; 0.0 si falta o no es numérico."""
+    if not valor:
+        return 0.0
+    try:
+        return float(str(valor).replace(",", ""))
+    except ValueError:
+        return 0.0
+
+
+def calcular_subtotal(prima_neta, descuento, recargos, derechos):
+    """
+    Sub Total es un campo CALCULADO según el catálogo Sicas, no se extrae
+    de ninguna etiqueta del PDF: Sub Total = Prima Neta - Descuento +
+    Recargos + Derechos. Quálitas no extrae "Recargos" (no existe ese
+    concepto en su desglose), así que se trata como 0 cuando falta.
+    Verificado contra un PDF real: 6490.48 - 129.81 + 0 + 870.00 =
+    7230.67, exactamente el Subtotal real impreso en esa póliza.
+    """
+    if not prima_neta:
+        return None
+    total = _a_float(prima_neta) - _a_float(descuento) + _a_float(recargos) + _a_float(derechos)
+    return f"{total:,.2f}"
+
+
+def extraer_subtotal_pdf(texto: str) -> str | None:
+    """
+    Valor de "Subtotal" tal como aparece impreso literalmente en el PDF
+    (a diferencia de calcular_subtotal, que lo reconstruye a partir de
+    otros campos). Se usa como referencia cruzada — ver validar_subtotal.
+
+    Dos layouts posibles:
+    1. Línea única, con la etiqueta y el valor mezclados con otro texto
+       en la misma línea — el regex está acotado a UNA sola línea (no
+       cruza "\\n") para no confundirse con el layout de bloques de abajo.
+    2. Bloques separados (mismo patrón que Motor/Modelo): la etiqueta
+       "Subtotal" vive sola en un bloque de etiquetas, y su valor
+       numérico está 8 líneas más abajo, en el bloque de valores
+       correspondiente. Verificado contra un PDF real donde el bloque de
+       etiquetas es "Prima Neta / Tasa Financiamiento / Gastos por
+       Expedición / Subtotal / 16% / I.V.A. / IMPORTE TOTAL / Tarifa
+       Aplicada" — "Subtotal" cae en la posición 3, y +8 aterriza exacto
+       en su valor real (6,022.40).
+    """
+    match = re.search(r'Subtotal[^\n]*?(-?[\d,]+\.\d{2})', texto, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    lineas = texto.splitlines()
+    for i, linea in enumerate(lineas):
+        if linea.strip().lower() == "subtotal":
+            idx = i + 8
+            if idx < len(lineas):
+                posible = lineas[idx].strip()
+                if re.fullmatch(r'-?[\d,]+\.\d{2}', posible):
+                    return posible
+            break
+
+    return None
+
+
+def validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva):
+    """
+    Cruza el cálculo constructivo de Sub Total (Prima Neta - Descuento +
+    Recargos + Derechos) contra una referencia independiente (Prima Total
+    - IVA), porque el cálculo puede contaminarse si algún campo que lo
+    compone se extrajo mal o con el signo equivocado (ej. "Tasa de
+    Financiamiento" positiva vs negativa según el PDF).
+
+    - Si subtotal_calculado coincide con la referencia (tolerancia 0.01):
+      se usa subtotal_calculado.
+    - Si NO coincide: se prefiere subtotal_pdf (el valor impreso
+      literalmente, más confiable en ese caso).
+    - Si subtotal_pdf tampoco se pudo extraer: se usa subtotal_calculado
+      de todos modos como último recurso, pero se registra un warning
+      indicando que la validación falló sin alternativa.
+    """
+    referencia = None
+    if prima_total and iva:
+        referencia = _a_float(prima_total) - _a_float(iva)
+
+    if subtotal_calculado and referencia is not None and round(abs(_a_float(subtotal_calculado) - referencia), 2) <= 0.01:
+        return subtotal_calculado
+
+    if subtotal_pdf:
+        return subtotal_pdf
+
+    if subtotal_calculado:
+        logging.getLogger(__name__).warning(
+            "Qualitas: Sub Total calculado (%s) no coincide con la referencia "
+            "Prima Total - IVA, y no se encontró el valor impreso en el PDF; "
+            "se usa el calculado sin poder validarlo.",
+            subtotal_calculado,
+        )
+    return subtotal_calculado
+
+
 # ────────────────────────────────────────────────────────────────────────────
 # Punto de entrada usado por el pipeline (nivel 1)
 # ────────────────────────────────────────────────────────────────────────────
@@ -1109,22 +1242,40 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
     vigencia = extraer_vigencia_por_frecuencia(texto)
     clave_agente, nombre_agente = extraer_agente(texto)
 
+    # Si la razón social contiene una figura jurídica (S.A., A.C., etc.),
+    # el asegurado es Persona Moral: normalizamos las siglas a mayúsculas
+    # sin puntos (ej. "S.A. de C.V." -> "SA de CV"), dejando el resto del
+    # nombre y los conectores ("de"/"en"/"por") exactamente igual.
+    nombre_cliente = extraer_nombre_cliente(texto)
+    if nombre_cliente and es_persona_moral_por_nombre(nombre_cliente):
+        nombre_cliente = normalizar_siglas_razon_social(nombre_cliente)
+
     # Descuento: en el PDF la tasa de financiamiento viene negativa
     # (resta a la prima neta); SICAS espera 'descuento' como magnitud.
     tasa_financiamiento = extraer_tasa_financiamiento(texto)
     descuento = tasa_financiamiento.lstrip('-') if _valido(tasa_financiamiento) else None
 
+    prima_neta = extraer_prima_neta(texto)
+    derechos = extraer_gastos_expedicion(texto)
+    iva = extraer_iva(texto)
+    prima_total = extraer_prima_total(texto)
+    # Quálitas no tiene concepto de "Recargos" en su desglose (queda en 0
+    # dentro de la fórmula) — ver calcular_subtotal.
+    subtotal_calculado = calcular_subtotal(prima_neta, descuento, None, derechos)
+    subtotal_pdf = extraer_subtotal_pdf(texto)
+    subtotal = validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva)
+
     candidatos = {
         "documento":       extraer_numero_poliza_qualitas(texto),
         "rfc":             extraer_rfc_mas_repetido(texto),
-        "nombre_cliente":  extraer_nombre_cliente(texto),
+        "nombre_cliente":  nombre_cliente,
         "desde":           vigencia.get("Inicio Vigencia"),
         "hasta":           vigencia.get("Fin Vigencia"),
-        "prima_neta":      extraer_prima_neta(texto),
-        "derechos":        extraer_gastos_expedicion(texto),
-        "subtotal":        extraer_subtotal(texto),
-        "iva":             extraer_iva(texto),
-        "prima_total":     extraer_prima_total(texto),
+        "prima_neta":      prima_neta,
+        "derechos":        derechos,
+        "sub_total":       subtotal,
+        "iva":             iva,
+        "prima_total":     prima_total,
         "forma_pago":      extraer_forma_pago(texto),
         "moneda":          extraer_moneda(texto),
         "motor":           extraer_motor(texto),
@@ -1142,11 +1293,4 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "descuento":       descuento,
     }
 
-    resultado = {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
-
-    # fecha_antiguedad: no existe como tal en pólizas de auto nuevas;
-    # se usa el inicio de vigencia como antigüedad por defecto.
-    if 'desde' in resultado and 'fecha_antiguedad' not in resultado:
-        resultado['fecha_antiguedad'] = resultado['desde']
-
-    return resultado
+    return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}
