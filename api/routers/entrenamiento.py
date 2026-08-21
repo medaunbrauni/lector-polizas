@@ -20,7 +20,7 @@ from ..database import get_db
 from ..config import PDF_ENTRENAMIENTO_DIR
 from ..models.db_models import (
     PolizaEntrenamiento, SeleccionCampo, ReglaExtraccion,
-    Subramo, CampoDefinido, CampoGlobal,
+    Subramo, CampoDefinido, CampoGlobal, Extraccion,
 )
 from ..services.batch_trainer import (
     generar_regex_lote, probar_regex_en_lote, auto_detectar_en_lote,
@@ -87,6 +87,28 @@ def _poliza_dict(p: PolizaEntrenamiento, db: Session) -> dict:
     }
 
 
+def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]:
+    """
+    Pólizas del lote a mostrar en el listado del Entrenador: oculta las
+    que ya no tienen archivo físico (borrado por la limpieza de 7 días u
+    otro motivo) y deduplica por nombre_archivo, conservando la más
+    reciente. Solo afecta el listado del lote — el Historial de
+    Extracciones no usa esta función y sigue mostrando todo.
+    """
+    polizas = (
+        db.query(PolizaEntrenamiento)
+        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
+        .order_by(PolizaEntrenamiento.created_at)
+        .all()
+    )
+    por_nombre: dict[str, PolizaEntrenamiento] = {}
+    for p in polizas:
+        if not os.path.exists(p.ruta_archivo):
+            continue
+        por_nombre[p.nombre_archivo] = p  # orden ASC: la última pisa a las anteriores
+    return sorted(por_nombre.values(), key=lambda p: p.created_at)
+
+
 def _sel_dict(s: SeleccionCampo) -> dict:
     return {
         "id": s.id,
@@ -96,6 +118,7 @@ def _sel_dict(s: SeleccionCampo) -> dict:
         "contexto": s.contexto,
         "bbox": s.bbox,
         "es_auto": s.es_auto,
+        "metodo": s.metodo,
     }
 
 
@@ -151,13 +174,7 @@ async def subir_polizas(
 
 @router.get("/subramos/{subramo_id}/polizas")
 def listar_polizas(subramo_id: int, db: Session = Depends(get_db)):
-    polizas = (
-        db.query(PolizaEntrenamiento)
-        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
-        .order_by(PolizaEntrenamiento.created_at)
-        .all()
-    )
-    return [_poliza_dict(p, db) for p in polizas]
+    return [_poliza_dict(p, db) for p in _polizas_visibles(subramo_id, db)]
 
 
 @router.get("/polizas/{poliza_id}/pdf")
@@ -189,6 +206,41 @@ def eliminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
     db.delete(p)
     db.commit()
     return {"ok": True}
+
+
+@router.delete("/subramos/{subramo_id}/polizas")
+def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
+    """
+    Vacía el lote de entrenamiento del subramo (botón manual, o la
+    limpieza automática diaria vía limpiar_lote_entrenamiento.py).
+    No borra pólizas que ya fueron usadas en una extracción real
+    (Extraccion.poliza_entrenamiento_id) para no romper el Historial,
+    que reutiliza la misma tabla.
+    """
+    en_uso = {
+        row[0]
+        for row in db.query(Extraccion.poliza_entrenamiento_id)
+        .filter(Extraccion.poliza_entrenamiento_id.isnot(None))
+        .all()
+    }
+    polizas = (
+        db.query(PolizaEntrenamiento)
+        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
+        .all()
+    )
+    borradas = 0
+    for p in polizas:
+        if p.id in en_uso:
+            continue
+        try:
+            if os.path.exists(p.ruta_archivo):
+                os.remove(p.ruta_archivo)
+        except Exception:
+            pass
+        db.delete(p)
+        borradas += 1
+    db.commit()
+    return {"ok": True, "borradas": borradas}
 
 
 # ── Selecciones de campo ──────────────────────────────────────────────────────
@@ -473,12 +525,7 @@ def estado_lote(subramo_id: int, db: Session = Depends(get_db)):
     Retorna estado completo: pólizas, selecciones y reglas activas.
     Usado para inicializar la UI de entrenamiento.
     """
-    polizas = (
-        db.query(PolizaEntrenamiento)
-        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
-        .order_by(PolizaEntrenamiento.created_at)
-        .all()
-    )
+    polizas = _polizas_visibles(subramo_id, db)
     poliza_ids = [p.id for p in polizas]
 
     selecciones = {}

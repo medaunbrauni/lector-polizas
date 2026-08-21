@@ -58,6 +58,8 @@ def _migrate_add_columns():
         ("reglas_extraccion","ocr_bbox",             "JSON"),
         ("reglas_extraccion","cobertura_lote",       "INTEGER"),
         ("reglas_extraccion","total_lote",           "INTEGER"),
+        ("extracciones",     "poliza_entrenamiento_id", "INTEGER"),
+        ("selecciones_campo", "metodo",                 "VARCHAR(30)"),
     ]
     with engine.connect() as conn:
         for table, col, col_type in migrations:
@@ -77,6 +79,7 @@ def _create_indexes():
         "CREATE INDEX IF NOT EXISTS idx_ext_ramo      ON extracciones(ramo_id)",
         "CREATE INDEX IF NOT EXISTS idx_regla_sub     ON reglas_extraccion(subramo_id, activo)",
         "CREATE INDEX IF NOT EXISTS idx_campo_ext_id  ON campos_extraidos(extraccion_id)",
+        "CREATE INDEX IF NOT EXISTS idx_ext_poliza_ent ON extracciones(poliza_entrenamiento_id)",
         "CREATE INDEX IF NOT EXISTS idx_poliza_sub    ON polizas_entrenamiento(subramo_id)",
         "CREATE INDEX IF NOT EXISTS idx_seleccion_pol ON selecciones_campo(poliza_id)",
         "CREATE INDEX IF NOT EXISTS idx_campo_def_sub ON campos_definidos(subramo_id)",

@@ -10,6 +10,10 @@ interface Props {
   onSiguiente?: () => void;
   indiceActual?: number;
   totalPolizas?: number;
+  /** Número de la tanda (lote de PDFs subido de una vez) a la que
+   * pertenece `data`. Solo un dato visual de orientación en el frontend
+   * — no es un campo extraído, no se guarda en BD ni se exporta. */
+  tandaNumero?: number;
 }
 
 // Campos que se muestran en secciones específicas (no en "Otros")
@@ -32,7 +36,7 @@ const CAMPOS_CONOCIDOS = new Set([
 ]);
 
 export default function PolizaDetalle({
-  data, onClose, onAnterior, onSiguiente, indiceActual, totalPolizas,
+  data, onClose, onAnterior, onSiguiente, indiceActual, totalPolizas, tandaNumero,
 }: Props) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -87,7 +91,14 @@ export default function PolizaDetalle({
               <Car className="w-5 h-5 text-blue-600" />
             </div>
             <div>
-              <h2 className="font-bold text-gray-900">Detalle de Póliza</h2>
+              <div className="flex items-center gap-2">
+                <h2 className="font-bold text-gray-900">Detalle de Póliza</h2>
+                {tandaNumero != null && (
+                  <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                    Tanda {tandaNumero}
+                  </span>
+                )}
+              </div>
               {data.compania && (
                 <p className="text-xs text-gray-500">
                   {data.compania}{data.ramo ? ` · ${data.ramo}` : ''}{data.subramo ? ` · ${data.subramo}` : ''}

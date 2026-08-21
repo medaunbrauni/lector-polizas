@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo, Component } from 'react';
+import type { ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { obtenerPdf } from '../lib/pdfCache';
 import Clasificador from '../components/reglas/Clasificador';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -6,7 +9,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
-  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento,
+  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento,
   urlPdfEntrenamiento, urlImagenPagina, getTextoPdf,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
@@ -30,6 +33,20 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
   import.meta.url,
 ).toString();
+
+// Mismo bucket de 3 que clasificar_metodo_campo en api/services/extractor.py
+// — única fuente de verdad reflejada aquí solo para pintar el badge, sin
+// recalcular nada (el bucket real ya viene decidido por el backend en
+// `metodo`, esto solo traduce el string a REGLA/IA/NO ENC. + color).
+function badgeMetodo(metodo: string | null): { label: string; cls: string } {
+  if (metodo === 'regla' || metodo === 'extractor_dedicado' || metodo === 'valor_fijo' || metodo === 'derivado') {
+    return { label: 'REGLA', cls: 'bg-emerald-100 text-emerald-700' };
+  }
+  if (metodo === 'ia') {
+    return { label: 'IA', cls: 'bg-purple-100 text-purple-700' };
+  }
+  return { label: 'NO ENC.', cls: 'bg-gray-100 text-gray-500' };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -68,11 +85,32 @@ export default function Reglas() {
 
   // ── Auto-detección ─────────────────────────────────────────────────────────
   const [autoDeteccion, setAutoDeteccion] = useState<AutoDeteccion[]>([]);
+  // Qué coincidencias auto-detectadas (encontrado=true) quedan marcadas para
+  // agregarse como selección real al hacer clic en "Agregar seleccionadas" —
+  // por defecto todas marcadas, pero agregarlas sigue siendo una acción
+  // explícita del usuario, nunca automática (ver handleAgregarAutoDeteccion).
+  const [autoDeteccionSel, setAutoDeteccionSel] = useState<Set<number>>(new Set());
+  const [agregandoAutoDeteccion, setAgregandoAutoDeteccion] = useState(false);
 
   // ── Detección por PDF (identificar módulo) ─────────────────────────────────
   const [detectando, setDetectando] = useState(false);
   const [detectMsg, setDetectMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const pendingAutoSelect = useRef<{ ramo_id: number; subramo_id: number } | null>(null);
+
+  // ── Llegada desde Historial ("Ver/Reentrenar" de una extracción puntual) ───
+  const [searchParams] = useSearchParams();
+  const pendingPolizaId = useRef<number | null>(null);
+  const [avisoSinArchivo, setAvisoSinArchivo] = useState(false);
+  // true cuando se llegó desde Historial ("Ver/Reentrenar"): el panel
+  // derecho gana 2 pestañas — "Campos" (valores ya extraídos de la
+  // póliza puntual) y "Entrenar/Corregir campos" (el panel de
+  // entrenamiento original, sin cambios). En el uso normal del
+  // Entrenador (sin venir de Historial) no hay pestañas — se muestra
+  // directo el panel original, igual que siempre (ver el bloque
+  // "Panel derecho: Campos" más abajo).
+  const [modoVistaExtraida, setModoVistaExtraida] = useState(false);
+  const [panelDerechoTab, setPanelDerechoTab] = useState<'campos' | 'entrenar'>('campos');
+  const mostrarVistaSimple = modoVistaExtraida && panelDerechoTab === 'campos';
 
   // ── Modo imagen / OCR ──────────────────────────────────────────────────────
   const [modoImagen, setModoImagen] = useState(false);
@@ -184,6 +222,43 @@ export default function Reglas() {
   // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => { getCompanias().then(setCompanias); }, []);
 
+  // Llegada desde Historial vía "Ver/Reentrenar" (?companiaId=&ramoId=&
+  // subramoId=&polizaId=): preselecciona la jerarquía y, si hay polizaId,
+  // abre esa póliza puntual en cuanto cargue la lista (ver cargarEstado).
+  // Si companiaId viene pero no polizaId, esa extracción nunca tuvo (o ya
+  // perdió) su PDF — se avisa en vez de intentar cargar algo inexistente.
+  useEffect(() => {
+    const companiaId = searchParams.get('companiaId');
+    const ramoId = searchParams.get('ramoId');
+    const subramoId = searchParams.get('subramoId');
+    const polizaId = searchParams.get('polizaId');
+    if (!companiaId || !ramoId || !subramoId) return;
+
+    setModoVistaExtraida(true);
+
+    // pendingAutoSelect solo decide QUÉ valor queda seleccionado una vez que
+    // las listas de opciones existan — no las llena. Igual que en
+    // handleDetectarPDF, hay que traer y poner ramos/subramos aquí mismo,
+    // o el <select> no tiene ningún <option> con ese value y el navegador
+    // termina mostrando el placeholder aunque el estado ya sea el correcto.
+    Promise.all([
+      getRamos(Number(companiaId)),
+      getSubramos(Number(ramoId)),
+    ]).then(([ramosData, subramosData]) => {
+      setRamos(ramosData);
+      setSubramos(subramosData);
+    });
+
+    pendingAutoSelect.current = { ramo_id: Number(ramoId), subramo_id: Number(subramoId) };
+    if (polizaId) {
+      pendingPolizaId.current = Number(polizaId);
+    } else {
+      setAvisoSinArchivo(true);
+    }
+    setSelCompania(companiaId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     const pending = pendingAutoSelect.current;
     if (pending) {
@@ -197,9 +272,14 @@ export default function Reglas() {
   useEffect(() => {
     const pending = pendingAutoSelect.current;
     if (pending) {
-      const sid = pending.subramo_id;
-      pendingAutoSelect.current = null;
-      setSelSubramo(String(sid));
+      // NO limpiar pendingAutoSelect.current aquí todavía: setSelCompania (efecto
+      // anterior) ya quedó agendado y su efecto [selCompania] va a volver a
+      // correr en el próximo render (porque selCompania de verdad cambió). Si el
+      // ref ya estuviera en null para entonces, ese efecto tomaría la rama
+      // "else" y resetearía selRamo/selSubramo de vuelta a "" justo después de
+      // haberlos preseleccionado — se limpia hasta el efecto de [selSubramo],
+      // que es el último eslabón de esta cadena.
+      setSelSubramo(String(pending.subramo_id));
     } else {
       if (selRamo) getSubramos(Number(selRamo)).then(setSubramos);
       setSelSubramo('');
@@ -208,6 +288,7 @@ export default function Reglas() {
 
   useEffect(() => {
     if (!selSubramo) return;
+    pendingAutoSelect.current = null;
     const sid = Number(selSubramo);
     getCampos(sid).then(setCampos);
     cargarEstado(sid);
@@ -224,7 +305,15 @@ export default function Reglas() {
     setPolizas(estado.polizas);
     setSelecciones(estado.selecciones);
     setReglas(estado.reglas);
-    setPolizaIdx(0);
+
+    const polizaId = pendingPolizaId.current;
+    pendingPolizaId.current = null;
+    if (polizaId != null) {
+      const idx = estado.polizas.findIndex((p: PolizaEntrenamiento) => p.id === polizaId);
+      setPolizaIdx(idx >= 0 ? idx : 0);
+    } else {
+      setPolizaIdx(0);
+    }
   }
 
   // ── ResizeObserver para el ancho del visor PDF ─────────────────────────────
@@ -324,6 +413,15 @@ export default function Reglas() {
     });
   }
 
+  // ── Vaciar lote completo ────────────────────────────────────────────────────
+  async function handleVaciarLote() {
+    if (!selSubramo || polizas.length === 0) return;
+    if (!window.confirm('¿Seguro que deseas vaciar el lote de pólizas? Esta acción no se puede deshacer.')) return;
+    await vaciarLoteEntrenamiento(Number(selSubramo));
+    setPolizaIdx(0);
+    await cargarEstado(Number(selSubramo));
+  }
+
   // ── Captura de selección desde el visor PDF ────────────────────────────────
   const handleSeleccion = useCallback(() => {
     if (!campoActivo || !polizaActiva) return;
@@ -388,9 +486,57 @@ export default function Reglas() {
           : p
       )
     );
-    setAutoDeteccion(res.auto_deteccion ?? []);
+    const autoDet: AutoDeteccion[] = res.auto_deteccion ?? [];
+    setAutoDeteccion(autoDet);
+    // Por defecto todas las coincidencias encontradas quedan marcadas, pero
+    // solo se guardan de verdad si el usuario da clic en "Agregar
+    // seleccionadas" — ver handleAgregarAutoDeteccion.
+    setAutoDeteccionSel(new Set(autoDet.filter((ad) => ad.encontrado).map((ad) => ad.poliza_id)));
     setTextoSeleccionado('');
     setBboxCapturado(null);
+  }
+
+  function toggleAutoDeteccionSel(polizaId: number) {
+    setAutoDeteccionSel((prev) => {
+      const s = new Set(prev);
+      if (s.has(polizaId)) s.delete(polizaId); else s.add(polizaId);
+      return s;
+    });
+  }
+
+  /** Guarda como selección real (es_auto=true) solo las coincidencias
+   * auto-detectadas que el usuario dejó marcadas — nunca agrega todas de
+   * forma automática (punto 4). */
+  async function handleAgregarAutoDeteccion() {
+    if (!campoActivo || autoDeteccionSel.size === 0) return;
+    setAgregandoAutoDeteccion(true);
+    try {
+      const aplicar = autoDeteccion.filter((ad) => ad.encontrado && autoDeteccionSel.has(ad.poliza_id));
+      for (const ad of aplicar) {
+        const res = await guardarSeleccion({
+          poliza_id: ad.poliza_id,
+          nombre_campo: campoActivo,
+          texto_seleccionado: ad.texto_encontrado ?? '',
+          contexto: ad.contexto ?? undefined,
+          es_auto: true,
+        });
+        setSelecciones((prev) => ({
+          ...prev,
+          [campoActivo]: { ...(prev[campoActivo] ?? {}), [ad.poliza_id]: res.seleccion },
+        }));
+        setPolizas((prev) => prev.map((p) => (
+          p.id === ad.poliza_id && !selecciones[campoActivo]?.[ad.poliza_id]
+            ? { ...p, num_selecciones: p.num_selecciones + 1 }
+            : p
+        )));
+      }
+      // Ya se resolvieron (agregadas o descartadas a propósito) — se
+      // quita la lista para no dar a entender que sigue pendiente algo.
+      setAutoDeteccion([]);
+      setAutoDeteccionSel(new Set());
+    } finally {
+      setAgregandoAutoDeteccion(false);
+    }
   }
 
   // ── Generar regex ──────────────────────────────────────────────────────────
@@ -537,6 +683,19 @@ export default function Reglas() {
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
 
+      {/* ── Aviso: se llegó desde Historial pero esa extracción no tiene PDF ── */}
+      {avisoSinArchivo && (
+        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3 flex-shrink-0">
+          <p className="text-xs text-amber-800">
+            El archivo original ya no está disponible, pero los datos extraídos se conservan.
+          </p>
+          <button
+            onClick={() => setAvisoSinArchivo(false)}
+            className="text-xs text-amber-700 hover:text-amber-900 font-medium flex-shrink-0"
+          >Cerrar</button>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center gap-4 flex-wrap">
         <div>
@@ -662,9 +821,20 @@ export default function Reglas() {
               <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
                 Lote de pólizas
               </span>
-              <span className="text-[10px] text-gray-400 font-medium bg-gray-100 px-1.5 py-0.5 rounded-full">
-                {polizas.length} / 5
-              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-gray-400 font-medium bg-gray-100 px-1.5 py-0.5 rounded-full">
+                  {polizas.length} / 5
+                </span>
+                {polizas.length > 0 && (
+                  <button
+                    onClick={handleVaciarLote}
+                    title="Vaciar lote de pólizas"
+                    className="text-gray-300 hover:text-red-500 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Upload */}
@@ -819,7 +989,13 @@ export default function Reglas() {
                   />
                 </div>
               ) : (
-                <PdfVisor url={pdfUrl!} width={pageWidth} />
+                // key={polizaActiva.id}: si el visor tronó viendo una póliza,
+                // cambiar a otra debe partir de un ErrorBoundary sin el
+                // error previo colgado, no seguir mostrando el mensaje de
+                // fallo de la póliza anterior.
+                <PdfVisorErrorBoundary key={polizaActiva.id}>
+                  <PdfVisor polizaId={polizaActiva.id} url={pdfUrl!} width={pageWidth} />
+                </PdfVisorErrorBoundary>
               )}
             </div>
 
@@ -882,27 +1058,52 @@ export default function Reglas() {
                   </p>
                 )}
 
-                {/* Auto-detección en otras pólizas */}
+                {/* Auto-detección en otras pólizas — el usuario elige cuáles
+                    agregar como selección real; nada se guarda solo por
+                    aparecer aquí (punto 4). */}
                 {autoDeteccion.length > 0 && (
-                  <div className="mt-1 space-y-1">
+                  <div className="mt-1 space-y-1.5">
                     <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
-                      Búsqueda automática en las demás pólizas
+                      Búsqueda automática en las demás pólizas — elige cuáles agregar
                     </p>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="space-y-1">
                       {autoDeteccion.map((ad) => (
-                        <span
+                        <label
                           key={ad.poliza_id}
-                          className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium ${
                             ad.encontrado
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-amber-100 text-amber-700'
+                              ? 'bg-emerald-50 text-emerald-700 cursor-pointer'
+                              : 'bg-amber-50 text-amber-700'
                           }`}
                         >
-                          {ad.encontrado ? '✓' : '?'} {ad.nombre_archivo.substring(0, 20)}
-                          {ad.texto_encontrado ? `: "${ad.texto_encontrado.substring(0, 15)}"` : ''}
-                        </span>
+                          {ad.encontrado ? (
+                            <input
+                              type="checkbox"
+                              checked={autoDeteccionSel.has(ad.poliza_id)}
+                              onChange={() => toggleAutoDeteccionSel(ad.poliza_id)}
+                              className="w-3 h-3 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-400"
+                            />
+                          ) : (
+                            <span>?</span>
+                          )}
+                          <span className="truncate flex-1">{ad.nombre_archivo.substring(0, 20)}</span>
+                          {ad.texto_encontrado && (
+                            <code className="truncate max-w-[90px]">"{ad.texto_encontrado.substring(0, 15)}"</code>
+                          )}
+                        </label>
                       ))}
                     </div>
+                    {autoDeteccionSel.size > 0 && (
+                      <button
+                        onClick={handleAgregarAutoDeteccion}
+                        disabled={agregandoAutoDeteccion}
+                        className="w-full py-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg text-[10px] font-semibold transition-colors"
+                      >
+                        {agregandoAutoDeteccion
+                          ? 'Agregando…'
+                          : `Agregar seleccionadas (${autoDeteccionSel.size})`}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -917,13 +1118,80 @@ export default function Reglas() {
 
           {/* ══ Panel derecho: Campos ══ */}
           <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+            {/* Pestañas: SOLO cuando se llegó desde Historial (punto 2 — el
+                uso normal del Entrenador no lleva pestañas, va directo al
+                panel de entrenamiento de siempre). */}
+            {modoVistaExtraida && (
+              <div className="flex border-b border-gray-100">
+                <button
+                  onClick={() => setPanelDerechoTab('campos')}
+                  className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
+                    panelDerechoTab === 'campos'
+                      ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50/50'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  Campos
+                </button>
+                <button
+                  onClick={() => setPanelDerechoTab('entrenar')}
+                  className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
+                    panelDerechoTab === 'entrenar'
+                      ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50/50'
+                      : 'text-gray-400 hover:text-gray-600'
+                  }`}
+                >
+                  Entrenar/Corregir campos
+                </button>
+              </div>
+            )}
+
             <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Campos</span>
-              <span className="text-[10px] text-gray-400">
-                {camposConRegla.size + camposValorFijo.size}/{campos.length} cubiertos
+              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+                {mostrarVistaSimple ? 'Campos' : 'Entrenar/Corregir campos'}
               </span>
+              {mostrarVistaSimple ? (
+                <span className="text-[10px] text-gray-400">Valores extraídos</span>
+              ) : (
+                <span className="text-[10px] text-gray-400">
+                  {camposConRegla.size + camposValorFijo.size}/{campos.length} cubiertos
+                </span>
+              )}
             </div>
 
+            {/* Pestaña "Campos" (llegada desde Historial): solo lista los
+                valores YA EXTRAÍDOS de la póliza activa — sin conteo de
+                selecciones ni modo de selección masiva/generación de regex,
+                que queda en la pestaña "Entrenar/Corregir campos" (el panel
+                de entrenamiento original, restaurado sin cambios más abajo).
+                Los valores salen de `selecciones`, la misma fuente que ya usa
+                el panel de entrenamiento (sels[polizaActiva.id].
+                texto_seleccionado) — para una póliza que llegó vía Historial
+                esas selecciones se sembraron automáticamente (es_auto=true)
+                con lo ya extraído, así que no hace falta ninguna llamada
+                nueva. */}
+            {mostrarVistaSimple ? (
+              <div className="flex-1 overflow-y-auto">
+                {polizaActiva && camposOrdenados.map((campo) => {
+                  const sel = selecciones[campo.nombre]?.[polizaActiva.id];
+                  const valor = sel?.texto_seleccionado;
+                  const badge = badgeMetodo(sel?.metodo ?? null);
+                  return (
+                    <div key={`${campo.es_global ? 'g' : 'e'}-${campo.id}`} className="px-4 py-2.5 border-b border-gray-50">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">{campo.label}</p>
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${badge.cls}`}>
+                          {badge.label}
+                        </span>
+                      </div>
+                      <p className={`text-xs mt-0.5 ${valor ? 'text-gray-800' : 'text-gray-300 italic'}`}>
+                        {valor || 'sin valor'}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
             <div className="flex-1 overflow-y-auto">
               {camposOrdenados.map((campo) => {
                 const tieneRegla = camposConRegla.has(campo.nombre);
@@ -1065,6 +1333,7 @@ export default function Reglas() {
                 );
               })}
             </div>
+            )}
           </div>
         </div>
       )}
@@ -1349,14 +1618,62 @@ function TextoExtraido({
   );
 }
 
-function PdfVisor({ url, width }: { url: string; width: number }) {
+/**
+ * react-pdf/pdf.js puede lanzar de forma no controlada ("Cannot perform
+ * Construct on a detached ArrayBuffer") al cambiar rápido entre documentos
+ * — se confirmó con logging que ocurre incluso pasándole un ArrayBuffer
+ * nuevo e independiente cada vez, así que es un problema interno de esa
+ * librería al reprocesar un documento ya visto, no de cómo este proyecto
+ * maneja sus propios buffers/caché. Sin un error boundary, React desmonta
+ * TODA la app en cuanto esto truena (pantalla en blanco, sin poder
+ * interactuar con nada — Bug 2). Este boundary lo contiene solo al visor de
+ * PDF: el resto de Reglas (selección de Compañía/Ramo/Subramo, lista de
+ * pólizas, panel de Campos) sigue funcionando. Se vuelve a montar solo con
+ * key={polizaActiva.id} en el punto de uso, así que cambiar de póliza
+ * limpia el error automáticamente sin recargar la página.
+ */
+class PdfVisorErrorBoundary extends Component<{ children: ReactNode }, { fallo: boolean }> {
+  state = { fallo: false };
+  static getDerivedStateFromError() {
+    return { fallo: true };
+  }
+  render() {
+    if (this.state.fallo) {
+      return (
+        <div className="absolute inset-0 flex items-center justify-center p-6">
+          <p className="text-sm text-gray-500 bg-white px-4 py-3 rounded-lg shadow-sm text-center max-w-sm">
+            No se pudo mostrar el PDF de esta póliza. Elige otra póliza de la lista e intenta de nuevo.
+          </p>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function PdfVisor({ polizaId, url, width }: { polizaId: number; url: string; width: number }) {
   const [numPages, setNumPages] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [cargando, setCargando] = useState(true);
   const [zoom, setZoom] = useState(1.0);
+  const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
+  const [noDisponible, setNoDisponible] = useState(false);
 
-  // Al cambiar de póliza (url), volver a página 1 y resetear zoom
-  useEffect(() => { setPagina(1); setCargando(true); setZoom(1.0); }, [url]);
+  // Al cambiar de póliza, volver a página 1, resetear zoom, y traer el PDF
+  // (de la caché en memoria si ya se vio antes en esta sesión, o del
+  // servidor si no) — nunca se precargan los PDFs de las demás pólizas.
+  useEffect(() => {
+    setPagina(1); setZoom(1.0); setCargando(true); setBytes(null); setNoDisponible(false);
+    let cancelado = false;
+    obtenerPdf(polizaId, url)
+      .then((data) => { if (!cancelado) setBytes(data); })
+      .catch(() => { if (!cancelado) { setNoDisponible(true); setCargando(false); } });
+    return () => { cancelado = true; };
+  }, [polizaId, url]);
+
+  // Memoizado: react-pdf recarga el documento si la referencia de `file`
+  // cambia, así que no se debe reconstruir este objeto en cada render.
+  const fileProp = useMemo(() => (bytes ? { data: bytes } : null), [bytes]);
 
   const zoomOut = () => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100));
   const zoomIn  = () => setZoom((z) => Math.min(3.0,  Math.round((z + 0.25) * 100) / 100));
@@ -1407,24 +1724,46 @@ function PdfVisor({ url, width }: { url: string; width: number }) {
 
       {/* ── Página actual — scroll dentro del visor ── */}
       <div className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-gray-200">
-        {cargando && (
-          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-            <span className="text-sm text-gray-500 bg-white px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
+        {noDisponible ? (
+          <div className="absolute inset-0 flex items-center justify-center p-6">
+            <p className="text-sm text-gray-500 bg-white px-4 py-3 rounded-lg shadow-sm text-center max-w-sm">
+              El archivo original ya no está disponible, pero los datos extraídos se conservan.
+            </p>
           </div>
+        ) : (
+          <>
+            {cargando && (
+              <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                <span className="text-sm text-gray-500 bg-white px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
+              </div>
+            )}
+            {fileProp && (
+              // key={polizaId}: fuerza a React a desmontar por completo el
+              // <Document> anterior (y con él, la instancia de pdf.js/worker
+              // que tenía) en vez de reutilizarlo en el sitio con un `file`
+              // nuevo. Sin esto, pdf.js puede seguir procesando la carga del
+              // PDF anterior cuando ya se le cambió el buffer por el
+              // siguiente, y truena con "Cannot perform Construct on a
+              // detached ArrayBuffer" al toparse con un buffer que ya se le
+              // transfirió/vació a su worker — eso es lo que tumbaba toda la
+              // pantalla al volver a una póliza ya vista (Bug 2).
+              <Document
+                key={polizaId}
+                file={fileProp}
+                onLoadSuccess={({ numPages }) => { setNumPages(numPages); setCargando(false); }}
+                onLoadError={() => { setCargando(false); setNoDisponible(true); }}
+                loading={null}
+              >
+                <Page
+                  pageNumber={pagina}
+                  width={Math.round((width || 700) * zoom)}
+                  renderTextLayer
+                  renderAnnotationLayer={false}
+                />
+              </Document>
+            )}
+          </>
         )}
-        <Document
-          file={url}
-          onLoadSuccess={({ numPages }) => { setNumPages(numPages); setCargando(false); }}
-          onLoadError={() => setCargando(false)}
-          loading={null}
-        >
-          <Page
-            pageNumber={pagina}
-            width={Math.round((width || 700) * zoom)}
-            renderTextLayer
-            renderAnnotationLayer={false}
-          />
-        </Document>
       </div>
     </div>
   );

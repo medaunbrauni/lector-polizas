@@ -224,6 +224,12 @@ export async function eliminarPolizaEntrenamiento(polizaId: number) {
   return res.json();
 }
 
+export async function vaciarLoteEntrenamiento(subramoId: number) {
+  const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/polizas`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
 export async function guardarSeleccion(data: {
   poliza_id: number; nombre_campo: string; texto_seleccionado: string;
   contexto?: string; bbox?: object | null; es_auto?: boolean;

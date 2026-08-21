@@ -137,6 +137,12 @@ class SeleccionCampo(Base):
     contexto = Column(Text, nullable=True)               # ±300 chars alrededor del valor
     bbox = Column(JSON, nullable=True)                   # {page, top, bottom} normalizado 0-1
     es_auto = Column(Boolean, default=False)             # True si fue auto-detectado por el sistema
+    # Método real con el que se obtuvo el valor cuando esta selección se
+    # sembró desde una extracción real (regla/extractor_dedicado/valor_fijo/
+    # derivado/no_encontrado — ver clasificar_metodo_campo en
+    # services/extractor.py). None para selecciones manuales de
+    # entrenamiento clásicas, donde el concepto no aplica.
+    metodo = Column(String(30), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     poliza = relationship("PolizaEntrenamiento", back_populates="selecciones")
@@ -213,6 +219,11 @@ class Extraccion(Base):
     campos_por_ia = Column(Integer, default=0)
     campos_no_encontrados = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+    # PDF físico de esta extracción, reutilizando el mismo almacenamiento que
+    # el Entrenador (PolizaEntrenamiento) — ver services/extractor.py. Puede
+    # ser None (extracciones de antes de este cambio, o sin subramo resuelto).
+    poliza_entrenamiento_id = Column(Integer, ForeignKey("polizas_entrenamiento.id"), nullable=True)
 
     campos_extraidos = relationship("CampoExtraido", back_populates="extraccion", cascade="all, delete-orphan")
 

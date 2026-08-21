@@ -69,6 +69,28 @@ def _normalizar(nombre: str) -> str:
     return re.sub(r"\s+", " ", nombre).strip()
 
 
+# RFC persona física: 4 letras + 6 dígitos (AAMMDD) [+ homoclave, 0-3
+# caracteres]. RFC persona moral: igual pero con 3 letras. Se clasifica
+# por el número de letras iniciales, NUNCA por la longitud total del RFC
+# — así una persona física sin homoclave (10 caracteres, caso real y
+# válido: personas sin actividad económica ante el SAT, confirmado contra
+# PDFs reales de GNP y Qualitas) sigue siendo Física y no cae en Moral
+# por descarte.
+_RFC_PREFIJO = re.compile(r"^([A-ZÑ&]{3,4})\d{6}")
+
+
+def clasificar_persona_por_rfc(rfc: str) -> str | None:
+    """'Persona Física' / 'Persona Moral' / None si el RFC no matchea
+    ninguno de los dos patrones (longitud de letras distinta de 3 o 4,
+    o fecha no numérica)."""
+    if not rfc:
+        return None
+    m = _RFC_PREFIJO.match(rfc.strip().upper())
+    if not m:
+        return None
+    return "Persona Física" if len(m.group(1)) == 4 else "Persona Moral"
+
+
 def es_persona_moral_por_nombre(nombre_o_razon_social: str) -> bool:
     """
     True si el nombre/razón social contiene alguna figura jurídica del

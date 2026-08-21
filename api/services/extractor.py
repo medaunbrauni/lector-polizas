@@ -8,6 +8,9 @@ import os
 import io
 import re
 import os
+import uuid
+from pathlib import Path
+
 import pdfplumber
 from sqlalchemy.orm import Session
 
@@ -15,12 +18,54 @@ from .detector import detectar_con_score
 from .rule_engine import aplicar_reglas, campos_sin_regla
 from .ai_utils import parse_claude_json, make_anthropic_client
 from ..extractores_especializados.registry import obtener_extractor
-from ..extractores_especializados.figuras_juridicas import es_persona_moral_por_nombre
-from ..config import MODEL_EXTRACTOR
+from ..extractores_especializados.qualitas import mapear_tipo_a_subramo
+from ..extractores_especializados.gnp import detectar_subramo_por_encabezado
+from ..extractores_especializados.figuras_juridicas import es_persona_moral_por_nombre, clasificar_persona_por_rfc
+from ..config import MODEL_EXTRACTOR, PDF_ENTRENAMIENTO_DIR
 from ..models.db_models import (
     Extraccion, CampoExtraido, CampoDefinido,
-    Compania, Ramo, Subramo,
+    Compania, Ramo, Subramo, PolizaEntrenamiento, SeleccionCampo,
 )
+
+
+# ── Clasificación REGLA/IA/NO ENC. por campo ─────────────────────────────────
+# Única fuente de verdad para las 3 columnas/indicadores que se muestran en
+# el Extractor (stats), el Historial (columnas REGLA/IA/NO ENC.) y el
+# Entrenador (pestaña Campos) — evita que cada lugar recalcule (y
+# potencialmente desincronice) su propio conteo.
+#
+# Bug que corrige: el conteo anterior solo reconocía el método literal
+# "regla" (motor de reglas de BD) como "encontrado", y todo lo demás —
+# INCLUYENDO "extractor_dedicado" (el método real que usan los extractores
+# especializados de GNP, Qualitas y cualquier otra compañía) — caía en
+# "no encontrado" por descarte, aunque el campo sí tuviera su valor y su
+# método individual correctamente guardados en datos_finales/CampoExtraido.
+# Por eso casi todo salía "NO ENC." pese a que la mayoría de los campos sí
+# se habían extraído bien.
+def clasificar_metodo_campo(metodo: str | None) -> str:
+    """Bucket de 3 (regla / ia / no_encontrado) para UN campo, a partir de
+    su `metodo` individual (ya calculado correctamente por campo en
+    datos_finales — eso nunca fue el bug). "regla" agrupa cualquier
+    extracción determinística y confiable: motor de reglas de BD,
+    extractor especializado por compañía, valor fijo de catálogo, o
+    campo derivado de otro. "ia" queda reservado para cuando exista un
+    fallback de IA por campo individual (hoy ningún método lo produce
+    todavía, así que ese bucket sale en 0 honestamente, no por descarte)."""
+    if metodo in ("regla", "extractor_dedicado", "valor_fijo", "derivado"):
+        return "regla"
+    if metodo == "ia":
+        return "ia"
+    return "no_encontrado"
+
+
+def contar_metodos_campos(datos_finales: dict) -> dict[str, int]:
+    """Cuenta cuántos campos de una extracción caen en cada bucket
+    (regla/ia/no_encontrado) — lo que alimenta campos_por_regla/
+    campos_por_ia/campos_no_encontrados en Extraccion."""
+    conteo = {"regla": 0, "ia": 0, "no_encontrado": 0}
+    for v in datos_finales.values():
+        conteo[clasificar_metodo_campo(v.get("metodo"))] += 1
+    return conteo
 
 
 def extraer_texto_pdf(contenido: bytes) -> str:
@@ -31,6 +76,64 @@ def extraer_texto_pdf(contenido: bytes) -> str:
             if t:
                 texto_paginas.append(t)
     return "\n".join(texto_paginas)
+
+
+def _guardar_pdf_como_entrenamiento(
+    subramo_id: int, nombre_archivo: str, contenido: bytes, texto: str, db: Session,
+    datos_finales: dict[str, dict] | None = None,
+) -> PolizaEntrenamiento | None:
+    """
+    Persiste el PDF de una extracción normal en el mismo almacenamiento que
+    usa el Entrenador (storage/pdfs_entrenamiento/<subramo_id>/), creando un
+    PolizaEntrenamiento — para que "Ver/Reentrenar" desde Historial pueda
+    abrir ese PDF ahí sin duplicar el visor. Mismo patrón que
+    routers/entrenamiento.py::subir_polizas. Si falla, no debe tumbar la
+    extracción (el historial y los datos extraídos importan más que la
+    copia del PDF), por eso captura cualquier excepción y devuelve None.
+
+    También siembra SeleccionCampo (es_auto=True) con los valores que YA
+    se extrajeron para esta póliza — sin esto, el panel "Campos" del
+    Entrenador se ve vacío para una póliza que llegó aquí desde Historial,
+    aunque sus valores extraídos sí existan (en Extraccion/CampoExtraido).
+    Sin bbox/contexto (no se conoce la posición exacta en el PDF); alcanza
+    para que el valor se vea y el usuario pueda corregirlo si hace falta.
+    """
+    try:
+        dest_dir = Path(PDF_ENTRENAMIENTO_DIR) / str(subramo_id)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        ext = Path(nombre_archivo or "poliza.pdf").suffix or ".pdf"
+        ruta = dest_dir / f"{uuid.uuid4().hex}{ext}"
+        ruta.write_bytes(contenido)
+
+        with pdfplumber.open(io.BytesIO(contenido)) as pdf:
+            paginas = len(pdf.pages)
+
+        poliza = PolizaEntrenamiento(
+            subramo_id=subramo_id,
+            nombre_archivo=nombre_archivo,
+            ruta_archivo=str(ruta),
+            texto_pdf=texto[:80_000],
+            paginas=paginas,
+        )
+        db.add(poliza)
+        db.flush()
+
+        for nombre_campo, info in (datos_finales or {}).items():
+            valor = info.get("valor")
+            if not valor:
+                continue
+            db.add(SeleccionCampo(
+                poliza_id=poliza.id,
+                nombre_campo=nombre_campo,
+                texto_seleccionado=str(valor)[:1000],
+                es_auto=True,
+                metodo=info.get("metodo"),
+            ))
+        db.flush()
+
+        return poliza
+    except Exception:
+        return None
 
 
 # ── Generación automática de patrones de detección ───────────────────────────
@@ -144,10 +247,11 @@ def _derivar_campos(datos: dict) -> dict:
     Reglas actuales
     ───────────────
     entidad  ← rfc, nombre_cliente
-        13 caracteres de RFC → "Persona Física"
-        12 caracteres de RFC → "Persona Moral"
-        (RFC mexicano estándar: 4 letras + 6 dígitos fecha + 3 homoclave = 13 PF
-                                 3 letras + 6 dígitos fecha + 3 homoclave = 12 PM)
+        4 letras iniciales del RFC → "Persona Física" (con o sin homoclave —
+            hay personas físicas sin actividad económica ante el SAT cuyo
+            RFC real queda en 10 caracteres, sin los 3 de homoclave; ver
+            clasificar_persona_por_rfc en figuras_juridicas.py)
+        3 letras iniciales del RFC → "Persona Moral"
 
         Señal adicional: catálogo de figuras jurídicas/razones sociales
         mexicanas (S.A., A.C., Sindicato, Gobierno Municipal, etc.) buscado
@@ -173,16 +277,10 @@ def _derivar_campos(datos: dict) -> dict:
     nombre_val  = (nombre_info.get("valor") or "").strip() if nombre_info else ""
 
     if rfc_val and "entidad" not in datos or (datos.get("entidad", {}).get("valor") is None):
-        n = len(rfc_val)
-        if n == 13:
-            entidad_val = "Persona Física"
-        elif n == 12:
-            entidad_val = "Persona Moral"
-        else:
-            entidad_val = None          # RFC con longitud inesperada — no derivar
+        entidad_val = clasificar_persona_por_rfc(rfc_val)
 
         # El RFC manda cuando decide algo. Solo si no pudo derivar nada
-        # (RFC ausente o de longitud inesperada) se usa el nombre/razón
+        # (RFC ausente o patrón irreconocible) se usa el nombre/razón
         # social como respaldo — ver docstring arriba.
         if entidad_val is None and es_persona_moral_por_nombre(nombre_val):
             entidad_val = "Persona Moral"
@@ -235,6 +333,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     campos_extractor_dedicado: set[str] = set()
 
     extractor_dedicado = obtener_extractor(compania.nombre) if compania else None
+    campos_extraidos: dict = {}
     if extractor_dedicado:
         try:
             campos_extraidos = extractor_dedicado(texto, contenido) or {}
@@ -249,6 +348,40 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
                 "regla_id": None,
             }
             campos_extractor_dedicado.add(nombre)
+
+    # 4b. Quálitas: "Tipo:" del PDF corrige el Subramo detectado por
+    # keywords cuando corresponde a una categoría real distinta de
+    # "Automóviles" (el sistema de puntaje archiva casi todo como
+    # "Automóviles" por defecto, aunque el vehículo sea un camión, etc.)
+    if compania and compania.nombre == "Quálitas" and ramo:
+        subramo_mapeado = mapear_tipo_a_subramo(campos_extraidos.get("tipo_vehiculo"))
+        if subramo_mapeado:
+            subramo_correcto = (
+                db.query(Subramo)
+                .filter(Subramo.ramo_id == ramo.id, Subramo.nombre == subramo_mapeado, Subramo.activo == True)
+                .first()
+            )
+            if subramo_correcto and subramo_correcto.id != det.get("subramo_id"):
+                subramo = subramo_correcto
+                det["subramo_id"] = subramo_correcto.id
+                det["subramo_nombre"] = subramo_correcto.nombre
+
+    # 4c. GNP: el encabezado de la carátula ("FLOTILLAS AMPLIA" en vez de
+    # "Fuerza Productora Regular Autos Amplia") corrige el Subramo a
+    # "Flotilla de Vehiculos" cuando el puntaje por keywords lo clasificó
+    # como "Automóviles" por defecto.
+    if compania and compania.nombre == "GNP Seguros" and ramo:
+        subramo_mapeado = detectar_subramo_por_encabezado(texto)
+        if subramo_mapeado:
+            subramo_correcto = (
+                db.query(Subramo)
+                .filter(Subramo.ramo_id == ramo.id, Subramo.nombre == subramo_mapeado, Subramo.activo == True)
+                .first()
+            )
+            if subramo_correcto and subramo_correcto.id != det.get("subramo_id"):
+                subramo = subramo_correcto
+                det["subramo_id"] = subramo_correcto.id
+                det["subramo_nombre"] = subramo_correcto.nombre
 
     # 5. Nivel 2 — motor de reglas de BD, solo para lo que el nivel 1 no resolvió
     if subramo:
@@ -272,11 +405,18 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     # 6b. Derivar campos calculables (entidad ← rfc, etc.)
     _derivar_campos(datos_finales)
 
-    # Contadores correctos (una sola pasada, sin doble cómputo)
-    por_regla      = sum(1 for v in datos_finales.values() if v["metodo"] == "regla")
-    no_encontrados = sum(
-        1 for v in datos_finales.values()
-        if v["metodo"] not in ("regla", "valor_fijo", "derivado")
+    # Contadores correctos (una sola pasada, sin doble cómputo) — ver
+    # contar_metodos_campos arriba para el porqué de este cálculo.
+    conteo_metodos = contar_metodos_campos(datos_finales)
+    por_regla      = conteo_metodos["regla"]
+    por_ia         = conteo_metodos["ia"]
+    no_encontrados = conteo_metodos["no_encontrado"]
+
+    # 6c. Guardar el PDF físico (para poder verlo/reentrenarlo después desde
+    # Historial) — solo si hay subramo resuelto, igual que el Entrenador.
+    poliza_guardada = (
+        _guardar_pdf_como_entrenamiento(subramo.id, nombre_archivo, contenido, texto, db, datos_finales)
+        if subramo else None
     )
 
     # 7. Guardar en historial
@@ -294,8 +434,9 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         texto_pdf=texto[:50_000],
         exitoso=True,
         campos_por_regla=por_regla,
-        campos_por_ia=0,
+        campos_por_ia=por_ia,
         campos_no_encontrados=no_encontrados,
+        poliza_entrenamiento_id=poliza_guardada.id if poliza_guardada else None,
     )
     db.add(extraccion)
     db.flush()
@@ -320,7 +461,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         "campos":   datos_finales,
         "stats": {
             "por_regla":      por_regla,
-            "por_ia":         0,
+            "por_ia":         por_ia,
             "no_encontrados": no_encontrados,
         },
         # ── Metadata de detección ──

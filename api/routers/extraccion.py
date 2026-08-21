@@ -1,11 +1,12 @@
 from __future__ import annotations
+import os
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..services.extractor import procesar_pdf, extraer_texto_pdf
+from ..services.extractor import procesar_pdf, extraer_texto_pdf, contar_metodos_campos
 from ..services.detector import detectar_jerarquia, detectar_con_score
-from ..models.db_models import Extraccion, CampoExtraido, Subramo, Ramo, Compania
+from ..models.db_models import Extraccion, CampoExtraido, Subramo, Ramo, Compania, PolizaEntrenamiento
 
 router = APIRouter(prefix="/extraer", tags=["Extracción"])
 
@@ -53,11 +54,10 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
 
-    por_regla      = sum(1 for v in datos_finales.values() if v["metodo"] == "regla")
-    no_encontrados = sum(
-        1 for v in datos_finales.values()
-        if v["metodo"] not in ("regla", "valor_fijo", "derivado")
-    )
+    conteo_metodos = contar_metodos_campos(datos_finales)
+    por_regla      = conteo_metodos["regla"]
+    por_ia         = conteo_metodos["ia"]
+    no_encontrados = conteo_metodos["no_encontrado"]
 
     # Actualizar registro de extracción
     extraccion.subramo_id         = subramo.id
@@ -69,7 +69,7 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
     extraccion.metodo_deteccion   = "manual"
     extraccion.datos_completos    = {k: v.get("valor") for k, v in datos_finales.items()}
     extraccion.campos_por_regla   = por_regla
-    extraccion.campos_por_ia      = 0
+    extraccion.campos_por_ia      = por_ia
     extraccion.campos_no_encontrados = no_encontrados
 
     # Reemplazar campos extraídos
@@ -94,7 +94,7 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
         "campos":   datos_finales,
         "stats": {
             "por_regla":      por_regla,
-            "por_ia":         0,
+            "por_ia":         por_ia,
             "no_encontrados": no_encontrados,
         },
         "deteccion": {
@@ -217,9 +217,21 @@ def historial(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
 
     aliases = (comp_alias, ramo_alias, sub_alias)
 
+    # Archivo disponible en disco (una sola query, evita N+1) — para que
+    # Historial sepa de una vez si "Ver/Reentrenar" tiene PDF real o debe
+    # mostrar el aviso de "archivo ya no disponible".
+    poliza_ids = {e.poliza_entrenamiento_id for e in items if e.poliza_entrenamiento_id}
+    archivo_disponible_por_poliza = {}
+    if poliza_ids:
+        for p in db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id.in_(poliza_ids)).all():
+            archivo_disponible_por_poliza[p.id] = os.path.exists(p.ruta_archivo)
+
     return {
         "total": total,
-        "items": [_extraccion_schema(e, aliases=aliases) for e in items],
+        "items": [
+            _extraccion_schema(e, aliases=aliases, archivo_disponible_por_poliza=archivo_disponible_por_poliza)
+            for e in items
+        ],
     }
 
 
@@ -236,6 +248,7 @@ def _extraccion_schema(
     db: Session | None = None,
     detalle: bool = False,
     aliases: tuple | None = None,   # (comp_alias, ramo_alias, sub_alias) pre-cargados
+    archivo_disponible_por_poliza: dict | None = None,  # {poliza_entrenamiento_id: bool}, pre-cargado
 ) -> dict:
     from ..models.db_models import Compania, Ramo, Subramo as SubramoModel
 
@@ -254,12 +267,27 @@ def _extraccion_schema(
 
     comp_alias, ramo_alias, sub_alias = aliases if aliases else ({}, {}, {})
 
+    # Disponibilidad del PDF físico: usa el dict pre-cargado si vino (vista
+    # de lista); si no (vista de detalle), consulta directo — un solo registro.
+    archivo_disponible = False
+    if e.poliza_entrenamiento_id:
+        if archivo_disponible_por_poliza is not None:
+            archivo_disponible = archivo_disponible_por_poliza.get(e.poliza_entrenamiento_id, False)
+        elif db:
+            p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == e.poliza_entrenamiento_id).first()
+            archivo_disponible = bool(p and os.path.exists(p.ruta_archivo))
+
     base = {
         "id":      e.id,
         "archivo": e.nombre_archivo,
         "compania": _export_name(e.compania_id, Compania, e.compania_detectada, comp_alias),
         "ramo":     _export_name(e.ramo_id,     Ramo,     e.ramo_detectado,     ramo_alias),
         "subramo":  _export_name(e.subramo_id,  SubramoModel, e.subramo_detectado, sub_alias),
+        "compania_id": e.compania_id,
+        "ramo_id":     e.ramo_id,
+        "subramo_id":  e.subramo_id,
+        "poliza_entrenamiento_id": e.poliza_entrenamiento_id,
+        "archivo_disponible": archivo_disponible,
         "exitoso":              e.exitoso,
         "campos_por_regla":    e.campos_por_regla,
         "campos_por_ia":       e.campos_por_ia,
