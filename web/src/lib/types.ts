@@ -153,6 +153,10 @@ export interface SeleccionCampo {
   contexto: string | null;
   bbox: BBox | null;
   es_auto: boolean;
+  /** Método real de extracción cuando esta selección se sembró desde una
+   * extracción real (regla/extractor_dedicado/valor_fijo/derivado/
+   * no_encontrado). null en selecciones manuales de entrenamiento clásicas. */
+  metodo: string | null;
 }
 
 /** {campo: {poliza_id: SeleccionCampo}} */

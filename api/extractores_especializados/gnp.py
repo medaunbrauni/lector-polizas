@@ -19,6 +19,7 @@ propósito, no se capturan por este nivel):
 from __future__ import annotations
 import logging
 import re
+import unicodedata
 
 import fitz  # PyMuPDF
 
@@ -40,6 +41,21 @@ def _leer_con_fitz(pdf_bytes: bytes) -> tuple[str, list[dict]]:
             texto += pagina.get_text()
             paginas_dict.append(pagina.get_text("dict"))
     return texto, paginas_dict
+
+
+def detectar_subramo_por_encabezado(texto: str) -> str | None:
+    """
+    El encabezado superior derecho de la carátula imprime el concepto de
+    la póliza (ej. "Fuerza Productora Regular Autos Amplia" en pólizas
+    individuales). En los endosos/carátula de flotilla ese mismo lugar
+    dice "FLOTILLAS AMPLIA" en su lugar — cuando aparece, el Subramo
+    real es "Flotilla de Vehiculos" (nombre exacto del catálogo), no
+    "Automóviles" (que es a donde cae por defecto el puntaje por
+    keywords). Devuelve None si no aplica ningún override.
+    """
+    if re.search(r'\bFLOTILLAS\b', texto, re.IGNORECASE):
+        return "Flotilla de Vehiculos"
+    return None
 
 
 def es_poliza_auto_gnp(texto):
@@ -89,7 +105,8 @@ def _encontrar_etiqueta(spans, etiqueta, desde_y=None, hasta_y=None, coincidenci
 
 def _valor_por_posicion(spans, etiqueta_span, etiquetas_excluir=None,
                          tolerancia_x=14, tolerancia_fila=3, max_distancia_y=45,
-                         permitir_misma_fila=True, permitir_columna_abajo=True):
+                         permitir_misma_fila=True, permitir_columna_abajo=True,
+                         max_distancia_x_fila=None):
     """Dado el span de una etiqueta, busca su valor asociado usando geometría:
       - Prioriza un valor en la MISMA fila, a la derecha (mismo y, x mayor).
       - Si no hay, busca un valor en la COLUMNA debajo (mismo x aprox, y mayor).
@@ -112,6 +129,8 @@ def _valor_por_posicion(spans, etiqueta_span, etiquetas_excluir=None,
         dy = s["y0"] - ey0
 
         if permitir_misma_fila and abs(dy) <= tolerancia_fila and s["x0"] > ex1 - 2:
+            if max_distancia_x_fila is not None and (s["x0"] - ex1) > max_distancia_x_fila:
+                continue
             score = (0, s["x0"] - ex1)
             if mejor_score is None or score < mejor_score:
                 mejor_score, mejor_valor = score, s["texto"]
@@ -383,8 +402,11 @@ def extraer_iva(texto, paginas_dict):
 
 
 def extraer_importe_pagar(texto, paginas_dict):
-    valor = extraer_por_lineas_regex(texto, [r'Importe\s+por\s+pagar\s*[:\-]?\s*\$?([0-9,]+\.\d{2})'])
-    return valor or buscar_valor_monetario(paginas_dict, "importe por pagar")
+    # Layout de endosos de flotilla (unidades "_PO"/carátula "_PP") imprime
+    # "Importe a Pagar" en vez de "Importe por Pagar" (pólizas individuales) —
+    # el regex acepta ambas variantes de preposición.
+    valor = extraer_por_lineas_regex(texto, [r'Importe\s+(?:por|a)\s+pagar\s*[:\-]?\s*\$?([0-9,]+\.\d{2})'])
+    return valor or buscar_valor_monetario(paginas_dict, "importe")
 
 
 def extraer_recargo_fraccionado(texto, paginas_dict):
@@ -481,8 +503,10 @@ def validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva):
 
 
 def extraer_vigencia(texto, paginas_dict):
+    # \w{1,3} en el mes cubre tanto "18/Ago/2026" (pólizas individuales)
+    # como "06/12/2025" (endosos de flotilla, mes numérico de 2 dígitos).
     match = re.search(
-        r'Desde\s+las\s+\d{1,2}\s+hrs\s+del\s+(\d{1,2}/\w{3}/\d{4})\s+Hasta\s+las\s+\d{1,2}\s+hrs\s+del\s+(\d{1,2}/\w{3}/\d{4})',
+        r'Desde\s+las\s+\d{1,2}\s+hrs\s+del\s+(\d{1,2}/\w{1,3}/\d{4})\s+Hasta\s+las\s+\d{1,2}\s+hrs\s+del\s+(\d{1,2}/\w{1,3}/\d{4})',
         texto
     )
     if match:
@@ -508,19 +532,46 @@ def _spans_seccion_vehiculo(paginas_dict):
     return [s for s in spans if y0 <= s["y0"] < y1]
 
 
+def _sin_acentos(valor: str) -> str:
+    descompuesto = unicodedata.normalize("NFKD", valor)
+    return "".join(c for c in descompuesto if not unicodedata.combining(c))
+
+
+# Catálogo real de "Procedencia del vehículo" de GNP (visto en el dropdown
+# del sistema). GNP imprime el valor con el prefijo "VEHÍCULOS" en el PDF
+# (ej. "VEHÍCULOS RESIDENTES"), pero algunos layouts podrían traer solo la
+# palabra clave suelta (ej. "Residentes") — el match es tolerante a que el
+# prefijo esté o no, y a acentos/mayúsculas; el valor final siempre se
+# normaliza al texto completo de esta lista.
+#
+# "EXTRANJEROS CON ESTANCIA EN MÉXICO" es la única categoría sin prefijo
+# "VEHÍCULOS" — se respeta tal cual, sin agregárselo.
+#
+# Orden: cada entrada es (palabra clave para detectar, valor final). Se
+# evalúa en orden y gana la primera que haga match.
+_CATALOGO_PROCEDENCIA_GNP: list[tuple[str, str]] = [
+    ("ESTANCIA",   "EXTRANJEROS CON ESTANCIA EN MÉXICO"),
+    ("ANTIGU",     "VEHÍCULOS ANTIGUOS"),
+    ("BLINDAD",    "VEHÍCULOS BLINDADOS"),
+    ("CLASIC",     "VEHÍCULOS CLÁSICOS"),
+    ("FRONTERIZ",  "VEHÍCULOS FRONTERIZOS"),
+    ("IMPORTAD",   "VEHÍCULOS IMPORTADOS"),
+    ("LEGALIZAD",  "VEHÍCULOS LEGALIZADOS"),
+    ("RESIDENTE",  "VEHÍCULOS RESIDENTES"),
+]
+
+
 def _normalizar_tipo_vehiculo_gnp(valor_crudo: str) -> str:
-    """GNP imprime la procedencia del vehículo (campo 'Tipo Vehículo')
-    con el prefijo 'VEHÍCULOS' (ej. 'VEHÍCULOS RESIDENTES'). Se normaliza
-    a los mismos valores que usa Quálitas para el mismo concepto:
-    'Residentes' o 'Fronterizos/Legalizados' (esta última no se ha visto
-    en los PDFs de prueba disponibles, pero se cubre por si el layout la
-    imprime junta o separada — cualquiera de las dos palabras basta para
-    detectarla)."""
-    v = valor_crudo.upper()
-    if "FRONTERIZ" in v or "LEGALIZAD" in v:
-        return "Fronterizos/Legalizados"
-    if "RESIDENTE" in v:
-        return "Residentes"
+    """Normaliza el valor crudo de 'Procedencia' de GNP a una de las 8
+    categorías oficiales del catálogo (ver _CATALOGO_PROCEDENCIA_GNP),
+    sin importar si el PDF trae o no el prefijo 'VEHÍCULOS' ni cómo
+    vengan los acentos/mayúsculas. Si no reconoce ninguna palabra clave,
+    devuelve el texto tal cual venía (comportamiento previo, por si
+    aparece una variante no contemplada)."""
+    v = _sin_acentos(valor_crudo).upper()
+    for palabra_clave, valor_final in _CATALOGO_PROCEDENCIA_GNP:
+        if palabra_clave in v:
+            return valor_final
     return valor_crudo.strip()
 
 
@@ -529,10 +580,22 @@ def extraer_tipo_vehiculo(texto, paginas_dict):
     valor en la misma fila (ej. 'VEHÍCULOS RESIDENTES'). El campo se
     llama 'Tipo Vehículo' en el esquema (mismo nombre ya usado en
     Quálitas), aunque en el PDF de GNP la etiqueta impresa es
-    'Procedencia'."""
+    'Procedencia'.
+
+    Layout de flotilla: la tabla agrega una columna vecina "Tipo de
+    Carga" / "Carga Propia" mucho más a la derecha, en la misma fila que
+    Procedencia — se acota la búsqueda en misma fila a 100pt para no
+    arrastrarla. En ese layout el valor real de Procedencia además viene
+    partido en 2 líneas ("VEHICULOS" / "RESIDENTES") en una columna
+    vecina (no en la misma fila exacta de la etiqueta), por eso el
+    fallback multilínea."""
     seccion = _spans_seccion_vehiculo(paginas_dict)
     etiqueta = _encontrar_etiqueta(seccion, "Procedencia", coincidencia_exacta=True)
-    valor = _valor_por_posicion(seccion, etiqueta, etiquetas_excluir={"circula en"})
+    excluir = {"circula en", "tipo de carga", "carga propia", "tipo", "de carga"}
+    valor = _valor_por_posicion(seccion, etiqueta, etiquetas_excluir=excluir, max_distancia_x_fila=100)
+    if not valor:
+        valor = _valores_multilinea_por_posicion(seccion, etiqueta, etiquetas_excluir=excluir,
+                                                  tolerancia_x=80, max_distancia_y=10, max_lineas=2)
     return _normalizar_tipo_vehiculo_gnp(valor) if valor else ""
 
 

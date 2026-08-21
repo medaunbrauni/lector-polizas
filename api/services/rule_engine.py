@@ -8,6 +8,7 @@ import re
 import pdfplumber
 from sqlalchemy.orm import Session
 from ..models.db_models import ReglaExtraccion, CampoDefinido, CampoGlobal, Subramo, Ramo
+from ..extractores_especializados.figuras_juridicas import clasificar_persona_por_rfc
 from collections import Counter
 from time import perf_counter
 
@@ -104,9 +105,13 @@ def aplicar_reglas(
         entidad_actual = resultados.get("entidad", {}).get("valor")
 
         if entidad_actual is None:
-            if len(rfc_limpio) == 13:
+            # Clasifica por letras iniciales (4=Física, 3=Moral), no por
+            # longitud total — una Física sin homoclave (10 caracteres,
+            # sin actividad económica ante el SAT) sigue siendo Física.
+            clasificacion = clasificar_persona_por_rfc(rfc_limpio)
+            if clasificacion == "Persona Física":
                 resultados["entidad"] = {"valor": "0", "metodo": "derivado", "regla_id": None}
-            elif len(rfc_limpio) == 12:
+            elif clasificacion == "Persona Moral":
                 resultados["entidad"] = {"valor": "1", "metodo": "derivado", "regla_id": None}
 
     return resultados

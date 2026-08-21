@@ -109,8 +109,14 @@ def extraer_numero_poliza_qualitas(texto):
 def extraer_rfc_mas_repetido(texto: str) -> str:
     texto_upper = texto.upper()
 
-    rfc_regex = r'\b[A-Z&Ñ]{3,4}\d{6}[A-Z0-9]{0,3}\b'
-    rfcs_encontrados = re.findall(rfc_regex, texto_upper)
+    # Algunos PDFs (visto en RFC de Persona Moral, ej. "SLE-120202-M92")
+    # imprimen el RFC con guiones separando sus 3 partes (letras / fecha
+    # AAMMDD / homoclave) en vez de como un solo token pegado. Los guiones
+    # son opcionales en el regex para no romper el formato sin guiones que
+    # ya funcionaba; se limpian del resultado antes de cualquier filtro por
+    # longitud, para que "SLE-120202-M92" se compare como "SLE120202M92" (12).
+    rfc_regex = r'\b[A-Z&Ñ]{3,4}[-\s]?\d{6}[-\s]?[A-Z0-9]{0,3}\b'
+    rfcs_encontrados = [re.sub(r'[-\s]', '', m) for m in re.findall(rfc_regex, texto_upper)]
 
     exclusiones_motor = [
         r'\bV[68]\b', r'\bI4\b', r'\bH6\b', r'\b2ZRFE\b', r'\b1\.6L\b',
@@ -840,8 +846,10 @@ def extraer_tipo_vehiculo(texto):
 
     patrones = [
         r'^Autom[oó]viles\s+Nacionales',
+        r'^Autom[oó]viles\s+Especiales',
         r'^Autom[oó]viles\s+Importados',
         r'^Camiones-Panel',
+        r'^Camiones[-\s]+Particulares',  # el PDF real trae "Camiones Particulares" con espacio, no guion — se acepta cualquiera de los dos
         r'^Motocicletas',
         r'^Tractocami[oó]n'
     ]
@@ -882,7 +890,63 @@ def extraer_tipo_vehiculo(texto):
         contador = Counter(encontrados)
         return contador.most_common(1)[0][0]
 
+    # Fallback: layout alterno donde "Tipo: <valor>" viene inline en una
+    # sola línea, pero MUY lejos de "DESCRIPCIÓN DEL VEHÍCULO ASEGURADO"
+    # (visto en PDFs reales donde el encabezado queda a más de 100 líneas
+    # de distancia, fuera de la ventana de las dos búsquedas de arriba).
+    # Se busca "Tipo:" en todo el documento sin acotar por cercanía al
+    # encabezado, ya que "Tipo: <categoría>" es una etiqueta suficientemente
+    # específica para no dar falsos positivos en otra sección del PDF.
+    for linea in lineas:
+        match = re.search(r'Tipo\s*:\s*(.+)', linea, re.IGNORECASE)
+        if match:
+            posible = match.group(1).strip()
+            for patron in patrones:
+                if re.match(patron, posible, re.IGNORECASE):
+                    return posible
+
     return ""
+
+
+# ── Mapeo "Tipo:" (texto crudo del PDF) → Subramo del catálogo ──────────────
+# Confirmado contra PDFs reales de Quálitas (ver conversación de soporte):
+# variantes "Camiones-Panel" y "Camiones Particulares"/"Camiones-Particulares"
+# se archivan bajo el Subramo genérico "Camiones" del catálogo (no existe una
+# opción "Panel" ni "Particulares" propia entre los 11 Subramos oficiales).
+# "Motocicletas" mapea directo, es una de las 11 opciones del catálogo.
+# "Tractocamión"/"Tractocamion" (regex ya existente r'^Tractocami[oó]n')
+# también se archiva bajo "Camiones" — confirmado, mismo criterio que
+# Camiones-Panel/Camiones Particulares.
+MAPEO_TIPO_A_SUBRAMO_QUALITAS: dict[str, str] = {
+    "camiones-panel":         "Camiones",
+    "camiones particulares":  "Camiones",
+    "camiones-particulares":  "Camiones",
+    "tractocamion":           "Camiones",
+    "motocicletas":           "Motocicletas",
+}
+
+
+def _normalizar_tipo_vehiculo(valor: str) -> str:
+    """minúsculas, sin acentos, espacios colapsados — para comparar contra
+    las claves de MAPEO_TIPO_A_SUBRAMO_QUALITAS sin depender de mayúsculas
+    ni de acentos como los trae el PDF ("Automoviles" sin acento, etc.)."""
+    sin_acentos = unicodedata.normalize("NFKD", valor).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r'\s+', ' ', sin_acentos).strip().lower()
+
+
+def mapear_tipo_a_subramo(tipo_vehiculo_detectado: str | None) -> str | None:
+    """Traduce el valor crudo de extraer_tipo_vehiculo al Subramo oficial
+    del catálogo, SOLO cuando corresponde a una categoría distinta de
+    "Automóviles" genérico. Devuelve None si no aplica ningún override
+    (el Subramo debe quedarse como lo determinó el sistema de puntaje por
+    keywords): esto incluye tanto las variantes de "Automóviles ..." como
+    cualquier valor no reconocido en el mapeo confirmado."""
+    if not tipo_vehiculo_detectado:
+        return None
+    normalizado = _normalizar_tipo_vehiculo(tipo_vehiculo_detectado)
+    if normalizado.startswith("automoviles"):
+        return None
+    return MAPEO_TIPO_A_SUBRAMO_QUALITAS.get(normalizado)
 
 
 DESCARTAR_PATTERNS = [
