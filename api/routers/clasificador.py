@@ -262,6 +262,24 @@ def aprobar_patrones(id: int, data: PatronesAprobarIn, db: Session = Depends(get
     item = db.get(ClasificacionCola, id)
     if not item:
         raise HTTPException(404, "No encontrado")
+
+    # Guardar un patrón de "compañía" sin que la corrección se haya
+    # confirmado (item.compania_id_final) cae, en guardar_patrones_aprobados,
+    # a compania_id_prop — la propuesta original. Si esa propuesta no era de
+    # confianza "alta", el patrón puede terminar describiendo a OTRA
+    # compañía (la real) pero guardado bajo la propuesta equivocada,
+    # envenenando su detección futura (así se corrompió Banorte con
+    # patrones de Mapfre). Se bloquea ese caso puntual; si la propuesta
+    # original ya era de alta confianza, no hace falta exigir confirmación
+    # explícita.
+    if data.compania and item.compania_id_final is None and item.confianza != "alta":
+        raise HTTPException(
+            400,
+            "Confirma la compañía correcta antes de guardar patrones de detección "
+            "de nivel compañía — la propuesta automática no tiene confianza alta "
+            "y guardar así puede asociar el patrón a la compañía equivocada.",
+        )
+
     guardar_patrones_aprobados(item, data.model_dump(), db)
     db.commit()
     return {"ok": True, "guardados": data.model_dump()}

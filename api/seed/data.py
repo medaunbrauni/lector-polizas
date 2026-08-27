@@ -53,7 +53,6 @@ CAMPOS_VEHICULOS = [
     {"nombre": "colonia",          "label": "Colonia",                 "tipo": "texto",  "requerido": False, "orden": 19},
     {"nombre": "municipio",        "label": "Municipio / Alcaldía",    "tipo": "texto",  "requerido": False, "orden": 20},
     {"nombre": "cp",               "label": "C.P.",                    "tipo": "texto",  "requerido": False, "orden": 21},
-    {"nombre": "estado",           "label": "Estado",                  "tipo": "texto",  "requerido": False, "orden": 22},
 ]
 
 CAMPOS_AYE = [

@@ -114,7 +114,13 @@ class ReglaExtraccion(Base):
 class PolizaEntrenamiento(Base):
     """PDF subido al lote de entrenamiento de un subramo."""
     __tablename__ = "polizas_entrenamiento"
-    id = Column(Integer, primary_key=True)
+    # sqlite_autoincrement=True: fuerza la palabra clave AUTOINCREMENT real
+    # en el DDL de SQLite (autoincrement=True en la columna, más abajo, es
+    # solo el default lógico de SQLAlchemy y NO la emite por sí solo). Sin
+    # esto, SQLite reutiliza el id más alto libre tras un DELETE — ver
+    # migrate_autoincrement_polizas_entrenamiento.py para el porqué.
+    __table_args__ = {"sqlite_autoincrement": True}
+    id = Column(Integer, primary_key=True, autoincrement=True)
     subramo_id = Column(Integer, ForeignKey("subramos.id"), nullable=False)
     nombre_archivo = Column(String(255), nullable=False)
     ruta_archivo = Column(String(512), nullable=False)   # ruta local en disco

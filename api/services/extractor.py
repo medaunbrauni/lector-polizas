@@ -78,6 +78,33 @@ def extraer_texto_pdf(contenido: bytes) -> str:
     return "\n".join(texto_paginas)
 
 
+def sembrar_selecciones_auto(poliza_id: int, datos_finales: dict[str, dict] | None, db: Session) -> None:
+    """
+    Siembra SeleccionCampo(es_auto=True) a partir de un dict
+    {nombre_campo: {"valor":..., "metodo":..., ...}} — sin esto, el panel
+    "Campos" del Entrenador se ve vacío para una póliza que ya tiene
+    valores resueltos (por el pipeline completo o por aplicar_reglas al
+    subir al lote), aunque esos valores sí existan en otro lado.
+    Sin bbox/contexto (no se conoce la posición exacta en el PDF); alcanza
+    para que el valor se vea y el usuario pueda corregirlo si hace falta.
+    Reutilizado por _guardar_pdf_como_entrenamiento (extracción completa,
+    nivel 1+2) y por entrenamiento.py::subir_polizas (solo nivel 2 —
+    aplicar_reglas — al subir un PDF directo al lote).
+    """
+    for nombre_campo, info in (datos_finales or {}).items():
+        valor = info.get("valor")
+        if not valor:
+            continue
+        db.add(SeleccionCampo(
+            poliza_id=poliza_id,
+            nombre_campo=nombre_campo,
+            texto_seleccionado=str(valor)[:1000],
+            es_auto=True,
+            metodo=info.get("metodo"),
+        ))
+    db.flush()
+
+
 def _guardar_pdf_como_entrenamiento(
     subramo_id: int, nombre_archivo: str, contenido: bytes, texto: str, db: Session,
     datos_finales: dict[str, dict] | None = None,
@@ -118,18 +145,7 @@ def _guardar_pdf_como_entrenamiento(
         db.add(poliza)
         db.flush()
 
-        for nombre_campo, info in (datos_finales or {}).items():
-            valor = info.get("valor")
-            if not valor:
-                continue
-            db.add(SeleccionCampo(
-                poliza_id=poliza.id,
-                nombre_campo=nombre_campo,
-                texto_seleccionado=str(valor)[:1000],
-                es_auto=True,
-                metodo=info.get("metodo"),
-            ))
-        db.flush()
+        sembrar_selecciones_auto(poliza.id, datos_finales, db)
 
         return poliza
     except Exception:
@@ -401,6 +417,16 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     datos_finales: dict = {**datos_reglas}
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
+
+    # sub_ramo_sicas siempre refleja el Subramo resuelto por el pipeline
+    # (incluye los overrides de 4b/4c) — se fuerza aquí, después de
+    # aplicar_reglas() y de rellenar campos_faltantes, para que nunca lo
+    # gane un valor capturado manualmente por una regla entrenada o un
+    # extractor dedicado.
+    if subramo:
+        datos_finales["sub_ramo_sicas"] = {
+            "valor": subramo.nombre, "metodo": "derivado", "regla_id": None,
+        }
 
     # 6b. Derivar campos calculables (entidad ← rfc, etc.)
     _derivar_campos(datos_finales)

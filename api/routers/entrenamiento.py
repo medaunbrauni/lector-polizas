@@ -25,7 +25,8 @@ from ..models.db_models import (
 from ..services.batch_trainer import (
     generar_regex_lote, probar_regex_en_lote, auto_detectar_en_lote,
 )
-from ..services.rule_engine import _aplicar_patron
+from ..services.rule_engine import _aplicar_patron, aplicar_reglas
+from ..services.extractor import sembrar_selecciones_auto
 
 router = APIRouter(prefix="/entrenamiento", tags=["Entrenamiento por lotes"])
 
@@ -166,6 +167,24 @@ async def subir_polizas(
         )
         db.add(poliza)
         db.flush()
+
+        # Nivel 2 (solo motor de reglas de BD, sin extractor dedicado por
+        # compañía ni generación de patrones vía IA) para que el panel
+        # "Campos" del Entrenador tenga algo real que mostrar apenas se
+        # sube el PDF al lote, sin el costo de Claude por cada PDF. Si el
+        # subramo aún no tiene ninguna regla entrenada, aplicar_reglas()
+        # devuelve solo los campos de sistema (valor_fijo/derivado) — el
+        # frontend explica ese caso ("aún no hay reglas entrenadas").
+        # No debe tumbar la subida si falla por cualquier motivo.
+        try:
+            resultado_reglas = aplicar_reglas(texto, subramo_id, db, pdf_bytes=contenido)
+            resultado_reglas["sub_ramo_sicas"] = {
+                "valor": subramo.nombre, "metodo": "derivado", "regla_id": None,
+            }
+            sembrar_selecciones_auto(poliza.id, resultado_reglas, db)
+        except Exception:
+            pass
+
         creados.append(_poliza_dict(poliza, db))
 
     db.commit()
@@ -211,18 +230,18 @@ def eliminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
 @router.delete("/subramos/{subramo_id}/polizas")
 def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     """
-    Vacía el lote de entrenamiento del subramo (botón manual, o la
-    limpieza automática diaria vía limpiar_lote_entrenamiento.py).
-    No borra pólizas que ya fueron usadas en una extracción real
-    (Extraccion.poliza_entrenamiento_id) para no romper el Historial,
-    que reutiliza la misma tabla.
+    Vacía el lote de entrenamiento del subramo (acción manual explícita,
+    confirmada por el usuario). Borra TODAS las pólizas del subramo,
+    incluidas las que ya fueron usadas en una extracción real
+    (Extraccion.poliza_entrenamiento_id): para esas, primero se
+    desvincula la extracción (poliza_entrenamiento_id = NULL) en vez de
+    dejarla apuntando a una fila borrada — el Historial ya sabe mostrar
+    ese caso ("el archivo original ya no está disponible, pero los
+    datos se conservan"), sus datos extraídos (Extraccion.datos_completos)
+    no se ven afectados. Distinto de la limpieza automática diaria
+    (limpiar_lote_entrenamiento.py), que sigue siendo conservadora y NO
+    toca pólizas en uso, por ser una acción sin confirmación del usuario.
     """
-    en_uso = {
-        row[0]
-        for row in db.query(Extraccion.poliza_entrenamiento_id)
-        .filter(Extraccion.poliza_entrenamiento_id.isnot(None))
-        .all()
-    }
     polizas = (
         db.query(PolizaEntrenamiento)
         .filter(PolizaEntrenamiento.subramo_id == subramo_id)
@@ -230,8 +249,9 @@ def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     )
     borradas = 0
     for p in polizas:
-        if p.id in en_uso:
-            continue
+        db.query(Extraccion).filter(Extraccion.poliza_entrenamiento_id == p.id).update(
+            {"poliza_entrenamiento_id": None}
+        )
         try:
             if os.path.exists(p.ruta_archivo):
                 os.remove(p.ruta_archivo)
