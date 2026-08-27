@@ -280,7 +280,7 @@ export default function ReglasCodigo() {
           {reglas.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
               <Code2 className="w-8 h-8 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No hay reglas activas. Créalas en la sección Reglas.</p>
+              <p className="text-sm">No hay reglas activas. Créalas en la sección Entrenador PDFs.</p>
             </div>
           ) : vista === 'codigo' ? (
             <div className="relative">
@@ -397,7 +397,7 @@ export default function ReglasCodigo() {
           {companiasSinPatrones.length > 0 && vista === 'arbol' && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
               <strong>{companiasSinPatrones.map(c => c.nombre).join(', ')}</strong> no tienen patrones de detección configurados.
-              Súbeles un PDF en la sección Reglas y usa «Generar patrones regex» para generarlos automáticamente.
+              Súbeles un PDF en la sección Entrenador PDFs y usa «Generar patrones regex» para generarlos automáticamente.
             </div>
           )}
 

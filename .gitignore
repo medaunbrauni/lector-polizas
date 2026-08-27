@@ -40,6 +40,7 @@ storage/
 # IDEs / editores
 .idea/
 .vscode/
+.claude/
 
 # DBeaver (workspace local de conexiones/scripts SQL)
 workspace/

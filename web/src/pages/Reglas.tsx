@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, useCallback, useMemo, Component } from 'react';
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { obtenerPdf } from '../lib/pdfCache';
+import { obtenerPdf, invalidarPdf } from '../lib/pdfCache';
 import Clasificador from '../components/reglas/Clasificador';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import DismissibleAlert from '../components/ui/DismissibleAlert';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -101,16 +103,18 @@ export default function Reglas() {
   const [searchParams] = useSearchParams();
   const pendingPolizaId = useRef<number | null>(null);
   const [avisoSinArchivo, setAvisoSinArchivo] = useState(false);
-  // true cuando se llegó desde Historial ("Ver/Reentrenar"): el panel
-  // derecho gana 2 pestañas — "Campos" (valores ya extraídos de la
+  // true cuando se llegó desde Historial ("Ver/Reentrenar"), O cuando la
+  // póliza activa ya tiene al menos una SeleccionCampo real (sembrada al
+  // subir al lote vía aplicar_reglas, o por una extracción previa): el
+  // panel derecho gana 2 pestañas — "Campos" (valores ya extraídos de la
   // póliza puntual) y "Entrenar/Corregir campos" (el panel de
-  // entrenamiento original, sin cambios). En el uso normal del
-  // Entrenador (sin venir de Historial) no hay pestañas — se muestra
-  // directo el panel original, igual que siempre (ver el bloque
-  // "Panel derecho: Campos" más abajo).
+  // entrenamiento original, sin cambios). El switcher ya NO depende
+  // solo del origen de navegación (antes solo aparecía viniendo de
+  // Historial) — se deriva de si hay datos reales que mostrar, sin
+  // importar el camino de entrada (subida manual, detección automática,
+  // o Historial).
   const [modoVistaExtraida, setModoVistaExtraida] = useState(false);
   const [panelDerechoTab, setPanelDerechoTab] = useState<'campos' | 'entrenar'>('campos');
-  const mostrarVistaSimple = modoVistaExtraida && panelDerechoTab === 'campos';
 
   // ── Modo imagen / OCR ──────────────────────────────────────────────────────
   const [modoImagen, setModoImagen] = useState(false);
@@ -343,6 +347,13 @@ export default function Reglas() {
   const polizaActiva = polizas[polizaIdx] ?? null;
   const pdfUrl = polizaActiva ? urlPdfEntrenamiento(polizaActiva.id) : null;
 
+  // ¿Hay al menos una SeleccionCampo real para la póliza activa? (sembrada
+  // al subir al lote, o por una extracción previa vía Historial).
+  const tienePolizaSeleccionesReales = !!polizaActiva &&
+    Object.values(selecciones).some((m) => !!m[polizaActiva.id]);
+  const mostrarSwitcherCampos = modoVistaExtraida || tienePolizaSeleccionesReales;
+  const mostrarVistaSimple = mostrarSwitcherCampos && panelDerechoTab === 'campos';
+
   // Cargar texto extraído cuando cambia la póliza activa
   useEffect(() => {
     if (!polizaActiva) { setTextoPdfActivo(''); return; }
@@ -396,6 +407,24 @@ export default function Reglas() {
         pendingAutoSelect.current = { ramo_id: res.ramo_id, subramo_id: res.subramo_id };
       }
       setSelCompania(String(res.compania_id));
+
+      // Subir el PDF ya detectado al lote del subramo — sin esto, el
+      // archivo se descartaba tras clasificarlo y nunca aparecía en
+      // "Lote de Pólizas" ni en el visor. Se usa res.subramo_id directo
+      // (no selSubramo, que todavía no se actualizó — depende de la
+      // cascada de useEffect de los <select> de arriba).
+      if (res.subramo_id) {
+        const nuevas = await subirPolizasEntrenamiento(res.subramo_id, [file]);
+        setPolizas((prev) => {
+          const merged = [...prev];
+          for (const n of nuevas) {
+            if (!merged.find((p) => p.id === n.id)) merged.push(n);
+          }
+          const idx = nuevas[0] ? merged.findIndex((p) => p.id === nuevas[0].id) : -1;
+          if (idx >= 0) setPolizaIdx(idx);
+          return merged;
+        });
+      }
     } catch (err) {
       setDetectMsg({ ok: false, texto: err instanceof Error ? err.message : 'Error' });
     } finally {
@@ -406,6 +435,15 @@ export default function Reglas() {
   // ── Eliminar póliza del lote ───────────────────────────────────────────────
   async function handleEliminarPoliza(id: number) {
     await eliminarPolizaEntrenamiento(id);
+    // El id se puede reutilizar en una póliza futura (SQLite reasigna el más
+    // alto libre tras un DELETE) — sin invalidar, esta caché por pestaña
+    // podría servirle a esa póliza nueva los bytes del PDF viejo.
+    invalidarPdf(id);
+    // El badge "Detectado: ..." no guarda a qué póliza corresponde (solo
+    // texto) — se limpia cuando se borra justo la que está activa en el
+    // visor, que es el caso real tras usar "Detectar con PDF" (deja esa
+    // póliza como la activa). Si se borra otra distinta, no aplica.
+    if (polizaActiva?.id === id) setDetectMsg(null);
     setPolizas((prev) => {
       const next = prev.filter((p) => p.id !== id);
       if (polizaIdx >= next.length) setPolizaIdx(Math.max(0, next.length - 1));
@@ -414,12 +452,30 @@ export default function Reglas() {
   }
 
   // ── Vaciar lote completo ────────────────────────────────────────────────────
-  async function handleVaciarLote() {
+  const [mostrarConfirmVaciar, setMostrarConfirmVaciar] = useState(false);
+  const [vaciandoLote, setVaciandoLote] = useState(false);
+
+  function handleVaciarLote() {
     if (!selSubramo || polizas.length === 0) return;
-    if (!window.confirm('¿Seguro que deseas vaciar el lote de pólizas? Esta acción no se puede deshacer.')) return;
-    await vaciarLoteEntrenamiento(Number(selSubramo));
-    setPolizaIdx(0);
-    await cargarEstado(Number(selSubramo));
+    setMostrarConfirmVaciar(true);
+  }
+
+  async function confirmarVaciarLote() {
+    setVaciandoLote(true);
+    try {
+      // vaciar_lote borra TODAS las pólizas listadas ahora mismo en el
+      // lote — se capturan sus ids antes del await (el estado ya no será
+      // confiable después) para invalidar cada una en la caché de PDFs.
+      const idsBorrados = polizas.map((p) => p.id);
+      await vaciarLoteEntrenamiento(Number(selSubramo));
+      idsBorrados.forEach(invalidarPdf);
+      setPolizaIdx(0);
+      setDetectMsg(null); // vaciar el lote deja 0 pólizas: ninguna detección sigue vigente
+      await cargarEstado(Number(selSubramo));
+      setMostrarConfirmVaciar(false);
+    } finally {
+      setVaciandoLote(false);
+    }
   }
 
   // ── Captura de selección desde el visor PDF ────────────────────────────────
@@ -671,35 +727,67 @@ export default function Reglas() {
 
   // ── Computed ───────────────────────────────────────────────────────────────
   const camposConRegla = new Set(Object.keys(reglas));
-  const camposValorFijo = new Set(campos.filter((c) => c.valor_fijo !== null).map((c) => c.nombre));
+  // sub_ramo_sicas no tiene valor_fijo en catálogo (no es un texto estático):
+  // su "valor de sistema" es el subramo actualmente seleccionado arriba, para
+  // que se actualice en vivo si el usuario lo corrige al re-entrenar desde
+  // Historial, en vez de depender del valor guardado en la primera extracción.
+  const subramoActualNombre = subramos.find((s) => s.id === Number(selSubramo))?.nombre ?? null;
+  const valorSistemaCampo = (campo: Campo): string | null =>
+    campo.nombre === 'sub_ramo_sicas' ? subramoActualNombre : campo.valor_fijo;
+  const camposValorFijo = new Set(campos.filter((c) => valorSistemaCampo(c) !== null).map((c) => c.nombre));
   const camposOrdenados = [...campos].sort((a, b) => {
     const aOk = camposConRegla.has(a.nombre) || camposValorFijo.has(a.nombre);
     const bOk = camposConRegla.has(b.nombre) || camposValorFijo.has(b.nombre);
     if (aOk !== bOk) return aOk ? -1 : 1;
     return a.orden - b.orden;
   });
+  // Si el switcher aparece solo por datos reales (no por venir de
+  // Historial) y ninguno de esos datos es un campo de CONTENIDO real
+  // (no de sistema) con valor, "Campos" debe explicarlo en vez de verse
+  // vacío sin razón aparente. Se mira la presencia de texto_seleccionado,
+  // no el `metodo` — las selecciones manuales entrenadas antes de hoy
+  // (vía "Entrenar/Corregir campos") quedan con metodo=null en BD
+  // (guardar_seleccion nunca lo setea — pendiente de arreglar en otra
+  // sesión), así que exigir metodo==='regla' las ignoraba por completo.
+  const hayReglaDeContenido = !!polizaActiva && camposOrdenados.some((campo) =>
+    !camposValorFijo.has(campo.nombre) &&
+    !!selecciones[campo.nombre]?.[polizaActiva.id]?.texto_seleccionado
+  );
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
 
-      {/* ── Aviso: se llegó desde Historial pero esa extracción no tiene PDF ── */}
-      {avisoSinArchivo && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3 flex-shrink-0">
-          <p className="text-xs text-amber-800">
-            El archivo original ya no está disponible, pero los datos extraídos se conservan.
-          </p>
-          <button
-            onClick={() => setAvisoSinArchivo(false)}
-            className="text-xs text-amber-700 hover:text-amber-900 font-medium flex-shrink-0"
-          >Cerrar</button>
-        </div>
-      )}
+      <ConfirmDialog
+        open={mostrarConfirmVaciar}
+        variant="warning"
+        destructivo
+        title="¿Vaciar el lote de pólizas?"
+        message={`Se eliminarán los ${polizas.length} PDF${polizas.length === 1 ? '' : 's'} de este lote y todo su progreso de entrenamiento. Las extracciones ya guardadas en el Historial conservarán sus datos, pero no podrás volver a abrir ni reentrenar estos PDFs puntuales desde ahí. Esta acción no se puede deshacer.`}
+        confirmLabel="Vaciar lote"
+        procesando={vaciandoLote}
+        onConfirm={confirmarVaciarLote}
+        onCancel={() => setMostrarConfirmVaciar(false)}
+      />
+
+      {/* ── Aviso: se llegó desde Historial pero esa extracción no tiene PDF ──
+          Auto-cierra a los 4s (o antes, con "Cerrar") — ver DismissibleAlert. */}
+      <DismissibleAlert
+        show={avisoSinArchivo}
+        duracionMs={4000}
+        onClose={() => setAvisoSinArchivo(false)}
+        className="px-4 py-2 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-3"
+        cerrarClassName="text-xs text-amber-700 hover:text-amber-900 font-medium flex-shrink-0"
+      >
+        <p className="text-xs text-amber-800">
+          El archivo original ya no está disponible.
+        </p>
+      </DismissibleAlert>
 
       {/* ── Header ── */}
       <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center gap-4 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-gray-900">Reglas</h1>
+          <h1 className="text-lg font-bold text-gray-900">Entrenador PDFs</h1>
           <p className="text-xs text-gray-400">
             {tabActivo === 'clasificador'
               ? 'Sube pólizas, clasifícalas con IA y envíalas al entrenamiento automáticamente'
@@ -862,7 +950,7 @@ export default function Reglas() {
               )}
               {polizas.map((p, idx) => {
                 const selCount = Object.values(selecciones).filter((m) => m[p.id]).length;
-                const totalCampos = campos.filter((c) => !c.valor_fijo).length;
+                const totalCampos = campos.filter((c) => !valorSistemaCampo(c)).length;
                 return (
                   <div
                     key={p.id}
@@ -1118,10 +1206,11 @@ export default function Reglas() {
 
           {/* ══ Panel derecho: Campos ══ */}
           <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
-            {/* Pestañas: SOLO cuando se llegó desde Historial (punto 2 — el
-                uso normal del Entrenador no lleva pestañas, va directo al
-                panel de entrenamiento de siempre). */}
-            {modoVistaExtraida && (
+            {/* Pestañas: cuando se llegó desde Historial, o cuando la
+                póliza activa ya tiene al menos un dato real sembrado
+                (ej. al subir al lote se le aplicaron las reglas ya
+                entrenadas del subramo) — ver mostrarSwitcherCampos. */}
+            {mostrarSwitcherCampos && (
               <div className="flex border-b border-gray-100">
                 <button
                   onClick={() => setPanelDerechoTab('campos')}
@@ -1172,10 +1261,41 @@ export default function Reglas() {
                 nueva. */}
             {mostrarVistaSimple ? (
               <div className="flex-1 overflow-y-auto">
+                {/* Auto-cierra a los 12s (o antes, con "Cerrar") — resetKey
+                    en el id de la póliza activa para que vuelva a aparecer
+                    (con su propio temporizador) al cambiar de PDF dentro del
+                    lote, en vez de quedar "gastado" tras la primera vez. */}
+                <DismissibleAlert
+                  show={!hayReglaDeContenido}
+                  duracionMs={12000}
+                  resetKey={polizaActiva?.id}
+                  className="px-4 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center justify-between gap-3"
+                  cerrarClassName="text-[10px] text-amber-700 hover:text-amber-900 font-medium flex-shrink-0"
+                >
+                  <p className="text-[11px] text-amber-700 leading-snug">
+                    Aún no hay reglas entrenadas para este subramo — los campos
+                    de sistema (Subramo, Grupo, Tipo Documento, etc.) se
+                    completan solos; el resto aparecerá aquí en cuanto
+                    entrenes reglas en "Entrenar/Corregir campos".
+                  </p>
+                </DismissibleAlert>
                 {polizaActiva && camposOrdenados.map((campo) => {
                   const sel = selecciones[campo.nombre]?.[polizaActiva.id];
-                  const valor = sel?.texto_seleccionado;
-                  const badge = badgeMetodo(sel?.metodo ?? null);
+                  // sub_ramo_sicas siempre refleja el subramo seleccionado
+                  // arriba en vivo (nunca un valor entrenado/guardado viejo,
+                  // ni aunque el usuario lo cambie tras re-entrenar desde
+                  // Historial). Los demás campos de sistema (grupo,
+                  // tipo_documento, renovacion, estatus) nunca tienen una
+                  // SeleccionCampo real porque no se extraen de un PDF — si
+                  // no hay valor real entrenado, se usa valor_fijo como
+                  // fallback.
+                  const valor = campo.nombre === 'sub_ramo_sicas'
+                    ? subramoActualNombre ?? undefined
+                    : sel?.texto_seleccionado || campo.valor_fijo || undefined;
+                  const metodo = campo.nombre === 'sub_ramo_sicas'
+                    ? (subramoActualNombre ? 'derivado' : null)
+                    : sel?.metodo ?? (campo.valor_fijo ? 'valor_fijo' : null);
+                  const badge = badgeMetodo(metodo);
                   return (
                     <div key={`${campo.es_global ? 'g' : 'e'}-${campo.id}`} className="px-4 py-2.5 border-b border-gray-50">
                       <div className="flex items-center justify-between gap-2">
@@ -1228,7 +1348,7 @@ export default function Reglas() {
                           )}
                           {esValorFijo && (
                             <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-full font-medium">
-                              🔒 {campo.valor_fijo}
+                              🔒 {valorSistemaCampo(campo)}
                             </span>
                           )}
                           {!tieneRegla && !esValorFijo && numSels > 0 && (

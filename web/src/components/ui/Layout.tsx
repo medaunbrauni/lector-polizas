@@ -6,7 +6,7 @@ const NAV = [
   { to: '/',              icon: FileSearch, label: 'Extractor',     exact: true  },
   { to: '/historial',     icon: History,    label: 'Historial',     exact: false },
   { to: '/catalogos',     icon: BookOpen,   label: 'Catálogos',     exact: false },
-  { to: '/reglas',        icon: Zap,        label: 'Reglas',        exact: true  },
+  { to: '/reglas',        icon: Zap,        label: 'Entrenador PDFs', exact: true  },
   { to: '/reglas/codigo', icon: Code2,      label: 'Código Reglas', exact: false },
 ];
 

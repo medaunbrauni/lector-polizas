@@ -54,3 +54,15 @@ export async function obtenerPdf(polizaId: number, url: string): Promise<ArrayBu
 
   return bytes.slice(0);
 }
+
+/**
+ * Purga la entrada de `polizaId` de la caché. Imprescindible al borrar una
+ * póliza en el backend: como `polizas_entrenamiento.id` puede reutilizarse
+ * (SQLite reasigna el id más alto libre tras un DELETE), sin esto una
+ * póliza nueva podría heredar el mismo id que una ya borrada y esta caché
+ * — que vive por pestaña, ajena a la BD — serviría los bytes viejos en vez
+ * de pedir el archivo real al servidor.
+ */
+export function invalidarPdf(polizaId: number): void {
+  cache.delete(polizaId);
+}

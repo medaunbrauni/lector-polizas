@@ -22,8 +22,6 @@ export const FIELD_LABELS: Record<string, string> = {
   rfc:                'RFC',
   entidad:            'Entidad',
   ejecutivo_cuenta:   'Ejecutivo Cuenta',
-  despacho:           'Despacho',
-  vendedor:           'Vendedor',
   grupo:              'Grupo',
 
   // — Asegurado específico —
@@ -51,7 +49,6 @@ export const FIELD_LABELS: Record<string, string> = {
   subtotal:           'Subtotal',          // alias por compatibilidad
   iva:                'IVA',
   prima_total:        'Prima Total',
-  concepto:           'Concepto',
 
   // — Cobertura GMM / AYE —
   suma_asegurada:     'Suma Asegurada',

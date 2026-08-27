@@ -596,21 +596,46 @@ export default function Clasificador({ companias }: Props) {
                       );
                     })}
 
-                    <button
-                      onClick={() => guardarPatrones(item)}
-                      disabled={guardandoPatrones === item.id || item.patrones_guardados}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
-                        ${item.patrones_guardados
-                          ? 'bg-green-100 text-green-700 cursor-default'
-                          : 'bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50'}`}
-                    >
-                      <Shield className="w-3.5 h-3.5" />
-                      {item.patrones_guardados
-                        ? 'Patrones guardados ✓'
-                        : guardandoPatrones === item.id
-                        ? 'Guardando…'
-                        : 'Guardar patrones seleccionados'}
-                    </button>
+                    {/* Guardar un patrón de "compañía" sin haber confirmado la
+                        corrección, cuando la propuesta original no era de alta
+                        confianza, puede terminar asociando el patrón a la
+                        compañía equivocada (así se corrompió Banorte con
+                        patrones de Mapfre en su momento) — el backend lo
+                        rechaza; acá solo se advierte/deshabilita antes de
+                        que el usuario pierda el click. */}
+                    {(() => {
+                      const hayPatronCompania = selPat ? selPat.compania.size > 0 : false;
+                      const faltaConfirmar = hayPatronCompania
+                        && item.compania_id_final == null
+                        && item.confianza !== 'alta';
+                      return (
+                        <>
+                          {faltaConfirmar && (
+                            <p className="text-[11px] text-amber-600 flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              Confirma la compañía correcta antes de guardar estos patrones
+                              — la propuesta automática no es de alta confianza.
+                            </p>
+                          )}
+                          <button
+                            onClick={() => guardarPatrones(item)}
+                            disabled={guardandoPatrones === item.id || item.patrones_guardados || faltaConfirmar}
+                            title={faltaConfirmar ? 'Confirma la compañía correcta antes de guardar' : undefined}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-colors
+                              ${item.patrones_guardados
+                                ? 'bg-green-100 text-green-700 cursor-default'
+                                : 'bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50'}`}
+                          >
+                            <Shield className="w-3.5 h-3.5" />
+                            {item.patrones_guardados
+                              ? 'Patrones guardados ✓'
+                              : guardandoPatrones === item.id
+                              ? 'Guardando…'
+                              : 'Guardar patrones seleccionados'}
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
