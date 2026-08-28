@@ -15,6 +15,7 @@ export default function App() {
           <Route path="/historial"    element={<Historial />} />
           <Route path="/catalogos"    element={<Catalogos />} />
           <Route path="/reglas"       element={<Reglas />} />
+          <Route path="/trainer"      element={<Reglas />} />
           <Route path="/reglas/codigo" element={<ReglasCodigo />} />
         </Routes>
       </Layout>

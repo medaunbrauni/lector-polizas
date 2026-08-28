@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { X, Car, MapPin, CreditCard, Calendar, Cpu, Layers, Heart, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Car, FileText, Users, CreditCard, Cpu, Layers, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ResultadoPDF } from '../../lib/types';
 import { fieldLabel, formatEntidad } from '../../lib/fieldConfig';
+import { agruparCampos, labelCampo, OTROS_TITULO } from '../../lib/fieldGroups';
 
 interface Props {
   data: ResultadoPDF;
@@ -16,24 +17,49 @@ interface Props {
   tandaNumero?: number;
 }
 
-// Campos que se muestran en secciones específicas (no en "Otros")
-const CAMPOS_CONOCIDOS = new Set([
-  // Póliza
-  'documento', 'numero_poliza', 'nombre_cliente', 'rfc', 'entidad', 'forma_pago', 'moneda',
-  // Vehículo
-  'descripcion_veh', 'descripcion_vehiculo', 'placas', 'serie', 'motor',
-  'tipo_vehiculo', 'modelo',
-  // Cobertura / GMM
-  'nombre_asegurado', 'suma_asegurada', 'deducible', 'coaseguro',
-  'fecha_nacimiento', 'beneficiarios', 'objeto_asegurado',
-  // Primas
-  'prima_neta', 'derechos', 'gastos_expedicion', 'descuento', 'recargos',
-  'sub_total', 'subtotal', 'iva', 'prima_total',
-  // Vigencia
-  'desde', 'hasta', 'inicio_vigencia', 'fin_vigencia',
-  // Dirección
-  'colonia', 'municipio', 'cp', 'estado',
-]);
+// nombre_campo legacy -> nombre canónico usado en fieldGroups.ts (mismos 5
+// grupos que Reglas.tsx). Sin este mapeo, una extracción vieja que todavía
+// use el nombre legacy caería en "Otros" en vez de su grupo real.
+const ALIAS_CANONICO: Record<string, string> = {
+  numero_poliza: 'documento',
+  descripcion_vehiculo: 'descripcion_veh',
+  gastos_expedicion: 'derechos',
+  subtotal: 'sub_total',
+  inicio_vigencia: 'desde',
+  fin_vigencia: 'hasta',
+};
+
+// Campos cuyo valor se muestra en fuente monoespaciada (identificadores).
+const CAMPOS_MONO = new Set(['documento', 'rfc', 'placas', 'serie', 'motor', 'cp']);
+
+const ICONOS_GRUPO: Record<string, React.ReactNode> = {
+  'Datos del sistema':      <Layers className="w-4 h-4" />,
+  'Datos de Póliza':        <FileText className="w-4 h-4" />,
+  'Datos del contratante':  <Users className="w-4 h-4" />,
+  'Datos del vehículo':     <Car className="w-4 h-4" />,
+  'Datos':                  <CreditCard className="w-4 h-4" />,
+  [OTROS_TITULO]:           <Layers className="w-4 h-4" />,
+};
+
+interface CampoItem {
+  nombre: string;
+  valor?: string;
+  metodo?: string;
+}
+
+/** Normaliza data.campos (con posibles nombres legacy) a la lista de items
+ * que agruparCampos() espera, resolviendo alias y descartando vacíos. */
+function itemsDesdeCampos(campos: ResultadoPDF['campos'] | undefined): CampoItem[] {
+  const porNombre = new Map<string, CampoItem>();
+  for (const [claveRaw, info] of Object.entries(campos ?? {})) {
+    if (!info?.valor) continue;
+    const nombre = ALIAS_CANONICO[claveRaw] ?? claveRaw;
+    if (!porNombre.has(nombre)) {
+      porNombre.set(nombre, { nombre, valor: info.valor, metodo: info.metodo });
+    }
+  }
+  return [...porNombre.values()];
+}
 
 export default function PolizaDetalle({
   data, onClose, onAnterior, onSiguiente, indiceActual, totalPolizas, tandaNumero,
@@ -53,27 +79,7 @@ export default function PolizaDetalle({
     return () => window.removeEventListener('keydown', handler);
   }, [onAnterior, onSiguiente, onClose]);
 
-  // Helper: valor por campo, acepta alias (nuevo nombre primero, viejo como fallback)
-  const c  = (...keys: string[]) => {
-    for (const k of keys) {
-      const v = data.campos?.[k]?.valor;
-      if (v) return v;
-    }
-    return undefined;
-  };
-  const mt = (...keys: string[]) => {
-    for (const k of keys) {
-      if (data.campos?.[k]) return data.campos[k].metodo;
-    }
-    return undefined;
-  };
-
-  const hasVehicle   = c('placas', 'serie', 'motor', 'descripcion_veh', 'descripcion_vehiculo', 'tipo_vehiculo');
-  const hasCobertura = c('suma_asegurada', 'deducible', 'coaseguro', 'nombre_asegurado',
-                         'fecha_nacimiento', 'beneficiarios', 'objeto_asegurado');
-  const hasPrimas    = c('prima_neta', 'prima_total', 'derechos', 'gastos_expedicion', 'iva');
-  const hasVigencia  = c('desde', 'hasta', 'inicio_vigencia', 'fin_vigencia');
-  const hasDireccion = c('colonia', 'municipio', 'cp', 'estado');
+  const grupos = agruparCampos(itemsDesdeCampos(data.campos), (item) => item.nombre);
 
   return (
     <div
@@ -156,82 +162,24 @@ export default function PolizaDetalle({
             </div>
           )}
 
-          {/* Póliza */}
-          <Section title="Póliza" icon={<Car className="w-4 h-4" />}>
-            <Row label="N° Póliza"    value={c('documento', 'numero_poliza')} metodo={mt('documento', 'numero_poliza')} mono />
-            <Row label="Cliente"      value={c('nombre_cliente')}  metodo={mt('nombre_cliente')} />
-            <Row label="RFC"          value={c('rfc')}             metodo={mt('rfc')} mono />
-            <Row label="Entidad"      value={c('entidad') !== undefined ? formatEntidad(c('entidad')) : undefined} metodo={mt('entidad')} />
-            <Row label="Forma Pago"   value={c('forma_pago')}      metodo={mt('forma_pago')} />
-            <Row label="Moneda"       value={c('moneda')}          metodo={mt('moneda')} />
-          </Section>
-
-          {/* Vehículo */}
-          {hasVehicle && (
-            <Section title="Vehículo" icon={<Car className="w-4 h-4" />}>
-              <Row label="Descripción"        value={c('descripcion_veh', 'descripcion_vehiculo')} metodo={mt('descripcion_veh', 'descripcion_vehiculo')} />
-              <Row label="Placas"             value={c('placas')}           metodo={mt('placas')} mono />
-              <Row label="N° Serie"           value={c('serie')}            metodo={mt('serie')} mono />
-              <Row label="N° Motor"           value={c('motor')}            metodo={mt('motor')} mono />
-              <Row label="Modelo (año)"       value={c('modelo')}           metodo={mt('modelo')} />
-              <Row label="Tipo"               value={c('tipo_vehiculo')}    metodo={mt('tipo_vehiculo')} />
+          {/* Mismos 5 grupos (+ "Otros") que "Campos"/"Entrenar-Corregir"
+              en el Entrenador — ver fieldGroups.ts. 'entidad' no está en
+              ningún grupo definido, así que cae en "Otros": sigue visible
+              aquí (a diferencia del Entrenador, donde se oculta a propósito). */}
+          {grupos.map((grupo) => (
+            <Section key={grupo.titulo} title={grupo.titulo} icon={ICONOS_GRUPO[grupo.titulo] ?? <Layers className="w-4 h-4" />}>
+              {grupo.items.map((item) => (
+                <Row
+                  key={item.nombre}
+                  label={labelCampo(item.nombre, fieldLabel(item.nombre))}
+                  value={item.nombre === 'entidad' ? formatEntidad(item.valor) : item.valor}
+                  metodo={item.metodo}
+                  mono={CAMPOS_MONO.has(item.nombre)}
+                  bold={item.nombre === 'prima_total'}
+                />
+              ))}
             </Section>
-          )}
-
-          {/* Cobertura GMM / AYE / Vida */}
-          {hasCobertura && (
-            <Section title="Cobertura" icon={<Heart className="w-4 h-4" />}>
-              <Row label="Asegurado"      value={c('nombre_asegurado')}  metodo={mt('nombre_asegurado')} />
-              <Row label="Beneficiarios"  value={c('beneficiarios')}     metodo={mt('beneficiarios')} />
-              <Row label="Objeto aseg."   value={c('objeto_asegurado')}  metodo={mt('objeto_asegurado')} />
-              <Row label="Suma Asegurada" value={c('suma_asegurada')}    metodo={mt('suma_asegurada')} />
-              <Row label="Deducible"      value={c('deducible')}         metodo={mt('deducible')} />
-              <Row label="Coaseguro %"    value={c('coaseguro')}         metodo={mt('coaseguro')} />
-              <Row label="F. Nacimiento"  value={c('fecha_nacimiento')}  metodo={mt('fecha_nacimiento')} />
-            </Section>
-          )}
-
-          {/* Primas */}
-          {hasPrimas && (
-            <Section title="Primas" icon={<CreditCard className="w-4 h-4" />}>
-              <Row label="Prima Neta"        value={c('prima_neta')}                              metodo={mt('prima_neta')} />
-              <Row label="Gastos de Exp."    value={c('derechos', 'gastos_expedicion')}           metodo={mt('derechos', 'gastos_expedicion')} />
-              <Row label="Descuento"         value={c('descuento')}                               metodo={mt('descuento')} />
-              <Row label="Recargos"          value={c('recargos')}                                metodo={mt('recargos')} />
-              <Row label="Subtotal"          value={c('sub_total', 'subtotal')}                   metodo={mt('sub_total', 'subtotal')} />
-              <Row label="IVA"               value={c('iva')}                                     metodo={mt('iva')} />
-              <Row label="Prima Total"       value={c('prima_total')}                             metodo={mt('prima_total')} bold />
-            </Section>
-          )}
-
-          {/* Vigencia */}
-          {hasVigencia && (
-            <Section title="Vigencia" icon={<Calendar className="w-4 h-4" />}>
-              <Row label="Inicio" value={c('desde', 'inicio_vigencia')} metodo={mt('desde', 'inicio_vigencia')} />
-              <Row label="Fin"    value={c('hasta', 'fin_vigencia')}    metodo={mt('hasta', 'fin_vigencia')} />
-            </Section>
-          )}
-
-          {/* Dirección */}
-          {hasDireccion && (
-            <Section title="Dirección" icon={<MapPin className="w-4 h-4" />}>
-              <Row label="Colonia"   value={c('colonia')}   metodo={mt('colonia')} />
-              <Row label="Municipio" value={c('municipio')} metodo={mt('municipio')} />
-              <Row label="C.P."      value={c('cp')}        metodo={mt('cp')} mono />
-              <Row label="Estado"    value={c('estado')}    metodo={mt('estado')} />
-            </Section>
-          )}
-
-          {/* Otros campos no mapeados arriba */}
-          {data.campos && Object.keys(data.campos).some((k) => !CAMPOS_CONOCIDOS.has(k)) && (
-            <Section title="Otros campos" icon={<Layers className="w-4 h-4" />}>
-              {Object.entries(data.campos)
-                .filter(([k]) => !CAMPOS_CONOCIDOS.has(k))
-                .map(([k, v]) => (
-                  <Row key={k} label={fieldLabel(k)} value={v.valor ?? undefined} metodo={v.metodo} />
-                ))}
-            </Section>
-          )}
+          ))}
         </div>
 
         {/* Footer */}
