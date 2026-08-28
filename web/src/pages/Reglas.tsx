@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback, useMemo, Component } from 're
 import type { ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { obtenerPdf, invalidarPdf } from '../lib/pdfCache';
+import { agruparCampos, labelCampo } from '../lib/fieldGroups';
 import Clasificador from '../components/reglas/Clasificador';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import DismissibleAlert from '../components/ui/DismissibleAlert';
@@ -734,8 +735,12 @@ export default function Reglas() {
   const subramoActualNombre = subramos.find((s) => s.id === Number(selSubramo))?.nombre ?? null;
   const valorSistemaCampo = (campo: Campo): string | null =>
     campo.nombre === 'sub_ramo_sicas' ? subramoActualNombre : campo.valor_fijo;
-  const camposValorFijo = new Set(campos.filter((c) => valorSistemaCampo(c) !== null).map((c) => c.nombre));
-  const camposOrdenados = [...campos].sort((a, b) => {
+  // 'entidad' se oculta SOLO en las pestañas "Campos"/"Entrenar-Corregir" de
+  // este módulo (Entrenador PDFs) — sigue existiendo normal en el catálogo,
+  // en el backend, y en la vista de extracción del Extractor (PolizaDetalle).
+  const camposVisibles = campos.filter((c) => c.nombre !== 'entidad');
+  const camposValorFijo = new Set(camposVisibles.filter((c) => valorSistemaCampo(c) !== null).map((c) => c.nombre));
+  const camposOrdenados = [...camposVisibles].sort((a, b) => {
     const aOk = camposConRegla.has(a.nombre) || camposValorFijo.has(a.nombre);
     const bOk = camposConRegla.has(b.nombre) || camposValorFijo.has(b.nombre);
     if (aOk !== bOk) return aOk ? -1 : 1;
@@ -950,7 +955,7 @@ export default function Reglas() {
               )}
               {polizas.map((p, idx) => {
                 const selCount = Object.values(selecciones).filter((m) => m[p.id]).length;
-                const totalCampos = campos.filter((c) => !valorSistemaCampo(c)).length;
+                const totalCampos = camposVisibles.filter((c) => !valorSistemaCampo(c)).length;
                 return (
                   <div
                     key={p.id}
@@ -1230,20 +1235,20 @@ export default function Reglas() {
                       : 'text-gray-400 hover:text-gray-600'
                   }`}
                 >
-                  Entrenar/Corregir campos
+                  Entrenar/Corregir
                 </button>
               </div>
             )}
 
             <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
               <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-                {mostrarVistaSimple ? 'Campos' : 'Entrenar/Corregir campos'}
+                {mostrarVistaSimple ? 'Campos' : 'Entrenar/Corregir'}
               </span>
               {mostrarVistaSimple ? (
                 <span className="text-[10px] text-gray-400">Valores extraídos</span>
               ) : (
                 <span className="text-[10px] text-gray-400">
-                  {camposConRegla.size + camposValorFijo.size}/{campos.length} cubiertos
+                  {camposConRegla.size + camposValorFijo.size}/{camposVisibles.length} cubiertos
                 </span>
               )}
             </div>
@@ -1276,44 +1281,56 @@ export default function Reglas() {
                     Aún no hay reglas entrenadas para este subramo — los campos
                     de sistema (Subramo, Grupo, Tipo Documento, etc.) se
                     completan solos; el resto aparecerá aquí en cuanto
-                    entrenes reglas en "Entrenar/Corregir campos".
+                    entrenes reglas en "Entrenar/Corregir".
                   </p>
                 </DismissibleAlert>
-                {polizaActiva && camposOrdenados.map((campo) => {
-                  const sel = selecciones[campo.nombre]?.[polizaActiva.id];
-                  // sub_ramo_sicas siempre refleja el subramo seleccionado
-                  // arriba en vivo (nunca un valor entrenado/guardado viejo,
-                  // ni aunque el usuario lo cambie tras re-entrenar desde
-                  // Historial). Los demás campos de sistema (grupo,
-                  // tipo_documento, renovacion, estatus) nunca tienen una
-                  // SeleccionCampo real porque no se extraen de un PDF — si
-                  // no hay valor real entrenado, se usa valor_fijo como
-                  // fallback.
-                  const valor = campo.nombre === 'sub_ramo_sicas'
-                    ? subramoActualNombre ?? undefined
-                    : sel?.texto_seleccionado || campo.valor_fijo || undefined;
-                  const metodo = campo.nombre === 'sub_ramo_sicas'
-                    ? (subramoActualNombre ? 'derivado' : null)
-                    : sel?.metodo ?? (campo.valor_fijo ? 'valor_fijo' : null);
-                  const badge = badgeMetodo(metodo);
-                  return (
-                    <div key={`${campo.es_global ? 'g' : 'e'}-${campo.id}`} className="px-4 py-2.5 border-b border-gray-50">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[10px] text-gray-400 uppercase tracking-wide">{campo.label}</p>
-                        <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${badge.cls}`}>
-                          {badge.label}
-                        </span>
-                      </div>
-                      <p className={`text-xs mt-0.5 ${valor ? 'text-gray-800' : 'text-gray-300 italic'}`}>
-                        {valor || 'sin valor'}
-                      </p>
+                {polizaActiva && agruparCampos(camposOrdenados, (c) => c.nombre).map((grupo) => (
+                  <div key={grupo.titulo}>
+                    <div className="px-4 pt-3 pb-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 border-l-4 border-blue-300">
+                      {grupo.titulo}
                     </div>
-                  );
-                })}
+                    {grupo.items.map((campo) => {
+                      const sel = selecciones[campo.nombre]?.[polizaActiva.id];
+                      // sub_ramo_sicas siempre refleja el subramo seleccionado
+                      // arriba en vivo (nunca un valor entrenado/guardado viejo,
+                      // ni aunque el usuario lo cambie tras re-entrenar desde
+                      // Historial). Los demás campos de sistema (grupo,
+                      // tipo_documento, renovacion, estatus) nunca tienen una
+                      // SeleccionCampo real porque no se extraen de un PDF — si
+                      // no hay valor real entrenado, se usa valor_fijo como
+                      // fallback.
+                      const valor = campo.nombre === 'sub_ramo_sicas'
+                        ? subramoActualNombre ?? undefined
+                        : sel?.texto_seleccionado || campo.valor_fijo || undefined;
+                      const metodo = campo.nombre === 'sub_ramo_sicas'
+                        ? (subramoActualNombre ? 'derivado' : null)
+                        : sel?.metodo ?? (campo.valor_fijo ? 'valor_fijo' : null);
+                      const badge = badgeMetodo(metodo);
+                      return (
+                        <div key={`${campo.es_global ? 'g' : 'e'}-${campo.id}`} className="px-4 py-2.5 border-b border-gray-50">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">{labelCampo(campo.nombre, campo.label)}</p>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${badge.cls}`}>
+                              {badge.label}
+                            </span>
+                          </div>
+                          <p className={`text-xs mt-0.5 ${valor ? 'text-gray-800' : 'text-gray-300 italic'}`}>
+                            {valor || 'sin valor'}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
               </div>
             ) : (
             <div className="flex-1 overflow-y-auto">
-              {camposOrdenados.map((campo) => {
+              {agruparCampos(camposOrdenados, (c) => c.nombre).map((grupo) => (
+              <div key={grupo.titulo}>
+                <div className="px-4 pt-3 pb-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 border-l-4 border-blue-300">
+                  {grupo.titulo}
+                </div>
+              {grupo.items.map((campo) => {
                 const tieneRegla = camposConRegla.has(campo.nombre);
                 const esValorFijo = camposValorFijo.has(campo.nombre);
                 const esActivo = campoActivo === campo.nombre;
@@ -1334,7 +1351,7 @@ export default function Reglas() {
                     >
                       <div className="flex items-center justify-between">
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-gray-800 truncate">{campo.label}</p>
+                          <p className="text-xs font-semibold text-gray-800 truncate">{labelCampo(campo.nombre, campo.label)}</p>
                           <p className="text-[10px] text-gray-400 font-mono">{campo.nombre}</p>
                         </div>
                         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
@@ -1452,6 +1469,8 @@ export default function Reglas() {
                   </div>
                 );
               })}
+              </div>
+              ))}
             </div>
             )}
           </div>
