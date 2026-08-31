@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getReglasConJerarquia, getCodigoDeteccion, getReglasNivel1, probarRegla } from '../lib/api';
-import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search, Lock, FlaskConical, X } from 'lucide-react';
+import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search, Lock, FlaskConical, X, Wrench, Database } from 'lucide-react';
 
 const COMPANIAS_NIVEL1 = ['GNP Seguros', 'Quálitas'];
 
@@ -327,6 +327,7 @@ export default function ReglasCodigo() {
   const [cargando, setCargando] = useState(true);
   const [copiado, setCopiado] = useState(false);
   const [tab, setTab] = useState<'extraccion' | 'deteccion'>('extraccion');
+  const [subTabExtraccion, setSubTabExtraccion] = useState<'nivel1' | 'nivel2'>('nivel2');
   const [vista, setVista] = useState<'arbol' | 'codigo'>('arbol');
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
   const [probandoNivel2, setProbandoNivel2] = useState<string | null>(null);
@@ -370,33 +371,37 @@ export default function ReglasCodigo() {
           <h1 className="text-xl font-bold text-gray-900">Código de Reglas</h1>
           <p className="text-sm text-gray-500 mt-1">
             {tab === 'extraccion'
-              ? `${reglas.length} regla${reglas.length !== 1 ? 's' : ''} activa${reglas.length !== 1 ? 's' : ''}`
+              ? subTabExtraccion === 'nivel1'
+                ? `${COMPANIAS_NIVEL1.length} aseguradora${COMPANIAS_NIVEL1.length !== 1 ? 's' : ''} con extractor dedicado`
+                : `${reglas.length} regla${reglas.length !== 1 ? 's' : ''} activa${reglas.length !== 1 ? 's' : ''}`
               : `${deteccion.length} compañía${deteccion.length !== 1 ? 's' : ''} · patrones de identificación automática`
             }
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="flex border border-gray-200 rounded-xl overflow-hidden text-sm">
+        {!(tab === 'extraccion' && subTabExtraccion === 'nivel1') && (
+          <div className="flex items-center gap-2">
+            <div className="flex border border-gray-200 rounded-xl overflow-hidden text-sm">
+              <button
+                onClick={() => setVista('arbol')}
+                className={`px-4 py-2 font-medium transition-colors ${vista === 'arbol' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                Árbol
+              </button>
+              <button
+                onClick={() => setVista('codigo')}
+                className={`px-4 py-2 font-medium transition-colors ${vista === 'codigo' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+              >
+                <Code2 className="w-4 h-4 inline mr-1.5" />Código
+              </button>
+            </div>
             <button
-              onClick={() => setVista('arbol')}
-              className={`px-4 py-2 font-medium transition-colors ${vista === 'arbol' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+              onClick={copiarCodigo}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white rounded-xl text-sm font-medium transition-colors"
             >
-              Árbol
-            </button>
-            <button
-              onClick={() => setVista('codigo')}
-              className={`px-4 py-2 font-medium transition-colors ${vista === 'codigo' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
-            >
-              <Code2 className="w-4 h-4 inline mr-1.5" />Código
+              {copiado ? <><Check className="w-4 h-4" />Copiado</> : <><Copy className="w-4 h-4" />Copiar código</>}
             </button>
           </div>
-          <button
-            onClick={copiarCodigo}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white rounded-xl text-sm font-medium transition-colors"
-          >
-            {copiado ? <><Check className="w-4 h-4" />Copiado</> : <><Copy className="w-4 h-4" />Copiar código</>}
-          </button>
-        </div>
+        )}
       </div>
 
       {/* Tabs extracción / detección */}
@@ -428,13 +433,35 @@ export default function ReglasCodigo() {
       {/* ── EXTRACCIÓN ── */}
       {tab === 'extraccion' && (
         <>
-          {vista === 'arbol' && (
+          {/* Mini-tabs: extractor dedicado (nivel 1) vs. entrenador/BD (nivel 2) */}
+          <div className="flex gap-1 -mt-1">
+            <button
+              onClick={() => setSubTabExtraccion('nivel1')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                subTabExtraccion === 'nivel1' ? 'bg-amber-100 text-amber-800' : 'text-gray-500 hover:bg-gray-100'
+              }`}
+            >
+              <Wrench className="w-3.5 h-3.5" />Extractor dedicado
+              <span className="text-[10px] bg-white/60 px-1.5 py-0.5 rounded-full font-bold">{COMPANIAS_NIVEL1.length}</span>
+            </button>
+            <button
+              onClick={() => setSubTabExtraccion('nivel2')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                subTabExtraccion === 'nivel2' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'
+              }`}
+            >
+              <Database className="w-3.5 h-3.5" />Entrenador / Reglas BD
+              <span className="text-[10px] bg-white/60 px-1.5 py-0.5 rounded-full font-bold">{reglas.length}</span>
+            </button>
+          </div>
+
+          {subTabExtraccion === 'nivel1' && (
             <div className="space-y-3">
               {COMPANIAS_NIVEL1.map((c) => <SeccionNivel1 key={c} compania={c} />)}
             </div>
           )}
 
-          {reglas.length === 0 ? (
+          {subTabExtraccion === 'nivel2' && (reglas.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
               <Code2 className="w-8 h-8 mx-auto mb-3 opacity-30" />
               <p className="text-sm">No hay reglas activas. Créalas en la sección Entrenador PDFs.</p>
@@ -450,6 +477,7 @@ export default function ReglasCodigo() {
               {Object.entries(agrupado).map(([comp, ramos]) => {
                 const compKey = comp;
                 const totalComp = Object.values(ramos).flatMap(Object.values).flat().length;
+                const tieneNivel1 = COMPANIAS_NIVEL1.includes(comp);
                 return (
                   <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
                     <button
@@ -459,6 +487,14 @@ export default function ReglasCodigo() {
                       <div className="flex items-center gap-2">
                         {abiertos.has(compKey) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
                         <span className="font-semibold text-gray-900 text-sm">{comp}</span>
+                        {tieneNivel1 && (
+                          <span
+                            title="Esta compañía también tiene reglas en el mini-tab «Extractor dedicado»"
+                            className="inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium"
+                          >
+                            <Wrench className="w-2.5 h-2.5" />también en extractor dedicado
+                          </span>
+                        )}
                       </div>
                       <span className="text-xs text-gray-400 font-medium">{totalComp} regla{totalComp !== 1 ? 's' : ''}</span>
                     </button>
@@ -554,7 +590,7 @@ export default function ReglasCodigo() {
                 );
               })}
             </div>
-          )}
+          ))}
         </>
       )}
 
