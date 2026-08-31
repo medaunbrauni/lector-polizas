@@ -20,7 +20,7 @@ from ..database import get_db
 from ..config import PDF_ENTRENAMIENTO_DIR
 from ..models.db_models import (
     PolizaEntrenamiento, SeleccionCampo, ReglaExtraccion,
-    Subramo, CampoDefinido, CampoGlobal, Extraccion,
+    Subramo, CampoDefinido, CampoGlobal, Extraccion, ClasificacionCola,
 )
 from ..services.batch_trainer import (
     generar_regex_lote, probar_regex_en_lote, auto_detectar_en_lote,
@@ -232,15 +232,23 @@ def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     """
     Vacía el lote de entrenamiento del subramo (acción manual explícita,
     confirmada por el usuario). Borra TODAS las pólizas del subramo,
-    incluidas las que ya fueron usadas en una extracción real
-    (Extraccion.poliza_entrenamiento_id): para esas, primero se
-    desvincula la extracción (poliza_entrenamiento_id = NULL) en vez de
-    dejarla apuntando a una fila borrada — el Historial ya sabe mostrar
-    ese caso ("el archivo original ya no está disponible, pero los
-    datos se conservan"), sus datos extraídos (Extraccion.datos_completos)
-    no se ven afectados. Distinto de la limpieza automática diaria
-    (limpiar_lote_entrenamiento.py), que sigue siendo conservadora y NO
-    toca pólizas en uso, por ser una acción sin confirmación del usuario.
+    incluidas las que ya fueron usadas en una extracción real o enviadas
+    desde el Clasificador: para esas, primero se desvincula CADA tabla
+    que referencia polizas_entrenamiento.id por FK —
+    Extraccion.poliza_entrenamiento_id y ClasificacionCola.poliza_entrenamiento_id
+    (revisa api/models/db_models.py si se agrega una nueva en el futuro,
+    ambas deben tratarse igual aquí) — poniéndolas en NULL en vez de
+    dejarlas apuntando a una fila borrada. El Historial ya sabe mostrar
+    ese caso ("el archivo original ya no está disponible, pero los datos
+    se conservan"); sus datos (Extraccion.datos_completos) no se ven
+    afectados, y ClasificacionCola conserva su registro de que ese PDF
+    ya fue clasificado y enviado, solo pierde el vínculo al PDF físico
+    (que de cualquier forma ya se borra aquí). SeleccionCampo no
+    necesita este tratamiento: tiene cascade="all, delete-orphan" en el
+    modelo, SQLAlchemy la borra sola al hacer db.delete(p). Distinto de
+    la limpieza automática diaria (limpiar_lote_entrenamiento.py), que
+    sigue siendo conservadora y NO toca pólizas en uso, por ser una
+    acción sin confirmación del usuario.
     """
     polizas = (
         db.query(PolizaEntrenamiento)
@@ -250,6 +258,9 @@ def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     borradas = 0
     for p in polizas:
         db.query(Extraccion).filter(Extraccion.poliza_entrenamiento_id == p.id).update(
+            {"poliza_entrenamiento_id": None}
+        )
+        db.query(ClasificacionCola).filter(ClasificacionCola.poliza_entrenamiento_id == p.id).update(
             {"poliza_entrenamiento_id": None}
         )
         try:

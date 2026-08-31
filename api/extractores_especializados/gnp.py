@@ -43,18 +43,41 @@ def _leer_con_fitz(pdf_bytes: bytes) -> tuple[str, list[dict]]:
     return texto, paginas_dict
 
 
+def es_motocicleta_gnp(texto: str) -> bool:
+    """
+    "ASISTENCIA VIAL PARA MOTOCICLETAS" aparece dentro de la tabla
+    "DESGLOSE DE COBERTURAS Y SERVICIOS AMPARADOS POR LA PÓLIZA" — se
+    confirmó contra un caso real que esa coincidencia sí correspondía a
+    una póliza de motocicleta. .upper() en ambos lados por seguridad
+    ante variaciones de mayúsculas/minúsculas del PDF, aunque el texto
+    real observado ya viene en mayúsculas en esa tabla.
+    """
+    return "ASISTENCIA VIAL PARA MOTOCICLETAS" in texto.upper()
+
+
 def detectar_subramo_por_encabezado(texto: str) -> str | None:
     """
-    El encabezado superior derecho de la carátula imprime el concepto de
-    la póliza (ej. "Fuerza Productora Regular Autos Amplia" en pólizas
-    individuales). En los endosos/carátula de flotilla ese mismo lugar
-    dice "FLOTILLAS AMPLIA" en su lugar — cuando aparece, el Subramo
-    real es "Flotilla de Vehiculos" (nombre exacto del catálogo), no
-    "Automóviles" (que es a donde cae por defecto el puntaje por
-    keywords). Devuelve None si no aplica ningún override.
+    Corrige el Subramo cuando el puntaje por keywords no alcanza —
+    ambas señales de acá son más confiables que las keywords genéricas
+    de la tabla `subramos` (ej. "moto" hace match como substring de
+    "motor" en CUALQUIER póliza de auto, así que ese keyword solo no
+    sirve para distinguir Motocicletas de forma confiable).
+
+    - El encabezado superior derecho de la carátula imprime el concepto
+      de la póliza (ej. "Fuerza Productora Regular Autos Amplia" en
+      pólizas individuales). En los endosos/carátula de flotilla ese
+      mismo lugar dice "FLOTILLAS AMPLIA" en su lugar — cuando aparece,
+      el Subramo real es "Flotilla de Vehiculos" (nombre exacto del
+      catálogo), no "Automóviles" (donde cae por defecto el puntaje).
+    - "ASISTENCIA VIAL PARA MOTOCICLETAS" en el desglose de coberturas
+      (ver es_motocicleta_gnp) señala Subramo "Motocicletas".
+
+    Devuelve None si no aplica ningún override.
     """
     if re.search(r'\bFLOTILLAS\b', texto, re.IGNORECASE):
         return "Flotilla de Vehiculos"
+    if es_motocicleta_gnp(texto):
+        return "Motocicletas"
     return None
 
 
