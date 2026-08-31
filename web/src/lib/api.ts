@@ -61,6 +61,12 @@ export async function probarRegla(patron: string, texto: string) {
   return res.json();
 }
 
+export async function getReglasNivel1(aseguradora: string) {
+  const res = await fetch(`${BASE}/reglas/nivel1/${encodeURIComponent(aseguradora)}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function getHistorial(skip = 0, limit = 50) {
   const res = await fetch(`${BASE}/extraer/historial?skip=${skip}&limit=${limit}`);
   return res.json();

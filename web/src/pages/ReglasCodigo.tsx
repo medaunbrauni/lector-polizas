@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
-import { getReglasConJerarquia, getCodigoDeteccion } from '../lib/api';
-import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search } from 'lucide-react';
+import { getReglasConJerarquia, getCodigoDeteccion, getReglasNivel1 } from '../lib/api';
+import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search, Lock } from 'lucide-react';
+
+const COMPANIAS_NIVEL1 = ['GNP Seguros', 'Quálitas'];
+
+interface ReglaNivel1 {
+  campo: string;
+  funcion: string | null;
+  patrones: string[];
+  archivo: string;
+  linea: number;
+  fuente?: string | null;
+}
 
 interface ReglaConJerarquia {
   id: number;
@@ -171,6 +182,80 @@ function PatronBadge({ tipo, valor }: { tipo: 'regex' | 'keyword'; valor: string
   );
 }
 
+function SeccionNivel1({ compania }: { compania: string }) {
+  const [abierto, setAbierto] = useState(false);
+  const [reglas, setReglas] = useState<ReglaNivel1[] | null>(null);
+
+  useEffect(() => {
+    if (abierto && reglas === null) {
+      getReglasNivel1(compania).then(setReglas);
+    }
+  }, [abierto, compania, reglas]);
+
+  return (
+    <div className="bg-white border border-amber-200 rounded-2xl overflow-hidden shadow-sm">
+      <button
+        onClick={() => setAbierto((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-amber-50/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          {abierto ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
+          <span className="font-semibold text-gray-900 text-sm">{compania}</span>
+          <span className="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">
+            <Lock className="w-2.5 h-2.5" />extractor dedicado · solo lectura
+          </span>
+        </div>
+        {reglas && <span className="text-xs text-gray-400 font-medium">{reglas.length} campo{reglas.length !== 1 ? 's' : ''}</span>}
+      </button>
+
+      {abierto && (
+        <div className="border-t border-amber-100">
+          <div className="px-5 py-2.5 bg-amber-50 text-[11px] text-amber-800">
+            Estas reglas viven como regex en código Python (no en la base de datos) y se ejecutan
+            <strong> antes</strong> del motor de reglas de abajo. Se muestran de solo lectura, reconstruidas
+            automáticamente a partir del código fuente — no se editan desde aquí.
+          </div>
+          {reglas === null ? (
+            <div className="px-5 py-4 text-xs text-gray-400">Cargando…</div>
+          ) : reglas.length === 0 ? (
+            <div className="px-5 py-4 text-xs text-gray-400">No se pudieron detectar reglas.</div>
+          ) : (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide">
+                  <th className="pl-5 pr-3 py-2 text-left font-medium">Campo</th>
+                  <th className="px-3 py-2 text-left font-medium">Función / patrones</th>
+                  <th className="px-3 py-2 text-left font-medium w-40">Ubicación</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {reglas.map((r) => (
+                  <tr key={r.campo} className="hover:bg-gray-50 align-top">
+                    <td className="pl-5 pr-3 py-2 font-mono text-blue-700 font-medium whitespace-nowrap">{r.campo}</td>
+                    <td className="px-3 py-2 text-gray-700">
+                      <div className="font-mono text-gray-500 mb-1">{r.funcion ?? '—'}</div>
+                      {r.patrones.length === 0 ? (
+                        <span className="text-gray-300">sin regex directo detectado</span>
+                      ) : (
+                        <div className="space-y-1">
+                          {r.patrones.map((p) => (
+                            <code key={p} className="block truncate max-w-xs font-mono text-gray-700" title={p}>{p}</code>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-gray-400 font-mono">{r.archivo}:{r.linea}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ReglasCodigo() {
   const [reglas, setReglas] = useState<ReglaConJerarquia[]>([]);
   const [deteccion, setDeteccion] = useState<CompaniaDeteccion[]>([]);
@@ -277,6 +362,12 @@ export default function ReglasCodigo() {
       {/* ── EXTRACCIÓN ── */}
       {tab === 'extraccion' && (
         <>
+          {vista === 'arbol' && (
+            <div className="space-y-3">
+              {COMPANIAS_NIVEL1.map((c) => <SeccionNivel1 key={c} compania={c} />)}
+            </div>
+          )}
+
           {reglas.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
               <Code2 className="w-8 h-8 mx-auto mb-3 opacity-30" />

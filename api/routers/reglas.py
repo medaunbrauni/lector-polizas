@@ -9,6 +9,7 @@ from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
 from ..models.db_models import ReglaExtraccion, Extraccion
 from ..services.rule_engine import _aplicar_patron, cobertura_subramo
+from ..services.nivel1_rules import obtener_reglas_nivel1, ARCHIVOS_NIVEL1
 
 router = APIRouter(prefix="/reglas", tags=["Reglas de Extracción"])
 
@@ -134,6 +135,19 @@ def crear_regla(data: ReglaIn, db: Session = Depends(get_db)):
 def probar_regla(data: ProbarReglaIn):
     valor = _aplicar_patron(data.patron_regex, data.texto)
     return {"coincidencia": valor, "encontrado": valor is not None}
+
+
+@router.get("/nivel1/{aseguradora}")
+def reglas_nivel1(aseguradora: str):
+    """Reglas hardcodeadas del extractor especializado (solo lectura).
+
+    Reconstruidas por introspección estática del código fuente en
+    api/extractores_especializados/ — no ejecuta ni modifica la lógica de
+    extracción real.
+    """
+    if aseguradora not in ARCHIVOS_NIVEL1:
+        raise HTTPException(404, f"No hay extractor especializado para '{aseguradora}'")
+    return obtener_reglas_nivel1(aseguradora)
 
 
 @router.get("/cobertura/{subramo_id}")
