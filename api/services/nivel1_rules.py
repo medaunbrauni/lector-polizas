@@ -50,42 +50,117 @@ def _parece_regex(s: str) -> bool:
     return any(c in _META_REGEX for c in s)
 
 
+def _es_llamada_re_modulo(f: ast.expr) -> bool:
+    """`re.search(...)`, `re.compile(...)`, etc. — llamada colgada del
+    módulo `re` importado, no de un objeto Pattern ya compilado."""
+    return isinstance(f, ast.Attribute) and f.attr in _RE_FUNCS and isinstance(f.value, ast.Name) and f.value.id == "re"
+
+
 def _es_llamada_re(nodo: ast.Call) -> bool:
-    f = nodo.func
-    return (
-        isinstance(f, ast.Attribute)
-        and f.attr in _RE_FUNCS
-        and isinstance(f.value, ast.Name)
-        and f.value.id == "re"
-    )
+    return _es_llamada_re_modulo(nodo.func)
 
 
-def _patron_de_llamada(nodo: ast.Call, patrones_modulo: dict[str, str]) -> str | None:
-    if not nodo.args:
-        return None
-    arg = nodo.args[0]
-    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-        return arg.value
-    if isinstance(arg, ast.Name) and arg.id in patrones_modulo:
-        return patrones_modulo[arg.id]
+def _resolver_valor_estatico(nodo: ast.expr, constantes: dict[str, str]) -> str | None:
+    """Resuelve el valor de un string armado en tiempo de análisis: literal
+    suelto, concatenación ('...' + VAR + '...') o referencia a una variable
+    ya resuelta en `constantes` (regex nombrado, o cualquier constante de
+    módulo). Sin esto, un regex armado por concatenación (común para
+    reusar una lista cerrada de valores en varios lados, ej.
+    `'Forma de Pago...' + _VALORES_FORMA_PAGO + '...'`) se perdía por
+    completo: el argumento no era ni un Constant ni un Name plano."""
+    if isinstance(nodo, ast.Constant) and isinstance(nodo.value, str):
+        return nodo.value
+    if isinstance(nodo, ast.Name):
+        return constantes.get(nodo.id)
+    if isinstance(nodo, ast.BinOp) and isinstance(nodo.op, ast.Add):
+        izq = _resolver_valor_estatico(nodo.left, constantes)
+        der = _resolver_valor_estatico(nodo.right, constantes)
+        if izq is not None and der is not None:
+            return izq + der
     return None
 
 
-def _patrones_modulo(arbol: ast.Module) -> dict[str, str]:
-    """Mapea variables de módulo tipo `_X = re.compile(r"...")` a su patrón."""
-    out = {}
-    for nodo in ast.walk(arbol):
-        if (
-            isinstance(nodo, ast.Assign)
-            and len(nodo.targets) == 1
-            and isinstance(nodo.targets[0], ast.Name)
-            and isinstance(nodo.value, ast.Call)
-            and _es_llamada_re(nodo.value)
-        ):
-            patron = _patron_de_llamada(nodo.value, {})
-            if patron:
-                out[nodo.targets[0].id] = patron
+def _patron_de_llamada(nodo: ast.Call, constantes: dict[str, str]) -> str | None:
+    f = nodo.func
+    if not isinstance(f, ast.Attribute) or f.attr not in _RE_FUNCS:
+        return None
+    if not isinstance(f.value, ast.Name):
+        return None
+    if f.value.id == "re":
+        # re.search(patron, texto, ...) -- el patrón es el primer argumento.
+        if not nodo.args:
+            return None
+        return _resolver_valor_estatico(nodo.args[0], constantes)
+    # X.search(...) / X.fullmatch(...) sobre un Pattern ya compilado
+    # (ej. `_VIN_TOKEN.finditer(texto_ventana)`) -- el patrón no viaja en
+    # los argumentos de ESTA llamada, es el que se le dio a X = re.compile(...)
+    # en su momento, ya resuelto en `constantes`.
+    return constantes.get(f.value.id)
+
+
+def _nombre_es_constante(nombre: str) -> bool:
+    """Convención de este código para un regex compartido pensado como
+    valor autocontenible (`_VALORES_FORMA_PAGO`, `_VIN_TOKEN`,
+    `_ANCLA_DOMICILIO_ASEGURADO`, `_DESCUENTOS_DETALLADOS_GNP`): todo
+    MAYÚSCULAS. Un nombre en minúsculas (`monto_regex`, `regex_serie`,
+    `patron`) suele ser una variable de trabajo de un bucle de escaneo por
+    offset -- válida solo dentro de ESE bucle, nunca un extractor de valor
+    de por sí. Sin este filtro, resolver esos nombres locales por
+    Name-lookup expone regex genéricos (ej. "cualquier monto") como si
+    fueran el patrón real de un campo financiero, dando falsos positivos
+    al probarlos sueltos contra todo el texto."""
+    letras = [c for c in nombre if c.isalpha()]
+    return bool(letras) and all(c.isupper() for c in letras)
+
+
+def _constantes_en_asignaciones(nodos_assign) -> dict[str, str]:
+    """Resuelve, en orden, cada `Name = <valor>` de una secuencia de nodos
+    Assign a su string estático (ver _resolver_valor_estatico), permitiendo
+    que una asignación posterior reutilice una anterior YA resuelta en la
+    misma pasada — para este último caso se guarda el PATRÓN interno de un
+    `re.compile(...)`, no el objeto Pattern, así una llamada posterior a un
+    método sobre esa variable (`_VIN_TOKEN.finditer(...)`) se resuelve
+    igual que `re.func(...)`. Solo nombres tipo constante (ver
+    _nombre_es_constante) — el resto se ignora a propósito."""
+    out: dict[str, str] = {}
+    for nodo in nodos_assign:
+        nombre = nodo.targets[0].id
+        if not _nombre_es_constante(nombre):
+            continue
+        valor = nodo.value
+        if isinstance(valor, ast.Call) and _es_llamada_re_modulo(valor.func) and valor.args:
+            resuelto = _resolver_valor_estatico(valor.args[0], out)
+        else:
+            resuelto = _resolver_valor_estatico(valor, out)
+        if resuelto:
+            out[nombre] = resuelto
     return out
+
+
+def _asignaciones_simples(nodo) -> list[ast.Assign]:
+    return [
+        n for n in ast.walk(nodo)
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+    ]
+
+
+def _constantes_globales(arbol: ast.Module) -> dict[str, str]:
+    """Constantes de MÓDULO únicamente (asignaciones directas del cuerpo
+    del archivo, no dentro de ninguna función) — genuinamente compartidas
+    y seguras de resolver desde cualquier función."""
+    return _constantes_en_asignaciones(n for n in arbol.body if isinstance(n, ast.Assign))
+
+
+def _constantes_locales(func: ast.FunctionDef) -> dict[str, str]:
+    """Como _constantes_globales pero acotado al cuerpo de UNA función
+    (incluye funciones anidadas dentro de ella). Nombres genéricos como
+    "patron" se repiten sin relación entre sí en funciones distintas del
+    mismo archivo (ej. un parámetro/variable de bucle en un helper
+    genérico, y una variable local no relacionada en otra función) —
+    resolverlos con un diccionario compartido de TODO el archivo mezclaría
+    el de una función con el de otra. Por eso esto se recalcula por
+    función en vez de usar un único diccionario global de asignaciones."""
+    return _constantes_en_asignaciones(_asignaciones_simples(func))
 
 
 def _strings_de_valor(nodo: ast.expr) -> list[str]:
@@ -126,8 +201,80 @@ def _patrones_por_nombre(func: ast.FunctionDef) -> list[str]:
     return patrones
 
 
-def _patrones_en_funcion(func: ast.FunctionDef, patrones_modulo: dict[str, str]) -> list[str]:
+def _llamadas_ancla_de_posicion(func: ast.FunctionDef) -> set[int]:
+    """`id()` de los nodos Call que son un `X = re.search(...)`/`match`/
+    `fullmatch` cuyo resultado `X` se usa SOLO para su posición
+    (`.end()`/`.start()`/`.span()`, ej. para recortar una ventana de texto
+    después) y nunca para extraer un valor (`.group(...)`) -- es un ancla
+    para ubicar una sección, no un regex de valor, y mostrarlo junto a los
+    patrones reales del campo es engañoso (ej. "serie" en Quálitas: el
+    ancla `SERIE:?\\s*\\n` no tiene grupo de captura y su "coincidencia" es
+    literalmente la etiqueta, no un VIN)."""
+    candidatos: dict[str, ast.Call] = {}
+    for nodo in ast.walk(func):
+        if (
+            isinstance(nodo, ast.Assign)
+            and len(nodo.targets) == 1
+            and isinstance(nodo.targets[0], ast.Name)
+            and isinstance(nodo.value, ast.Call)
+            and _es_llamada_re_modulo(nodo.value.func)
+            and getattr(nodo.value.func, "attr", None) in ("search", "match", "fullmatch")
+        ):
+            candidatos[nodo.targets[0].id] = nodo.value
+    if not candidatos:
+        return set()
+
+    usa_group, usa_posicion = set(), set()
+    for nodo in ast.walk(func):
+        if isinstance(nodo, ast.Attribute) and isinstance(nodo.value, ast.Name) and nodo.value.id in candidatos:
+            if nodo.attr == "group":
+                usa_group.add(nodo.value.id)
+            elif nodo.attr in ("end", "start", "span"):
+                usa_posicion.add(nodo.value.id)
+
+    return {
+        id(llamada) for nombre, llamada in candidatos.items()
+        if nombre in usa_posicion and nombre not in usa_group
+    }
+
+
+def _funciones_llamadas(func: ast.FunctionDef) -> set[str]:
+    """Nombres de función invocados como `nombre(...)` dentro de `func` —
+    para seguir el regex hasta una función auxiliar (ej. `extraer_serie`
+    llama a `_primer_vin_valido`, que es donde vive el regex real)."""
+    return {
+        nodo.func.id
+        for nodo in ast.walk(func)
+        if isinstance(nodo, ast.Call) and isinstance(nodo.func, ast.Name)
+    }
+
+
+def _patrones_en_funcion(
+    func: ast.FunctionDef,
+    constantes_globales: dict[str, str],
+    funciones: dict[str, ast.FunctionDef],
+    visitadas: set[str] | None = None,
+) -> list[str]:
+    """Regex que usa `func` para resolver su campo — incluye los que vienen
+    de funciones auxiliares que `func` llama (no solo los que están escritos
+    literalmente en su propio cuerpo), porque varios campos delegan el
+    regex real a un helper compartido (`_bloque_agente_por_regex`,
+    `_primer_vin_valido`, etc.). `visitadas` evita ciclos y no repetir
+    trabajo si dos campos comparten la misma cadena de helpers."""
+    if visitadas is None:
+        visitadas = set()
+    if func.name in visitadas:
+        return []
+    visitadas.add(func.name)
+
+    # Constantes de módulo + las propias de ESTA función únicamente — ver
+    # _constantes_locales sobre por qué no se usa un diccionario compartido
+    # de todo el archivo (un "patron" local de una función no debe resolver
+    # el "patron" -sin relación- de otra).
+    constantes = {**constantes_globales, **_constantes_locales(func)}
+
     vistos, patrones = set(), []
+    anclas = _llamadas_ancla_de_posicion(func)
 
     def agregar(patron: str | None):
         if patron and patron not in vistos:
@@ -135,10 +282,16 @@ def _patrones_en_funcion(func: ast.FunctionDef, patrones_modulo: dict[str, str])
             patrones.append(patron)
 
     for nodo in ast.walk(func):
-        if isinstance(nodo, ast.Call) and _es_llamada_re(nodo):
-            agregar(_patron_de_llamada(nodo, patrones_modulo))
+        if isinstance(nodo, ast.Call) and id(nodo) not in anclas:
+            agregar(_patron_de_llamada(nodo, constantes))
     for patron in _patrones_por_nombre(func):
         agregar(patron)
+
+    for nombre_llamada in _funciones_llamadas(func):
+        aux = funciones.get(nombre_llamada)
+        if aux is not None and nombre_llamada not in visitadas:
+            for patron in _patrones_en_funcion(aux, constantes_globales, funciones, visitadas):
+                agregar(patron)
 
     return patrones
 
@@ -196,6 +349,68 @@ def _dict_candidatos(func_extraer: ast.FunctionDef) -> ast.Dict | None:
     return None
 
 
+_NOTA_SIN_REGEX = (
+    "Extracción 100% posicional (bbox) — no usa ningún regex, ni siquiera como respaldo. "
+    "No se puede probar con un regex suelto."
+)
+
+# Campos donde SÍ existe un regex en el código, pero solo cumple el papel
+# de validador dentro de una ventana de líneas ya acotada por fuera del
+# regex (en Python, no en el patrón) — probarlo suelto contra un texto
+# completo no repite esa ventana y puede "matchear" con algo del PDF sin
+# ninguna relación real con el campo (ej. el regex de "clave de agente" de
+# Quálitas es solo `\d{4,6}` — sin la ventana, encuentra el primer número
+# de 4-6 dígitos de todo el documento, que puede ser el C.P. corporativo
+# del membrete). Se tratan como "sin regex probable" igual que un campo
+# 100% bbox, con una nota que explica por qué en vez de mostrar ese regex
+# suelto como si fuera un extractor de valor confiable.
+_CAMPOS_VALIDADOR_SIN_CONTEXTO: dict[tuple[str, str], str] = {
+    ("qualitas.py", "tipo_vehiculo"): (
+        "Extracción por lista cerrada de valores (categorías de vehículo) dentro de una "
+        "ventana de líneas acotada a partir de la etiqueta \"Descripción del Vehículo "
+        "Asegurado\", no por un regex directo de valor. Probar una de las categorías suelta "
+        "contra todo el texto no repite ese acotamiento."
+    ),
+    ("qualitas.py", "agente_clave"): (
+        "Extracción por escaneo de líneas dentro de una ventana acotada tras la etiqueta "
+        "\"Agente:\" — el único regex interno (`\\d{4,6}`) es un validador de formato "
+        "(¿esta línea es puramente numérica?), no un extractor de valor: probarlo suelto "
+        "puede matchear con cualquier número de 4-6 dígitos del documento, sin relación con "
+        "el agente real."
+    ),
+    ("qualitas.py", "agente_nombre"): (
+        "Extracción por escaneo de líneas dentro de una ventana acotada tras la etiqueta "
+        "\"Agente:\" — el único regex interno (`\\d{4,6}`) valida la línea de la clave, no "
+        "extrae el nombre (que es la línea anterior); probarlo suelto no reproduce esa lógica."
+    ),
+    ("qualitas.py", "direccion_completa"): (
+        "El regex ancla ubica el bloque de domicilio del asegurado, pero no extrae la "
+        "dirección en sí (que es la línea anterior a un código postal suelto dentro de esa "
+        "ventana) — no es un regex de valor autocontenible."
+    ),
+    ("qualitas.py", "nombre_cliente"): (
+        "Extracción por varias estrategias de escaneo de líneas dentro de ventanas acotadas "
+        "(tras \"Información del Asegurado\", tras la fecha de fin de vigencia, o tras "
+        "\"FAX\"), validadas por forma (mayúsculas + 2+ palabras) o por coincidir con una "
+        "figura jurídica (S.A. de C.V., etc.) — ninguno de los regex internos extrae el "
+        "nombre por sí solo fuera de esas ventanas."
+    ),
+    ("qualitas.py", "serie"): (
+        "El regex real (`\\b[A-Z0-9]{12,17}\\b`) solo se aplica dentro de una ventana de "
+        "~400 caracteres después de la etiqueta \"Serie:\" — verificado contra el corpus: "
+        "probado suelto contra el texto completo puede matchear con cualquier otra palabra "
+        "en mayúsculas de 12-17 caracteres que aparezca antes en el documento (ej. "
+        "\"RESTRICCIONES\"), sin relación con el VIN real."
+    ),
+    ("gnp.py", "agente_nombre"): (
+        "Comparte el mismo regex de bloque que \"agente_clave\" (ver ese campo), pero el "
+        "nombre es su 2do grupo de captura (`clave` es el 1ro) — el probador de un solo "
+        "patrón siempre toma el grupo 1, así que probarlo aquí devolvería la clave del "
+        "agente, no su nombre. Usa \"agente_clave\" para ver y probar este mismo regex."
+    ),
+}
+
+
 def _extraer_reglas(archivo: Path) -> list[dict]:
     codigo = archivo.read_text(encoding="utf-8")
     arbol = ast.parse(codigo, filename=str(archivo))
@@ -206,12 +421,13 @@ def _extraer_reglas(archivo: Path) -> list[dict]:
     if func_extraer is None:
         return []
 
-    patrones_modulo = _patrones_modulo(arbol)
+    constantes_globales = _constantes_globales(arbol)
     asignaciones = _asignaciones_en_extraer(func_extraer)
     candidatos = _dict_candidatos(func_extraer)
     if candidatos is None:
         return []
 
+    archivo_nombre = archivo.name
     reglas = []
     for clave_nodo, valor_nodo in zip(candidatos.keys, candidatos.values):
         if not (isinstance(clave_nodo, ast.Constant) and isinstance(clave_nodo.value, str)):
@@ -225,14 +441,19 @@ def _extraer_reglas(archivo: Path) -> list[dict]:
                 "funcion": nombre_func,
                 "patrones": [],
                 "linea": valor_nodo.lineno,
+                "nota": _NOTA_SIN_REGEX,
             })
             continue
+
+        nota_forzada = _CAMPOS_VALIDADOR_SIN_CONTEXTO.get((archivo_nombre, campo))
+        patrones = [] if nota_forzada else _patrones_en_funcion(func_def, constantes_globales, funciones)
         reglas.append({
             "campo": campo,
             "funcion": func_def.name,
-            "patrones": _patrones_en_funcion(func_def, patrones_modulo),
+            "patrones": patrones,
             "linea": func_def.lineno,
             "fuente": (lineas[func_def.lineno - 1].strip() if func_def.lineno <= len(lineas) else None),
+            "nota": nota_forzada or (_NOTA_SIN_REGEX if not patrones else None),
         })
     return reglas
 
