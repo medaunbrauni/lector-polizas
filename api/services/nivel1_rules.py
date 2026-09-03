@@ -11,17 +11,43 @@ real, en el peor caso el panel queda desactualizado, nunca la extracción.
 """
 from __future__ import annotations
 import ast
+import inspect
 from pathlib import Path
 
 _DIR = Path(__file__).resolve().parent.parent / "extractores_especializados"
 
-# Nombre visible en el panel -> archivo fuente del extractor.
-ARCHIVOS_NIVEL1 = {
-    "GNP Seguros": "gnp.py",
-    "Quálitas": "qualitas.py",
-}
+
+def _construir_archivos_nivel1() -> dict[str, str]:
+    """Nombre visible en el panel -> archivo fuente del extractor, derivado
+    de api/extractores_especializados/registry.py. Así cualquier aseguradora
+    que se registre ahí a futuro aparece aquí solo, sin tocar este módulo."""
+    from ..extractores_especializados import registry  # import perezoso, registry no depende de este módulo
+    out: dict[str, str] = {}
+    for compania, func in registry.REGISTRY.items():
+        modulo = inspect.getmodule(func)
+        if modulo and getattr(modulo, "__file__", None):
+            out[compania] = Path(modulo.__file__).name
+    return out
+
+
+ARCHIVOS_NIVEL1 = _construir_archivos_nivel1()
 
 _RE_FUNCS = {"search", "match", "fullmatch", "findall", "finditer", "sub", "compile"}
+
+# Metacaracteres/tokens que delatan que un string es un regex (y no, por
+# ejemplo, un formato de fecha tipo "%Y-%m-%d" o un texto plano) — filtro
+# usado solo para variables detectadas por NOMBRE (ver _patrones_por_nombre).
+_META_REGEX = set(r'\()[]{}^$+*?|')
+
+# Nombre de variable que delata que contiene regex: "patron"/"patrones" (con
+# o sin acento, mayúsculas/minúsculas) en cualquier parte del nombre —
+# cubre PATRON, PATRONES, patron_serie, patrones_fecha, lista_patrones, etc.
+def _nombre_sugiere_patron(nombre: str) -> bool:
+    return "patron" in nombre.lower().replace("ó", "o")
+
+
+def _parece_regex(s: str) -> bool:
+    return any(c in _META_REGEX for c in s)
 
 
 def _es_llamada_re(nodo: ast.Call) -> bool:
@@ -62,14 +88,58 @@ def _patrones_modulo(arbol: ast.Module) -> dict[str, str]:
     return out
 
 
+def _strings_de_valor(nodo: ast.expr) -> list[str]:
+    """Extrae el/los regex de un valor asignado a una variable "patron*":
+    string suelto, re.compile(string), o lista/tupla de strings."""
+    if isinstance(nodo, ast.Constant) and isinstance(nodo.value, str):
+        return [nodo.value]
+    if isinstance(nodo, (ast.List, ast.Tuple)):
+        return [
+            e.value for e in nodo.elts
+            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+        ]
+    if isinstance(nodo, ast.Call) and _es_llamada_re(nodo) and nodo.args:
+        return _strings_de_valor(nodo.args[0])
+    return []
+
+
+def _patrones_por_nombre(func: ast.FunctionDef) -> list[str]:
+    """Variables (locales o en funciones anidadas, ej. los `def buscar_*`
+    dentro de `_extraer_placas_legacy`) cuyo nombre indica que contienen
+    regex — "patron"/"patrones" en cualquier variante — sin importar cómo
+    se consuman después (re.search(patron, ...), patron.fullmatch(...),
+    `for p in patrones: re.search(p, ...)`, etc.): capturar por nombre es
+    más robusto ante esos estilos distintos que rastrear cada forma de uso.
+    Filtra por metacaracteres para no colar strings que no son regex."""
+    patrones = []
+    for nodo in ast.walk(func):
+        if not (
+            isinstance(nodo, ast.Assign)
+            and len(nodo.targets) == 1
+            and isinstance(nodo.targets[0], ast.Name)
+            and _nombre_sugiere_patron(nodo.targets[0].id)
+        ):
+            continue
+        for s in _strings_de_valor(nodo.value):
+            if _parece_regex(s):
+                patrones.append(s)
+    return patrones
+
+
 def _patrones_en_funcion(func: ast.FunctionDef, patrones_modulo: dict[str, str]) -> list[str]:
     vistos, patrones = set(), []
+
+    def agregar(patron: str | None):
+        if patron and patron not in vistos:
+            vistos.add(patron)
+            patrones.append(patron)
+
     for nodo in ast.walk(func):
         if isinstance(nodo, ast.Call) and _es_llamada_re(nodo):
-            patron = _patron_de_llamada(nodo, patrones_modulo)
-            if patron and patron not in vistos:
-                vistos.add(patron)
-                patrones.append(patron)
+            agregar(_patron_de_llamada(nodo, patrones_modulo))
+    for patron in _patrones_por_nombre(func):
+        agregar(patron)
+
     return patrones
 
 

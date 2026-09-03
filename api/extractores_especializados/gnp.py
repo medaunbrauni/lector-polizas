@@ -403,18 +403,34 @@ def extraer_derecho_poliza(texto, paginas_dict):
 _ETIQUETAS_TABLA_PAGO = {"forma de pago", "moneda", "plazo para el pago", "conducto de pago", "intermediario"}
 
 
+_VALORES_FORMA_PAGO = r'(Anual|Semestral|Trimestral|Mensual|Contado)'
+_VALORES_MONEDA = r'(Nacional|Extranjera|D[oó]lares|USD|MXN|Pesos)'
+
+
 def extraer_forma_pago(texto, paginas_dict):
     """Tabla de 2 filas (labels arriba, valores debajo, alineados por columna):
     'Conducto de Pago | Forma de Pago | Moneda | Plazo para el Pago' sobre
     'Intermediario | <forma> | <moneda> | <plazo>' — el valor de cada
     columna queda desalineado con su propia etiqueta de texto plano
     (ej. el valor bajo 'Conducto de Pago' es literalmente 'Intermediario'),
-    por eso se resuelve por posición y no por regex de texto."""
+    y el número de etiquetas que la preceden varía (a veces incluye 'Plazo
+    para el Pago', a veces no), por lo que un offset de línea fijo no es
+    confiable. En vez de eso, se busca el primer valor de la lista cerrada
+    de formas de pago dentro de una ventana acotada después de la
+    etiqueta — evita depender de contar líneas exactas. Si no hay match
+    (ej. layouts de "Aviso de Cobro" donde etiqueta y valor están muy
+    separados), cae al método por posición/bbox de siempre."""
+    match = re.search(r'Forma\s+de\s+Pago.{0,140}?\b' + _VALORES_FORMA_PAGO + r'\b', texto, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1)
     return _campo_por_etiqueta(paginas_dict, "Forma de Pago", etiquetas_excluir=_ETIQUETAS_TABLA_PAGO,
                                 permitir_misma_fila=False, max_distancia_y=20)
 
 
 def extraer_moneda(texto, paginas_dict):
+    match = re.search(r'Moneda.{0,140}?\b' + _VALORES_MONEDA + r'\b', texto, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1)
     return _campo_por_etiqueta(paginas_dict, "Moneda", etiquetas_excluir=_ETIQUETAS_TABLA_PAGO,
                                 permitir_misma_fila=False, max_distancia_y=20)
 
@@ -433,7 +449,9 @@ def extraer_importe_pagar(texto, paginas_dict):
 
 
 def extraer_recargo_fraccionado(texto, paginas_dict):
-    valor = extraer_por_lineas_regex(texto, [r'Recargo\s+por\s+pago\s+fraccionado\s*[:\-]?\s*\$?([0-9,]+\.\d{2})'])
+    # "por" es opcional: al menos un layout real imprime "Recargo Pago"
+    # (sin "por") en vez de "Recargo por Pago Fraccionado".
+    valor = extraer_por_lineas_regex(texto, [r'Recargo\s+(?:por\s+)?[Pp]ago\s+[Ff]raccionado\s*[:\-]?\s*\$?([0-9,]+\.\d{2})'])
     return valor or buscar_valor_monetario(paginas_dict, "recargo")
 
 
@@ -611,7 +629,22 @@ def extraer_tipo_vehiculo(texto, paginas_dict):
     arrastrarla. En ese layout el valor real de Procedencia además viene
     partido en 2 líneas ("VEHICULOS" / "RESIDENTES") en una columna
     vecina (no en la misma fila exacta de la etiqueta), por eso el
-    fallback multilínea."""
+    fallback multilínea.
+
+    En texto plano, ambos casos son regulares: pólizas individuales
+    imprimen el valor en una sola línea seguido de "Circula en"; las de
+    flotilla lo parten en 2 líneas de puras mayúsculas antes de "Carga
+    Propia"/"Circula en". Se intenta primero cada variante por regex."""
+    match = re.search(r'Procedencia\s*\n\s*([^\n]+)\s*\n\s*Circula\s+en', texto, re.IGNORECASE)
+    if match:
+        return _normalizar_tipo_vehiculo_gnp(match.group(1).strip())
+    match = re.search(
+        r'Procedencia\s*\n\s*([A-ZÁÉÍÓÚÑ]+)\s*\n\s*([A-ZÁÉÍÓÚÑ]+)\s*\n(?:.*\n){0,2}?\s*Circula\s+en',
+        texto,
+    )
+    if match:
+        return _normalizar_tipo_vehiculo_gnp(f"{match.group(1)} {match.group(2)}")
+
     seccion = _spans_seccion_vehiculo(paginas_dict)
     etiqueta = _encontrar_etiqueta(seccion, "Procedencia", coincidencia_exacta=True)
     excluir = {"circula en", "tipo de carga", "carga propia", "tipo", "de carga"}
@@ -846,7 +879,25 @@ def _spans_seccion_agente(paginas_dict):
     return []
 
 
+def _bloque_agente_por_regex(texto):
+    """La sección AGENTE imprime primero el bloque de etiquetas (2 o 3:
+    'Clave'/'Agente', a veces también 'Fecha de Expedición') y luego los
+    valores en ese mismo orden — el número de etiquetas varía entre
+    layouts, por eso el grupo de etiquetas es un repetidor no-capturante
+    en vez de un offset de línea fijo. Devuelve (clave, nombre) o None."""
+    match = re.search(
+        r'AGENTE\s*\n(?:\s*(?:Clave|Agente|Fecha\s+de\s+Expedici[oó]n)\s*\n)+'
+        r'\s*(\d{6,})\s*\n\s*([^\n]+?)\s*\n',
+        texto, re.IGNORECASE,
+    )
+    return (match.group(1).strip(), match.group(2).strip()) if match else None
+
+
 def extraer_clave_agente(texto, paginas_dict):
+    bloque = _bloque_agente_por_regex(texto)
+    if bloque:
+        return bloque[0]
+
     spans = _spans_seccion_agente(paginas_dict)
     etiqueta = _encontrar_etiqueta(spans, "Clave", coincidencia_exacta=True)
     valor = _valor_por_posicion(spans, etiqueta, etiquetas_excluir={"agente", "fecha de expedición"},
@@ -868,6 +919,10 @@ def extraer_clave_agente(texto, paginas_dict):
 
 
 def extraer_nombre_agente(texto, paginas_dict):
+    bloque = _bloque_agente_por_regex(texto)
+    if bloque and len(bloque[1]) > 5:
+        return bloque[1]
+
     spans = _spans_seccion_agente(paginas_dict)
     etiqueta = _encontrar_etiqueta(spans, "Agente", coincidencia_exacta=True)
     valor = _valor_por_posicion(spans, etiqueta, etiquetas_excluir={"clave", "fecha de expedición"},

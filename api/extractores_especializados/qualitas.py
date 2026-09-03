@@ -152,7 +152,43 @@ def extraer_rfc_mas_repetido(texto: str) -> str:
     return "No se encontraron RFCs válidos"
 
 
+_BLOQUE_FINANCIERO_QUALITAS = re.compile(
+    r'PRIMA\s+NETA\s*\n\s*TASA\s+FINANCIAMIENTO\s*\n\s*GASTOS\s+(?:DE|POR)\s+EXPEDICI[OÓ]N\.?\s*\n'
+    r'\s*SUBTOTAL\s*\n\s*16\s*%\s*\n\s*I\.?V\.?A\.?\s*\n\s*(?:IMPORTE\s+TOTAL|PRIMA\s+TOTAL)\s*\n\s*TARIFA\s+APLICADA:?\s*\n'
+    r'\s*(-?\d{1,3}(?:,\d{3})*\.\d{2})\s*\n\s*(-?\d{1,3}(?:,\d{3})*\.\d{2})\s*\n\s*(-?\d{1,3}(?:,\d{3})*\.\d{2})\s*\n'
+    r'\s*(-?\d{1,3}(?:,\d{3})*\.\d{2})\s*\n\s*(-?\d{1,3}(?:,\d{3})*\.\d{2})\s*\n\s*(-?\d{1,3}(?:,\d{3})*\.\d{2})',
+    re.IGNORECASE,
+)
+
+
+def _bloque_financiero_qualitas(texto: str) -> dict[str, str] | None:
+    """El PDF imprime las 8 etiquetas del desglose (Prima Neta / Tasa
+    Financiamiento / Gastos de Expedición / Subtotal / 16% / I.V.A. /
+    Importe Total / Tarifa Aplicada) TODAS antes que sus 6 valores — por
+    eso no basta con buscar "el primer monto después de mi etiqueta"
+    (eso hace que campos distintos capturen el mismo valor, el de Prima
+    Neta). Se ancla la secuencia completa y se capturan los 6 valores por
+    posición ordinal. Devuelve None si el layout no calza exactamente con
+    este bloque (ej. otro tipo de póliza), y cada función cae a su
+    método original por desplazamiento de línea."""
+    match = _BLOQUE_FINANCIERO_QUALITAS.search(texto)
+    if not match:
+        return None
+    return {
+        "prima_neta": match.group(1),
+        "tasa_financiamiento": match.group(2),
+        "gastos_expedicion": match.group(3),
+        "subtotal": match.group(4),  # no se usa: sub_total es campo calculado
+        "iva": match.group(5),
+        "importe_total": match.group(6),
+    }
+
+
 def extraer_prima_neta(texto: str) -> str:
+    bloque = _bloque_financiero_qualitas(texto)
+    if bloque:
+        return bloque["prima_neta"]
+
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
 
@@ -202,6 +238,10 @@ def extraer_tasa_financiamiento(texto: str) -> str:
 
 
 def extraer_gastos_expedicion(texto: str) -> str:
+    bloque = _bloque_financiero_qualitas(texto)
+    if bloque:
+        return bloque["gastos_expedicion"]
+
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
     monto_regex = r'-?\d{1,3}(?:,\d{3})*\.\d{2}'
@@ -235,6 +275,10 @@ def extraer_gastos_expedicion(texto: str) -> str:
 
 
 def extraer_prima_total(texto: str) -> str:
+    bloque = _bloque_financiero_qualitas(texto)
+    if bloque:
+        return bloque["importe_total"]
+
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
     monto_regex = r'-?\d{1,3}(?:,\d{3})*\.\d{2}'
@@ -372,6 +416,10 @@ def normalizar_texto(texto):
 
 
 def extraer_iva(texto: str) -> str:
+    bloque = _bloque_financiero_qualitas(texto)
+    if bloque:
+        return bloque["iva"]
+
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
     monto_regex = r'-?\d{1,3}(?:,\d{3})*\.\d{2}'
@@ -402,6 +450,18 @@ def extraer_iva(texto: str) -> str:
 
 
 def extraer_forma_pago(texto: str) -> str:
+    # La etiqueta real viene partida en 2 líneas con dos puntos propios
+    # ("FORMA DE:" / "PAGO:"), no como "FORMA DE PAGO" seguido — por eso
+    # el método por líneas de abajo (que busca "FORMA DE PAGO" como una
+    # sola cadena) nunca encontraba nada por su ruta principal y siempre
+    # caía al conteo de frecuencia en todo el documento.
+    match = re.search(
+        r'FORMA\s+DE:?\s*\n\s*PAGO:?\s*\n\s*(CONTADO|SEMESTRAL|TRIMESTRAL|MENSUAL|ANUAL)',
+        texto, re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).title()
+
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
     formas_validas = ["CONTADO", "SEMESTRAL", "TRIMESTRAL", "MENSUAL", "ANUAL"]
@@ -432,6 +492,13 @@ def extraer_forma_pago(texto: str) -> str:
 
 
 def extraer_moneda(texto: str) -> str:
+    match = re.search(
+        r'MONEDA\s*\n\s*(PESOS|D[OÓ]LARES|USD|MXN|EUROS|EUR)',
+        texto, re.IGNORECASE,
+    )
+    if match:
+        return match.group(1).title()
+
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
     monedas_validas = ["PESOS", "DÓLARES", "USD", "MXN", "EUROS", "EUR"]
@@ -526,7 +593,34 @@ def extraer_motor(texto: str) -> str:
     return "S/N"
 
 
+_VIN_TOKEN = re.compile(r'\b[A-Z0-9]{12,17}\b')
+
+
+def _primer_vin_valido(texto_ventana: str) -> str | None:
+    """Un VIN real siempre mezcla letras y dígitos — un token puramente
+    alfabético de 12-17 caracteres (ej. "PARTICULARES", dentro de "Camiones
+    Particulares", que cae justo en ese rango de longitud) puede colarse
+    como falso positivo si solo se valida la longitud."""
+    for m in _VIN_TOKEN.finditer(texto_ventana):
+        tok = m.group(0)
+        if any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok):
+            return tok
+    return None
+
+
 def extraer_serie(texto: str) -> str:
+    # La etiqueta "Serie:" y su valor caen en el mismo bloque de tabla
+    # "jumbled" que Tipo/Modelo/Motor/Placas/Color (todas las etiquetas
+    # juntas, luego todos los valores) — el offset de línea fijo de abajo
+    # ya lo sabía y probaba 4 desplazamientos distintos; en vez de eso, se
+    # busca el VIN directamente en una ventana amplia después de la
+    # etiqueta, con el filtro de "debe mezclar letras y dígitos".
+    etiqueta = re.search(r'SERIE:?\s*\n', texto, re.IGNORECASE)
+    if etiqueta:
+        vin = _primer_vin_valido(texto[etiqueta.end():etiqueta.end() + 400])
+        if vin:
+            return vin
+
     texto_upper = texto.upper()
     lineas = texto_upper.splitlines()
 
@@ -1080,7 +1174,42 @@ def extraer_colonia(texto: str) -> str:
     return "No se encontró colonia"
 
 
+_ANCLA_DOMICILIO_ASEGURADO = re.compile(
+    r'R\.F\.C\.:\s*\n\s*Domicilio:\s*\n\s*C\.P\.:\s*\n\s*Municipio:\s*\n\s*Estado:\s*\n\s*Colonia:\s*\n',
+    re.IGNORECASE,
+)
+
+
+def _direccion_por_regex(texto: str) -> str | None:
+    """Ancla el bloque de etiquetas real del domicilio del asegurado
+    (distinto del bloque "Vigencia" que aparece antes casi sin datos) y
+    busca, en una ventana acotada después, una línea suelta de 4-5
+    dígitos (el C.P.) para devolver la línea anterior como dirección.
+
+    A diferencia del método original de abajo, NO compara contra un C.P.
+    calculado en otro punto del documento (extraer_cp busca en todo el
+    PDF y a veces devuelve la versión con cero a la izquierda, ej.
+    "09280", mientras que en este bloque específico el texto trae el C.P.
+    sin el cero, ej. "9280" — el "in" por substring exacto nunca
+    coincidía y el método original fallaba en silencio)."""
+    match = _ANCLA_DOMICILIO_ASEGURADO.search(texto)
+    if not match:
+        return None
+    ventana = texto[match.end():match.end() + 800]
+    lineas_ventana = ventana.splitlines()
+    for i, linea in enumerate(lineas_ventana):
+        if i > 0 and re.fullmatch(r'\d{4,5}', linea.strip()):
+            candidata = lineas_ventana[i - 1].strip()
+            if candidata:
+                return candidata
+    return None
+
+
 def extraer_direccion(texto):
+    direccion = _direccion_por_regex(texto)
+    if direccion:
+        return direccion
+
     lineas = texto.splitlines()
 
     inicio_idx = None
