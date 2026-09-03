@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, Car, FileText, Users, CreditCard, Cpu, Layers, Zap, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ResultadoPDF } from '../../lib/types';
 import { fieldLabel, formatEntidad } from '../../lib/fieldConfig';
@@ -47,6 +47,39 @@ interface CampoItem {
   metodo?: string;
 }
 
+const CONTRATANTE_TITULO = 'Datos del contratante';
+
+/** Solo para este modal: "entidad" no está en ningún grupo de
+ * fieldGroups.ts (compartido con Reglas.tsx/Entrenador), así que
+ * agruparCampos() lo deja caer en "Otros". Aquí, y únicamente aquí, se
+ * reubica dentro de "Datos del contratante" después de agrupar — no se
+ * toca fieldGroups.ts para no afectar el Entrenador, donde debe seguir
+ * ocultándose. */
+function reubicarEntidad(
+  grupos: { titulo: string; items: CampoItem[] }[],
+): { titulo: string; items: CampoItem[] }[] {
+  let entidad: CampoItem | undefined;
+  const sinEntidad = grupos
+    .map((g) => {
+      if (g.titulo !== OTROS_TITULO) return g;
+      const idx = g.items.findIndex((i) => i.nombre === 'entidad');
+      if (idx === -1) return g;
+      entidad = g.items[idx];
+      return { ...g, items: g.items.filter((_, i) => i !== idx) };
+    })
+    .filter((g) => g.items.length > 0);
+
+  if (!entidad) return sinEntidad;
+
+  const tieneContratante = sinEntidad.some((g) => g.titulo === CONTRATANTE_TITULO);
+  if (tieneContratante) {
+    return sinEntidad.map((g) =>
+      g.titulo === CONTRATANTE_TITULO ? { ...g, items: [...g.items, entidad!] } : g
+    );
+  }
+  return [...sinEntidad, { titulo: CONTRATANTE_TITULO, items: [entidad] }];
+}
+
 /** Normaliza data.campos (con posibles nombres legacy) a la lista de items
  * que agruparCampos() espera, resolviendo alias y descartando vacíos. */
 function itemsDesdeCampos(campos: ResultadoPDF['campos'] | undefined): CampoItem[] {
@@ -59,6 +92,38 @@ function itemsDesdeCampos(campos: ResultadoPDF['campos'] | undefined): CampoItem
     }
   }
   return [...porNombre.values()];
+}
+
+type MetodoStat = 'regla' | 'ia' | 'no_encontrado';
+
+// Mismo bucket de 3 que clasificar_metodo_campo en api/services/extractor.py
+// (y que badgeMetodo en Reglas.tsx) — "regla" agrupa cualquier extracción
+// determinística y confiable: motor de reglas de BD, extractor
+// especializado por compañía, valor fijo de catálogo, o campo derivado.
+// El contador de arriba (data.stats.por_regla) ya usa este mismo bucket
+// del lado del backend; sin replicarlo aquí, el popover filtraba solo por
+// metodo === 'regla' literal y se quedaba vacío para los campos con
+// metodo === 'extractor_dedicado' (la mayoría, en pólizas de GNP/Quálitas).
+function bucketMetodo(metodo: string | null | undefined): MetodoStat {
+  if (metodo === 'regla' || metodo === 'extractor_dedicado' || metodo === 'valor_fijo' || metodo === 'derivado') {
+    return 'regla';
+  }
+  if (metodo === 'ia') return 'ia';
+  return 'no_encontrado';
+}
+
+/** Misma fuente (data.campos) que usa el backend para calcular data.stats:
+ * un label por cada entrada, agrupado por método, para poblar los
+ * popovers de los indicadores "Por regla / Por IA / No encontrado". Sin
+ * deduplicar por alias -- así el conteo de cada lista coincide exacto con
+ * el número del indicador correspondiente. */
+function labelsPorMetodo(campos: ResultadoPDF['campos'] | undefined): Record<MetodoStat, string[]> {
+  const grupos: Record<MetodoStat, string[]> = { regla: [], ia: [], no_encontrado: [] };
+  for (const [claveRaw, info] of Object.entries(campos ?? {})) {
+    const nombre = ALIAS_CANONICO[claveRaw] ?? claveRaw;
+    grupos[bucketMetodo(info?.metodo)].push(labelCampo(nombre, fieldLabel(nombre)));
+  }
+  return grupos;
 }
 
 export default function PolizaDetalle({
@@ -79,7 +144,22 @@ export default function PolizaDetalle({
     return () => window.removeEventListener('keydown', handler);
   }, [onAnterior, onSiguiente, onClose]);
 
-  const grupos = agruparCampos(itemsDesdeCampos(data.campos), (item) => item.nombre);
+  const grupos = reubicarEntidad(agruparCampos(itemsDesdeCampos(data.campos), (item) => item.nombre));
+  const porMetodo = labelsPorMetodo(data.campos);
+
+  const statsRef = useRef<HTMLDivElement>(null);
+  const [statAbierto, setStatAbierto] = useState<MetodoStat | null>(null);
+
+  useEffect(() => {
+    if (!statAbierto) return;
+    function onClickFuera(e: MouseEvent) {
+      if (statsRef.current && !statsRef.current.contains(e.target as Node)) {
+        setStatAbierto(null);
+      }
+    }
+    document.addEventListener('mousedown', onClickFuera);
+    return () => document.removeEventListener('mousedown', onClickFuera);
+  }, [statAbierto]);
 
   return (
     <div
@@ -155,17 +235,33 @@ export default function PolizaDetalle({
 
           {/* Stats */}
           {data.stats && (
-            <div className="flex gap-2 flex-wrap">
-              <Stat label="Por regla"     value={data.stats.por_regla}     color="blue" />
-              <Stat label="Por IA"        value={data.stats.por_ia}        color="purple" />
-              <Stat label="No encontrado" value={data.stats.no_encontrados} color="gray" />
+            <div ref={statsRef} className="flex gap-2 flex-wrap">
+              <Stat
+                label="Por regla" value={data.stats.por_regla} color="blue"
+                campos={porMetodo.regla}
+                abierto={statAbierto === 'regla'}
+                onToggle={() => setStatAbierto((s) => (s === 'regla' ? null : 'regla'))}
+              />
+              <Stat
+                label="Por IA" value={data.stats.por_ia} color="purple"
+                campos={porMetodo.ia}
+                abierto={statAbierto === 'ia'}
+                onToggle={() => setStatAbierto((s) => (s === 'ia' ? null : 'ia'))}
+              />
+              <Stat
+                label="No encontrado" value={data.stats.no_encontrados} color="gray"
+                campos={porMetodo.no_encontrado}
+                abierto={statAbierto === 'no_encontrado'}
+                onToggle={() => setStatAbierto((s) => (s === 'no_encontrado' ? null : 'no_encontrado'))}
+              />
             </div>
           )}
 
           {/* Mismos 5 grupos (+ "Otros") que "Campos"/"Entrenar-Corregir"
               en el Entrenador — ver fieldGroups.ts. 'entidad' no está en
-              ningún grupo definido, así que cae en "Otros": sigue visible
-              aquí (a diferencia del Entrenador, donde se oculta a propósito). */}
+              ningún grupo definido ahí; reubicarEntidad() la mueve de
+              "Otros" a "Datos del contratante" solo en este modal (a
+              diferencia del Entrenador, donde se oculta a propósito). */}
           {grupos.map((grupo) => (
             <Section key={grupo.titulo} title={grupo.titulo} icon={ICONOS_GRUPO[grupo.titulo] ?? <Layers className="w-4 h-4" />}>
               {grupo.items.map((item) => (
@@ -196,16 +292,45 @@ export default function PolizaDetalle({
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: number; color: 'blue' | 'purple' | 'gray' }) {
+function Stat({ label, value, color, campos, abierto, onToggle }: {
+  label: string;
+  value: number;
+  color: 'blue' | 'purple' | 'gray';
+  campos: string[];
+  abierto: boolean;
+  onToggle: () => void;
+}) {
   const cls = {
-    blue:   'bg-blue-50 text-blue-700',
-    purple: 'bg-purple-50 text-purple-700',
-    gray:   'bg-gray-100 text-gray-500',
+    blue:   'bg-blue-50 text-blue-700 hover:bg-blue-100',
+    purple: 'bg-purple-50 text-purple-700 hover:bg-purple-100',
+    gray:   'bg-gray-100 text-gray-500 hover:bg-gray-200',
   }[color];
+  const clsPopover = {
+    blue:   'bg-blue-50 border-blue-200 text-blue-800',
+    purple: 'bg-purple-50 border-purple-200 text-purple-800',
+    gray:   'bg-gray-50 border-gray-200 text-gray-700',
+  }[color];
+
   return (
-    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold ${cls}`}>
-      {label}: {value}
-    </span>
+    <div className="relative">
+      <button
+        onClick={onToggle}
+        className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${cls}`}
+      >
+        {label}: {value}
+      </button>
+      {abierto && (
+        <div className={`absolute z-10 top-full left-0 mt-1.5 min-w-[180px] max-w-[260px] max-h-56 overflow-y-auto rounded-xl border shadow-lg px-3 py-2 text-xs ${clsPopover}`}>
+          {campos.length === 0 ? (
+            <p className="opacity-60">Sin campos en esta categoría.</p>
+          ) : (
+            <ul className="space-y-1">
+              {campos.map((c, i) => <li key={`${c}-${i}`}>{c}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
