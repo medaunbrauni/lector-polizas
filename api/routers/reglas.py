@@ -28,7 +28,12 @@ class ReglaIn(BaseModel):
 
 
 class ProbarReglaIn(BaseModel):
-    patron_regex: str
+    # Acepta un patrón suelto (uso histórico, reglas nivel 2 de BD) o una
+    # lista (bloque de patrones de un mismo campo, nivel 1 — el probador
+    # replica ahí el mismo "probar en orden hasta el primer match" que usa
+    # extraer_por_lineas_regex en gnp.py y el patrón equivalente en
+    # qualitas.py, no un orden inventado aparte).
+    patron_regex: str | list[str]
     texto: str
 
 
@@ -133,8 +138,12 @@ def crear_regla(data: ReglaIn, db: Session = Depends(get_db)):
 
 @router.post("/probar")
 def probar_regla(data: ProbarReglaIn):
-    valor = _aplicar_patron(data.patron_regex, data.texto)
-    return {"coincidencia": valor, "encontrado": valor is not None}
+    patrones = data.patron_regex if isinstance(data.patron_regex, list) else [data.patron_regex]
+    for indice, patron in enumerate(patrones):
+        valor = _aplicar_patron(patron, data.texto)
+        if valor is not None:
+            return {"coincidencia": valor, "encontrado": True, "patron_index": indice, "patron": patron}
+    return {"coincidencia": None, "encontrado": False, "patron_index": None, "patron": None}
 
 
 @router.get("/nivel1/{aseguradora}")

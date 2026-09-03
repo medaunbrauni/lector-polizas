@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getReglasConJerarquia, getCodigoDeteccion, getReglasNivel1, probarRegla } from '../lib/api';
-import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search, Lock, FlaskConical, X, Wrench, Database } from 'lucide-react';
+import { getReglasConJerarquia, getCodigoDeteccion, getReglasNivel1, probarRegla, getPolizasDeCompania, getTextoPdf } from '../lib/api';
+import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search, Lock, FlaskConical, X, Wrench, Database, FileStack, Inbox, Loader2, FileText } from 'lucide-react';
+import type { PolizaEntrenamiento } from '../lib/types';
 
 const COMPANIAS_NIVEL1 = ['GNP Seguros', 'Quálitas'];
 
@@ -182,62 +183,242 @@ function PatronBadge({ tipo, valor }: { tipo: 'regex' | 'keyword'; valor: string
   );
 }
 
-function ModalProbarRegla({ patron, onClose }: { patron: string; onClose: () => void }) {
-  const [texto, setTexto] = useState('');
-  const [resultado, setResultado] = useState<{ encontrado: boolean; coincidencia: string | null } | null>(null);
-  const [probando, setProbando] = useState(false);
+/** Panel derecho del modal "Probar regla": carrusel vertical de pólizas ya
+ * guardadas de la aseguradora en cuestión (todos sus subramos), para elegir
+ * un texto en vez de tener que pegarlo a mano. Reutiliza el mismo endpoint
+ * que alimenta el listado del lote en Entrenador PDFs — solo agregado por
+ * aseguradora — y, al elegir una, pide su texto con el mismo endpoint que ya
+ * usa el botón "Texto extraído" de esa pestaña. */
+function PanelTextosGuardados({ compania, companiaId, onElegir, onClose }: {
+  compania: string;
+  companiaId?: number;
+  onElegir: (texto: string) => void;
+  onClose: () => void;
+}) {
+  const [polizas, setPolizas] = useState<PolizaEntrenamiento[] | null>(null);
+  const [cargandoId, setCargandoId] = useState<number | null>(null);
+  const [error, setError] = useState(false);
 
-  async function probar() {
-    setProbando(true);
+  useEffect(() => {
+    getPolizasDeCompania(compania).then(setPolizas).catch(() => setError(true));
+  }, [compania]);
+
+  async function elegir(polizaId: number) {
+    setCargandoId(polizaId);
     try {
-      const r = await probarRegla(patron, texto);
-      setResultado(r);
+      const texto = await getTextoPdf(polizaId);
+      onElegir(texto);
     } finally {
-      setProbando(false);
+      setCargandoId(null);
     }
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-            <FlaskConical className="w-4 h-4 text-blue-600" />Probar regla
-          </h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
-        </div>
-        <code className="block text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-gray-700 break-all">{patron}</code>
-        <textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          placeholder="Pega aquí un texto de ejemplo (ej. texto extraído de un PDF)…"
-          className="w-full h-32 text-xs font-mono border border-gray-200 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <button
-          onClick={probar}
-          disabled={!texto || probando}
-          className="w-full py-2 bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg text-sm font-medium transition-colors"
-        >
-          {probando ? 'Probando…' : 'Probar'}
-        </button>
-        {resultado && (
-          <div className={`text-xs rounded-lg px-3 py-2 border ${
-            resultado.encontrado ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
-          }`}>
-            {resultado.encontrado
-              ? <>Coincidencia encontrada: <code className="font-mono font-semibold">{resultado.coincidencia}</code></>
-              : 'Sin coincidencia.'}
+    <div className="bg-white rounded-2xl shadow-xl w-72 max-h-[26rem] flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
+        <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+          <FileStack className="w-4 h-4 text-blue-600" />Textos guardados
+        </h3>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        {error ? (
+          <div className="text-center py-10 text-gray-400">
+            <Inbox className="w-8 h-8 mx-auto mb-3 opacity-30" />
+            <p className="text-xs">No se pudo cargar el listado.</p>
           </div>
+        ) : polizas === null ? (
+          <div className="flex items-center justify-center py-10 text-gray-400">
+            <Loader2 className="w-5 h-5 animate-spin" />
+          </div>
+        ) : polizas.length === 0 ? (
+          <div className="text-center py-8 text-gray-400">
+            <Inbox className="w-8 h-8 mx-auto mb-3 opacity-30" />
+            <p className="text-xs">No hay pólizas guardadas para esta aseguradora.</p>
+            {companiaId != null && (
+              <a
+                href={`/reglas?companiaId=${companiaId}`}
+                className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-gray-900 hover:bg-gray-700 text-white rounded-lg text-xs font-medium transition-colors"
+              >
+                Subir un PDF en Entrenador PDFs
+              </a>
+            )}
+          </div>
+        ) : (
+          polizas.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => elegir(p.id)}
+              disabled={cargandoId !== null}
+              className="w-full text-left px-3 py-2.5 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-2">
+                <FileText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                <span className="text-xs font-medium text-gray-800 truncate">{p.nombre_archivo}</span>
+              </div>
+              <div className="text-[10px] text-gray-400 mt-1 pl-5.5">
+                {p.paginas != null ? `${p.paginas} pág. · ` : ''}
+                {p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}
+                {cargandoId === p.id && <span className="ml-1">Cargando…</span>}
+              </div>
+            </button>
+          ))
         )}
       </div>
     </div>
   );
 }
 
-function SeccionNivel1({ compania }: { compania: string }) {
+/** Nº de líneas a reservar para la caja de patrones, a partir del regex
+ * más largo del bloque que se está probando (no de todo el sistema — más
+ * simple y ya resuelve el objetivo: que la caja no se vea cortada en los
+ * campos con regex largos ni con hueco excesivo en los cortos). Estimado
+ * a ~58 caracteres por línea para font-mono text-xs en un modal max-w-lg;
+ * tope de 8 líneas con scroll propio para no volver el modal gigante. */
+function lineasCajaPatrones(patrones: string[]): number {
+  const maxLen = Math.max(1, ...patrones.map((p) => p.length));
+  return Math.min(Math.max(1, Math.ceil(maxLen / 58)), 8);
+}
+
+function CajaPatrones({ patrones, resaltarIndex }: { patrones: string[]; resaltarIndex?: number | null }) {
+  const lineas = lineasCajaPatrones(patrones);
+  return (
+    <div
+      className="text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg overflow-y-auto divide-y divide-gray-100"
+      style={{ height: `${lineas * 1.35 + 0.75}rem` }}
+    >
+      {patrones.map((p, i) => (
+        <div
+          key={i}
+          className={`px-3 py-1.5 break-all ${resaltarIndex === i ? 'bg-green-50 text-green-800 font-semibold' : 'text-gray-700'}`}
+        >
+          {patrones.length > 1 && <span className="text-gray-400 mr-1.5 select-none">#{i + 1}</span>}
+          {p}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ModalProbarRegla({ campo, patrones, onClose, compania, companiaId }: {
+  campo: string;
+  /** Todos los patrones del campo, en el mismo orden en que el extractor
+   * real los intenta (extraer_por_lineas_regex en gnp.py y el patrón
+   * equivalente en qualitas.py: probar en orden, quedarse con el primer
+   * match) — el backend replica exactamente esa lógica en /reglas/probar.
+   * Un array de 1 elemento es "probar un solo patrón" (nivel 2, o un
+   * patrón individual de nivel 1). */
+  patrones: string[];
+  onClose: () => void;
+  /** Solo se pasa desde el modal de reglas nivel 1 (extractor dedicado) —
+   * habilita el botón "Elegir texto guardado". El modal de reglas nivel 2
+   * sigue igual que antes, sin este panel. */
+  compania?: string;
+  companiaId?: number;
+}) {
+  const [texto, setTexto] = useState('');
+  const [resultado, setResultado] = useState<{
+    encontrado: boolean; coincidencia: string | null; patron_index?: number | null; patron?: string | null;
+  } | null>(null);
+  const [probando, setProbando] = useState(false);
+  const [panelAbierto, setPanelAbierto] = useState(false);
+
+  async function probar() {
+    setProbando(true);
+    try {
+      const r = await probarRegla(patrones.length === 1 ? patrones[0] : patrones, texto);
+      setResultado(r);
+    } finally {
+      setProbando(false);
+    }
+  }
+
+  const esBloque = patrones.length > 1;
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      onClick={() => (panelAbierto ? setPanelAbierto(false) : onClose())}
+    >
+      <div className="flex items-start gap-3" onClick={(e) => e.stopPropagation()}>
+        <div
+          className={`bg-white rounded-2xl shadow-xl w-full max-w-lg p-5 space-y-3 transition-transform duration-300 ${panelAbierto ? '-translate-x-1' : ''}`}
+        >
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+              <FlaskConical className="w-4 h-4 text-blue-600" />
+              {esBloque ? `Probar ${patrones.length} patrones` : 'Probar regla'}
+              <span className="font-mono font-normal text-gray-400">· {campo}</span>
+            </h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+          </div>
+          <CajaPatrones patrones={patrones} resaltarIndex={resultado?.encontrado ? resultado.patron_index : null} />
+          <div className="relative">
+            <textarea
+              value={texto}
+              onChange={(e) => setTexto(e.target.value)}
+              placeholder="Pega aquí un texto de ejemplo (ej. texto extraído de un PDF)…"
+              className="w-full h-32 text-xs font-mono border border-gray-200 rounded-lg p-3 pr-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          {compania && (
+            <button
+              onClick={() => setPanelAbierto((v) => !v)}
+              className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                panelAbierto ? 'bg-blue-50 border-blue-200 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <FileStack className="w-3.5 h-3.5" />Elegir texto guardado
+            </button>
+          )}
+          <button
+            onClick={probar}
+            disabled={!texto || probando}
+            className="w-full py-2 bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg text-sm font-medium transition-colors"
+          >
+            {probando ? 'Probando…' : esBloque ? `Probar ${patrones.length} patrones` : 'Probar'}
+          </button>
+          {resultado && (
+            <div className={`text-xs rounded-lg px-3 py-2 border ${
+              resultado.encontrado ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'
+            }`}>
+              {resultado.encontrado ? (
+                <>
+                  {esBloque && (
+                    <>Matcheó con el patrón <strong>#{(resultado.patron_index ?? 0) + 1}</strong>: <code className="font-mono">{resultado.patron}</code><br /></>
+                  )}
+                  Valor extraído: <code className="font-mono font-semibold">{resultado.coincidencia}</code>
+                </>
+              ) : (
+                esBloque ? 'Ningún patrón de este campo encontró coincidencia.' : 'Sin coincidencia.'
+              )}
+            </div>
+          )}
+        </div>
+
+        {panelAbierto && compania && (
+          <PanelTextosGuardados
+            compania={compania}
+            companiaId={companiaId}
+            onClose={() => setPanelAbierto(false)}
+            onElegir={(t) => { setTexto(t); setPanelAbierto(false); }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface ObjetivoPrueba {
+  campo: string;
+  patrones: string[];
+}
+
+function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?: number }) {
   const [abierto, setAbierto] = useState(false);
   const [reglas, setReglas] = useState<ReglaNivel1[] | null>(null);
-  const [probando, setProbando] = useState<string | null>(null);
+  const [probando, setProbando] = useState<ObjetivoPrueba | null>(null);
 
   useEffect(() => {
     if (abierto && reglas === null) {
@@ -285,19 +466,34 @@ function SeccionNivel1({ compania }: { compania: string }) {
               <tbody className="divide-y divide-gray-50">
                 {reglas.map((r) => (
                   <tr key={r.campo} className="hover:bg-gray-50 align-top">
-                    <td className="pl-5 pr-3 py-2 font-mono text-blue-700 font-medium whitespace-nowrap">{r.campo}</td>
+                    <td className="pl-5 pr-3 py-2 whitespace-nowrap">
+                      <div className="font-mono text-blue-700 font-medium">{r.campo}</div>
+                      {r.patrones.length > 0 && (
+                        <button
+                          onClick={() => setProbando({ campo: r.campo, patrones: r.patrones })}
+                          title={r.patrones.length > 1
+                            ? `Probar los ${r.patrones.length} patrones de este campo, en el mismo orden que usa el extractor`
+                            : 'Probar esta regla'}
+                          className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-blue-600 hover:text-blue-800"
+                        >
+                          <FlaskConical className="w-3 h-3" />
+                          {r.patrones.length > 1 ? `Probar campo (${r.patrones.length})` : 'Probar'}
+                        </button>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-gray-700">
                       <div className="font-mono text-gray-500 mb-1">{r.funcion ?? '—'}</div>
                       {r.patrones.length === 0 ? (
                         <span className="text-gray-300">sin regex directo detectado</span>
                       ) : (
                         <div className="space-y-1">
-                          {r.patrones.map((p) => (
+                          {r.patrones.map((p, i) => (
                             <div key={p} className="flex items-center gap-1.5">
+                              {r.patrones.length > 1 && <span className="text-gray-300 text-[10px] shrink-0">#{i + 1}</span>}
                               <code className="block truncate max-w-xs font-mono text-gray-700" title={p}>{p}</code>
                               <button
-                                onClick={() => setProbando(p)}
-                                title="Probar esta regla"
+                                onClick={() => setProbando({ campo: r.campo, patrones: [p] })}
+                                title="Probar solo este patrón"
                                 className="shrink-0 p-1 rounded hover:bg-blue-50 text-blue-600"
                               >
                                 <FlaskConical className="w-3 h-3" />
@@ -316,7 +512,15 @@ function SeccionNivel1({ compania }: { compania: string }) {
           )}
         </div>
       )}
-      {probando && <ModalProbarRegla patron={probando} onClose={() => setProbando(null)} />}
+      {probando && (
+        <ModalProbarRegla
+          campo={probando.campo}
+          patrones={probando.patrones}
+          onClose={() => setProbando(null)}
+          compania={compania}
+          companiaId={companiaId}
+        />
+      )}
     </div>
   );
 }
@@ -330,7 +534,7 @@ export default function ReglasCodigo() {
   const [subTabExtraccion, setSubTabExtraccion] = useState<'nivel1' | 'nivel2'>('nivel2');
   const [vista, setVista] = useState<'arbol' | 'codigo'>('arbol');
   const [abiertos, setAbiertos] = useState<Set<string>>(new Set());
-  const [probandoNivel2, setProbandoNivel2] = useState<string | null>(null);
+  const [probandoNivel2, setProbandoNivel2] = useState<ObjetivoPrueba | null>(null);
 
   useEffect(() => {
     Promise.all([getReglasConJerarquia(), getCodigoDeteccion()])
@@ -457,7 +661,9 @@ export default function ReglasCodigo() {
 
           {subTabExtraccion === 'nivel1' && (
             <div className="space-y-3">
-              {COMPANIAS_NIVEL1.map((c) => <SeccionNivel1 key={c} compania={c} />)}
+              {COMPANIAS_NIVEL1.map((c) => (
+                <SeccionNivel1 key={c} compania={c} companiaId={deteccion.find((d) => d.nombre === c)?.id} />
+              ))}
             </div>
           )}
 
@@ -564,7 +770,7 @@ export default function ReglasCodigo() {
                                                   </td>
                                                   <td className="px-3 py-2">
                                                     <button
-                                                      onClick={() => setProbandoNivel2(r.patron_regex)}
+                                                      onClick={() => setProbandoNivel2({ campo: r.nombre_campo, patrones: [r.patron_regex] })}
                                                       title="Probar esta regla"
                                                       className="p-1 rounded hover:bg-blue-50 text-blue-600"
                                                     >
@@ -732,7 +938,13 @@ export default function ReglasCodigo() {
         </>
       )}
 
-      {probandoNivel2 && <ModalProbarRegla patron={probandoNivel2} onClose={() => setProbandoNivel2(null)} />}
+      {probandoNivel2 && (
+        <ModalProbarRegla
+          campo={probandoNivel2.campo}
+          patrones={probandoNivel2.patrones}
+          onClose={() => setProbandoNivel2(null)}
+        />
+      )}
     </div>
   );
 }

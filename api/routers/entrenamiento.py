@@ -20,7 +20,7 @@ from ..database import get_db
 from ..config import PDF_ENTRENAMIENTO_DIR
 from ..models.db_models import (
     PolizaEntrenamiento, SeleccionCampo, ReglaExtraccion,
-    Subramo, CampoDefinido, CampoGlobal, Extraccion, ClasificacionCola,
+    Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion, ClasificacionCola,
 )
 from ..services.batch_trainer import (
     generar_regex_lote, probar_regex_en_lote, auto_detectar_en_lote,
@@ -88,17 +88,20 @@ def _poliza_dict(p: PolizaEntrenamiento, db: Session) -> dict:
     }
 
 
-def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]:
+def _polizas_visibles_multi(subramo_ids: list[int], db: Session) -> list[PolizaEntrenamiento]:
     """
-    Pólizas del lote a mostrar en el listado del Entrenador: oculta las
-    que ya no tienen archivo físico (borrado por la limpieza de 7 días u
-    otro motivo) y deduplica por nombre_archivo, conservando la más
-    reciente. Solo afecta el listado del lote — el Historial de
-    Extracciones no usa esta función y sigue mostrando todo.
+    Pólizas del lote a mostrar en el listado del Entrenador, para uno o
+    varios subramos a la vez: oculta las que ya no tienen archivo físico
+    (borrado por la limpieza de 7 días u otro motivo) y deduplica por
+    nombre_archivo, conservando la más reciente. Solo afecta el listado
+    del lote — el Historial de Extracciones no usa esta función y sigue
+    mostrando todo.
     """
+    if not subramo_ids:
+        return []
     polizas = (
         db.query(PolizaEntrenamiento)
-        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
+        .filter(PolizaEntrenamiento.subramo_id.in_(subramo_ids))
         .order_by(PolizaEntrenamiento.created_at)
         .all()
     )
@@ -108,6 +111,10 @@ def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]
             continue
         por_nombre[p.nombre_archivo] = p  # orden ASC: la última pisa a las anteriores
     return sorted(por_nombre.values(), key=lambda p: p.created_at)
+
+
+def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]:
+    return _polizas_visibles_multi([subramo_id], db)
 
 
 def _sel_dict(s: SeleccionCampo) -> dict:
@@ -546,6 +553,33 @@ def imagen_pagina(poliza_id: int, page_num: int, escala: float = 2.0, db: Sessio
         raise
     except Exception as e:
         raise HTTPException(500, f"Error al renderizar: {e}")
+
+
+# ── Pólizas guardadas por aseguradora (todos sus subramos) ────────────────────
+
+@router.get("/companias/{nombre}/polizas")
+def polizas_de_compania(nombre: str, db: Session = Depends(get_db)):
+    """
+    Pólizas de entrenamiento guardadas de una aseguradora, sin importar el
+    subramo — a diferencia de /subramos/{id}/estado (acotado a un solo
+    subramo), esto es lo que necesita el panel "elegir texto guardado" del
+    modal "Probar regla" de nivel 1 (GNP/Quálitas/...), ya que esas reglas
+    no están atadas a un subramo específico. Reutiliza la misma
+    consulta/serialización que ya usa el listado del lote.
+    """
+    compania = db.query(Compania).filter(Compania.nombre == nombre).first()
+    if not compania:
+        raise HTTPException(404, f"No existe la aseguradora '{nombre}'")
+
+    subramo_ids = [
+        s.id for s in
+        db.query(Subramo.id)
+        .join(Ramo, Subramo.ramo_id == Ramo.id)
+        .filter(Ramo.compania_id == compania.id)
+        .all()
+    ]
+    polizas = _polizas_visibles_multi(subramo_ids, db)
+    return [_poliza_dict(p, db) for p in polizas]
 
 
 # ── Estado completo del lote ──────────────────────────────────────────────────
