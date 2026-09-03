@@ -18,7 +18,7 @@ export const GRUPOS_CAMPOS: GrupoCampos[] = [
   // "sub_total", no "subtotal": es el nombre real en campos_globales y en
   // los datos de extracción — "subtotal" solo existe como alias de
   // compatibilidad en fieldConfig.ts, nunca como nombre de campo real.
-  { titulo: 'Datos', campos: ['forma_pago', 'moneda', 'prima_neta', 'derechos', 'descuento', 'recargos', 'iva', 'sub_total', 'prima_total'] },
+  { titulo: 'Datos', campos: ['prima_neta', 'descuento', 'recargos', 'derechos', 'sub_total', 'iva', 'prima_total', 'forma_pago', 'moneda'] },
 ];
 
 export const OTROS_TITULO = 'Otros';
