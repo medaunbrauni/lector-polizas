@@ -292,11 +292,7 @@ function PanelTextosGuardados({ compania, companiaId, onElegir, onClose }: {
  * los que hay), y un patrón muy largo sigue contando sus líneas de más en
  * vez de quedar cortado. Tope de 14 líneas con scroll propio más allá de
  * eso (patrones extra, o wraps muy largos) para no volver el modal gigante. */
-function lineasCajaPatrones(patrones: string[]): number {
-  const primeros = patrones.slice(0, 5);
-  const total = primeros.reduce((acc, p) => acc + Math.max(1, Math.ceil(p.length / 58)), 0);
-  return Math.min(Math.max(total, 1), 14);
-}
+const CAJA_PATRONES_ALTO_REM = 6.15; // referencia: "documento" (GNP, 2 patrones)
 
 function CajaPatrones({ patrones, seleccionados, onToggle, resaltarIndex }: {
   patrones: string[];
@@ -304,12 +300,11 @@ function CajaPatrones({ patrones, seleccionados, onToggle, resaltarIndex }: {
   onToggle: (i: number) => void;
   resaltarIndex?: number | null;
 }) {
-  const lineas = lineasCajaPatrones(patrones);
   const seleccionable = patrones.length > 1;
   return (
     <div
       className="text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg overflow-y-auto divide-y divide-gray-100"
-      style={{ height: `${lineas * 1.35 + 0.75}rem` }}
+      style={{ height: `${CAJA_PATRONES_ALTO_REM}rem` }}
     >
       {patrones.map((p, i) => (
         <label
@@ -336,23 +331,60 @@ function CajaPatrones({ patrones, seleccionados, onToggle, resaltarIndex }: {
   );
 }
 
-function ModalProbarRegla({ campo, patrones, preseleccionado, onClose, compania, companiaId }: {
+function ModalProbarRegla({ campo, patrones, preseleccionado, nota, onClose, compania, companiaId }: {
   campo: string;
   /** Todos los patrones del campo, en el mismo orden en que el extractor
    * real los intenta (extraer_por_lineas_regex en gnp.py y el patrón
    * equivalente en qualitas.py: probar en orden, quedarse con el primer
    * match) — el backend replica exactamente esa lógica en /reglas/probar.
    * Un array de 1 elemento es "probar un solo patrón" (nivel 2, o un
-   * campo de nivel 1 con un único regex detectado). */
+   * campo de nivel 1 con un único regex detectado). Vacío + `nota` ->
+   * campo sin regex probable (ver más abajo). */
   patrones: string[];
   /** Si se da, el modal arranca con solo ese patrón marcado (equivalente al
    * viejo "probar este patrón" de la lista) — el usuario puede sumar más
    * patrones desde los checkboxes. Sin esto, arrancan todos marcados. */
   preseleccionado?: number;
+  /** Campos sin patrones probables (ReglaNivel1.nota): en vez de la caja
+   * de patrones/textarea/botón "Probar", el modal muestra solo esta
+   * explicación de por qué (100% posicional, o un regex que en el código
+   * real es solo un validador dentro de una ventana acotada). */
+  nota?: string | null;
   onClose: () => void;
   /** Solo se pasa desde el modal de reglas nivel 1 (extractor dedicado) —
    * habilita el botón "Elegir texto guardado". El modal de reglas nivel 2
    * sigue igual que antes, sin este panel. */
+  compania?: string;
+  companiaId?: number;
+}) {
+  if (nota) {
+    return (
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-3" onClick={(e) => e.stopPropagation()}>
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+              <Lock className="w-4 h-4 text-amber-600" />
+              Sin regex probable
+              <span className="font-mono font-normal text-gray-400">· {campo}</span>
+            </h3>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-sm leading-relaxed">
+            <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>{nota}</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return <ModalProbarPatrones {...{ campo, patrones, preseleccionado, onClose, compania, companiaId }} />;
+}
+
+function ModalProbarPatrones({ campo, patrones, preseleccionado, onClose, compania, companiaId }: {
+  campo: string;
+  patrones: string[];
+  preseleccionado?: number;
+  onClose: () => void;
   compania?: string;
   companiaId?: number;
 }) {
@@ -402,12 +434,18 @@ function ModalProbarRegla({ campo, patrones, preseleccionado, onClose, compania,
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-black/40 flex items-stretch justify-center z-50 p-4"
       onClick={() => (panelAbierto ? setPanelAbierto(false) : onClose())}
     >
-      <div className="flex items-start gap-3" onClick={(e) => e.stopPropagation()}>
+      {/* Cada columna centra su propio contenido verticalmente por su
+          cuenta (items-center en cada wrapper) en vez de compartir un
+          único eje del row -- así "Probar patrones" y "Textos guardados"
+          quedan centrados cada uno en su espacio aunque tengan alturas
+          distintas, en vez de top-alineados entre sí. */}
+      <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center">
         <div
-          className={`bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 space-y-3.5 transition-transform duration-300 ${panelAbierto ? '-translate-x-1' : ''}`}
+          className={`bg-white rounded-2xl shadow-xl w-[36rem] max-w-xl p-6 space-y-3.5 transition-transform duration-300 ${panelAbierto ? '-translate-x-1' : ''}`}
         >
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
@@ -469,14 +507,17 @@ function ModalProbarRegla({ campo, patrones, preseleccionado, onClose, compania,
             </div>
           )}
         </div>
+        </div>
 
         {panelAbierto && compania && (
-          <PanelTextosGuardados
-            compania={compania}
-            companiaId={companiaId}
-            onClose={() => setPanelAbierto(false)}
-            onElegir={(t) => { setTexto(t); setPanelAbierto(false); }}
-          />
+          <div className="flex items-center">
+            <PanelTextosGuardados
+              compania={compania}
+              companiaId={companiaId}
+              onClose={() => setPanelAbierto(false)}
+              onElegir={(t) => { setTexto(t); setPanelAbierto(false); }}
+            />
+          </div>
         )}
       </div>
     </div>
@@ -490,6 +531,9 @@ interface ObjetivoPrueba {
    * hacer clic en el ícono de un patrón individual dentro de la lista) —
    * si no se da, arrancan todos seleccionados ("probar el campo completo"). */
   preseleccionado?: number;
+  /** Campos sin patrones probables (ver ReglaNivel1.nota): el modal
+   * muestra este texto en vez de la caja de patrones/textarea. */
+  nota?: string | null;
 }
 
 function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?: number }) {
@@ -554,6 +598,14 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
                         >
                           {r.campo}
                         </button>
+                      ) : r.nota ? (
+                        <button
+                          onClick={() => setProbando({ campo: r.campo, patrones: [], nota: r.nota })}
+                          title="Ver por qué este campo no se prueba por regex"
+                          className="font-mono text-blue-700 font-medium hover:underline decoration-dotted underline-offset-2"
+                        >
+                          {r.campo}
+                        </button>
                       ) : (
                         <span className="font-mono text-blue-700 font-medium">{r.campo}</span>
                       )}
@@ -562,10 +614,13 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
                       <div className="font-mono text-gray-500 mb-1">{r.funcion ?? '—'}</div>
                       {r.patrones.length === 0 ? (
                         r.nota ? (
-                          <div className="flex items-start gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 max-w-md">
-                            <Lock className="w-3 h-3 shrink-0 mt-0.5" />
-                            <span className="text-[11px] leading-snug">{r.nota}</span>
-                          </div>
+                          <button
+                            onClick={() => setProbando({ campo: r.campo, patrones: [], nota: r.nota })}
+                            className="flex items-center gap-1.5 text-amber-700 hover:text-amber-800 hover:underline"
+                          >
+                            <Lock className="w-3 h-3 shrink-0" />
+                            <span className="text-[11px]">Sin regex utilizado aún</span>
+                          </button>
                         ) : (
                           <span className="text-gray-300">sin regex directo detectado</span>
                         )
@@ -575,13 +630,6 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
                             <div key={p} className="flex items-center gap-1.5">
                               {r.patrones.length > 1 && <span className="text-gray-300 text-[10px] shrink-0">#{i + 1}</span>}
                               <code className="block truncate max-w-xs font-mono text-gray-700" title={p}>{p}</code>
-                              <button
-                                onClick={() => setProbando({ campo: r.campo, patrones: r.patrones, preseleccionado: i })}
-                                title="Probar solo este patrón (podés sumar más dentro del modal)"
-                                className="shrink-0 p-1 rounded hover:bg-blue-50 text-blue-600"
-                              >
-                                <FlaskConical className="w-3 h-3" />
-                              </button>
                             </div>
                           ))}
                         </div>
@@ -601,6 +649,7 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
           campo={probando.campo}
           patrones={probando.patrones}
           preseleccionado={probando.preseleccionado}
+          nota={probando.nota}
           onClose={() => setProbando(null)}
           compania={compania}
           companiaId={companiaId}
