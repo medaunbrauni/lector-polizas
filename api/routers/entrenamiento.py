@@ -20,7 +20,7 @@ from ..database import get_db
 from ..config import PDF_ENTRENAMIENTO_DIR
 from ..models.db_models import (
     PolizaEntrenamiento, SeleccionCampo, ReglaExtraccion,
-    Subramo, CampoDefinido, CampoGlobal, Extraccion,
+    Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion, ClasificacionCola,
 )
 from ..services.batch_trainer import (
     generar_regex_lote, probar_regex_en_lote, auto_detectar_en_lote,
@@ -88,17 +88,20 @@ def _poliza_dict(p: PolizaEntrenamiento, db: Session) -> dict:
     }
 
 
-def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]:
+def _polizas_visibles_multi(subramo_ids: list[int], db: Session) -> list[PolizaEntrenamiento]:
     """
-    Pólizas del lote a mostrar en el listado del Entrenador: oculta las
-    que ya no tienen archivo físico (borrado por la limpieza de 7 días u
-    otro motivo) y deduplica por nombre_archivo, conservando la más
-    reciente. Solo afecta el listado del lote — el Historial de
-    Extracciones no usa esta función y sigue mostrando todo.
+    Pólizas del lote a mostrar en el listado del Entrenador, para uno o
+    varios subramos a la vez: oculta las que ya no tienen archivo físico
+    (borrado por la limpieza de 7 días u otro motivo) y deduplica por
+    nombre_archivo, conservando la más reciente. Solo afecta el listado
+    del lote — el Historial de Extracciones no usa esta función y sigue
+    mostrando todo.
     """
+    if not subramo_ids:
+        return []
     polizas = (
         db.query(PolizaEntrenamiento)
-        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
+        .filter(PolizaEntrenamiento.subramo_id.in_(subramo_ids))
         .order_by(PolizaEntrenamiento.created_at)
         .all()
     )
@@ -108,6 +111,10 @@ def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]
             continue
         por_nombre[p.nombre_archivo] = p  # orden ASC: la última pisa a las anteriores
     return sorted(por_nombre.values(), key=lambda p: p.created_at)
+
+
+def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]:
+    return _polizas_visibles_multi([subramo_id], db)
 
 
 def _sel_dict(s: SeleccionCampo) -> dict:
@@ -232,15 +239,23 @@ def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     """
     Vacía el lote de entrenamiento del subramo (acción manual explícita,
     confirmada por el usuario). Borra TODAS las pólizas del subramo,
-    incluidas las que ya fueron usadas en una extracción real
-    (Extraccion.poliza_entrenamiento_id): para esas, primero se
-    desvincula la extracción (poliza_entrenamiento_id = NULL) en vez de
-    dejarla apuntando a una fila borrada — el Historial ya sabe mostrar
-    ese caso ("el archivo original ya no está disponible, pero los
-    datos se conservan"), sus datos extraídos (Extraccion.datos_completos)
-    no se ven afectados. Distinto de la limpieza automática diaria
-    (limpiar_lote_entrenamiento.py), que sigue siendo conservadora y NO
-    toca pólizas en uso, por ser una acción sin confirmación del usuario.
+    incluidas las que ya fueron usadas en una extracción real o enviadas
+    desde el Clasificador: para esas, primero se desvincula CADA tabla
+    que referencia polizas_entrenamiento.id por FK —
+    Extraccion.poliza_entrenamiento_id y ClasificacionCola.poliza_entrenamiento_id
+    (revisa api/models/db_models.py si se agrega una nueva en el futuro,
+    ambas deben tratarse igual aquí) — poniéndolas en NULL en vez de
+    dejarlas apuntando a una fila borrada. El Historial ya sabe mostrar
+    ese caso ("el archivo original ya no está disponible, pero los datos
+    se conservan"); sus datos (Extraccion.datos_completos) no se ven
+    afectados, y ClasificacionCola conserva su registro de que ese PDF
+    ya fue clasificado y enviado, solo pierde el vínculo al PDF físico
+    (que de cualquier forma ya se borra aquí). SeleccionCampo no
+    necesita este tratamiento: tiene cascade="all, delete-orphan" en el
+    modelo, SQLAlchemy la borra sola al hacer db.delete(p). Distinto de
+    la limpieza automática diaria (limpiar_lote_entrenamiento.py), que
+    sigue siendo conservadora y NO toca pólizas en uso, por ser una
+    acción sin confirmación del usuario.
     """
     polizas = (
         db.query(PolizaEntrenamiento)
@@ -250,6 +265,9 @@ def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     borradas = 0
     for p in polizas:
         db.query(Extraccion).filter(Extraccion.poliza_entrenamiento_id == p.id).update(
+            {"poliza_entrenamiento_id": None}
+        )
+        db.query(ClasificacionCola).filter(ClasificacionCola.poliza_entrenamiento_id == p.id).update(
             {"poliza_entrenamiento_id": None}
         )
         try:
@@ -535,6 +553,33 @@ def imagen_pagina(poliza_id: int, page_num: int, escala: float = 2.0, db: Sessio
         raise
     except Exception as e:
         raise HTTPException(500, f"Error al renderizar: {e}")
+
+
+# ── Pólizas guardadas por aseguradora (todos sus subramos) ────────────────────
+
+@router.get("/companias/{nombre}/polizas")
+def polizas_de_compania(nombre: str, db: Session = Depends(get_db)):
+    """
+    Pólizas de entrenamiento guardadas de una aseguradora, sin importar el
+    subramo — a diferencia de /subramos/{id}/estado (acotado a un solo
+    subramo), esto es lo que necesita el panel "elegir texto guardado" del
+    modal "Probar regla" de nivel 1 (GNP/Quálitas/...), ya que esas reglas
+    no están atadas a un subramo específico. Reutiliza la misma
+    consulta/serialización que ya usa el listado del lote.
+    """
+    compania = db.query(Compania).filter(Compania.nombre == nombre).first()
+    if not compania:
+        raise HTTPException(404, f"No existe la aseguradora '{nombre}'")
+
+    subramo_ids = [
+        s.id for s in
+        db.query(Subramo.id)
+        .join(Ramo, Subramo.ramo_id == Ramo.id)
+        .filter(Ramo.compania_id == compania.id)
+        .all()
+    ]
+    polizas = _polizas_visibles_multi(subramo_ids, db)
+    return [_poliza_dict(p, db) for p in polizas]
 
 
 # ── Estado completo del lote ──────────────────────────────────────────────────

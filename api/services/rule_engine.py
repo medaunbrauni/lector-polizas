@@ -139,8 +139,15 @@ def _extraer_texto_bbox(pdf_bytes: bytes, bbox: dict) -> str:
 
 
 def _aplicar_patron(patron: str, texto: str) -> str | None:
+    # DOTALL: varios regex de nivel 1 (extractores especializados) usan
+    # ".{0,N}?" para saltar contenido entre una etiqueta y su valor,
+    # incluyendo saltos de línea (ej. "Forma de Pago" y su valor en filas
+    # de tabla distintas en GNP) — sin DOTALL, "." nunca cruza "\n" y esos
+    # regex nunca matchean al probarlos aquí. Revisado: ninguna de las
+    # reglas nivel 2 (BD) activas usa un "." sin escapar, así que agregar
+    # DOTALL no les cambia el comportamiento.
     try:
-        m = re.search(patron, texto, re.IGNORECASE | re.MULTILINE)
+        m = re.search(patron, texto, re.IGNORECASE | re.MULTILINE | re.DOTALL)
         if m:
             return m.group(1).strip() if m.lastindex and m.lastindex >= 1 else m.group(0).strip()
     except re.error:

@@ -52,12 +52,21 @@ export async function crearRegla(data: object) {
   return res.json();
 }
 
-export async function probarRegla(patron: string, texto: string) {
+/** `patron` acepta un solo regex (reglas nivel 2) o una lista (bloque de
+ * patrones de un campo, nivel 1) — el backend prueba en orden y devuelve
+ * el primero que matchea, igual que el extractor real. */
+export async function probarRegla(patron: string | string[], texto: string) {
   const res = await fetch(`${BASE}/reglas/probar`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ patron_regex: patron, texto }),
   });
+  return res.json();
+}
+
+export async function getReglasNivel1(aseguradora: string) {
+  const res = await fetch(`${BASE}/reglas/nivel1/${encodeURIComponent(aseguradora)}`);
+  if (!res.ok) return [];
   return res.json();
 }
 
@@ -199,6 +208,15 @@ export async function subirPolizasEntrenamiento(subramoId: number, files: File[]
 
 export async function listarPolizasEntrenamiento(subramoId: number) {
   const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/polizas`);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+/** Pólizas guardadas de una aseguradora, en todos sus subramos — usado por
+ * el panel "elegir texto guardado" del validador en vivo de Código Reglas
+ * (nivel 1), que no está atado a un subramo específico. */
+export async function getPolizasDeCompania(nombreCompania: string) {
+  const res = await fetch(`${BASE}/entrenamiento/companias/${encodeURIComponent(nombreCompania)}/polizas`);
   if (!res.ok) throw new Error(`Error ${res.status}`);
   return res.json();
 }

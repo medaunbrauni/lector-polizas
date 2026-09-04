@@ -9,6 +9,7 @@ from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
 from ..models.db_models import ReglaExtraccion, Extraccion
 from ..services.rule_engine import _aplicar_patron, cobertura_subramo
+from ..services.nivel1_rules import obtener_reglas_nivel1, ARCHIVOS_NIVEL1
 
 router = APIRouter(prefix="/reglas", tags=["Reglas de Extracción"])
 
@@ -27,7 +28,12 @@ class ReglaIn(BaseModel):
 
 
 class ProbarReglaIn(BaseModel):
-    patron_regex: str
+    # Acepta un patrón suelto (uso histórico, reglas nivel 2 de BD) o una
+    # lista (bloque de patrones de un mismo campo, nivel 1 — el probador
+    # replica ahí el mismo "probar en orden hasta el primer match" que usa
+    # extraer_por_lineas_regex en gnp.py y el patrón equivalente en
+    # qualitas.py, no un orden inventado aparte).
+    patron_regex: str | list[str]
     texto: str
 
 
@@ -132,8 +138,25 @@ def crear_regla(data: ReglaIn, db: Session = Depends(get_db)):
 
 @router.post("/probar")
 def probar_regla(data: ProbarReglaIn):
-    valor = _aplicar_patron(data.patron_regex, data.texto)
-    return {"coincidencia": valor, "encontrado": valor is not None}
+    patrones = data.patron_regex if isinstance(data.patron_regex, list) else [data.patron_regex]
+    for indice, patron in enumerate(patrones):
+        valor = _aplicar_patron(patron, data.texto)
+        if valor is not None:
+            return {"coincidencia": valor, "encontrado": True, "patron_index": indice, "patron": patron}
+    return {"coincidencia": None, "encontrado": False, "patron_index": None, "patron": None}
+
+
+@router.get("/nivel1/{aseguradora}")
+def reglas_nivel1(aseguradora: str):
+    """Reglas hardcodeadas del extractor especializado (solo lectura).
+
+    Reconstruidas por introspección estática del código fuente en
+    api/extractores_especializados/ — no ejecuta ni modifica la lógica de
+    extracción real.
+    """
+    if aseguradora not in ARCHIVOS_NIVEL1:
+        raise HTTPException(404, f"No hay extractor especializado para '{aseguradora}'")
+    return obtener_reglas_nivel1(aseguradora)
 
 
 @router.get("/cobertura/{subramo_id}")
