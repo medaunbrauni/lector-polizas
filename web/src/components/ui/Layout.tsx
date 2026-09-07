@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { FileSearch, BookOpen, Zap, History, Code2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { FileSearch, BookOpen, Zap, History, Code2, Inbox, ChevronLeft, ChevronRight } from 'lucide-react';
 
 const NAV = [
-  { to: '/',              icon: FileSearch, label: 'Extractor',     exact: true  },
-  { to: '/historial',     icon: History,    label: 'Historial',     exact: false },
-  { to: '/catalogos',     icon: BookOpen,   label: 'Catálogos',     exact: false },
-  { to: '/reglas',        icon: Zap,        label: 'Entrenador PDFs', exact: true  },
-  { to: '/reglas/codigo', icon: Code2,      label: 'Código Reglas', exact: false },
+  { to: '/',                  icon: FileSearch, label: 'Extractor',      exact: true  },
+  { to: '/historial',         icon: History,    label: 'Historial',      exact: false },
+  { to: '/catalogos',         icon: BookOpen,   label: 'Catálogos',      exact: false },
+  { to: '/reglas',            icon: Zap,        label: 'Entrenador PDFs', exact: true  },
+  { to: '/reglas/codigo',     icon: Code2,      label: 'Código Reglas',  exact: false },
+  { to: '/clasificador/tickets', icon: Inbox,   label: 'Tickets MOVI',   exact: false },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {

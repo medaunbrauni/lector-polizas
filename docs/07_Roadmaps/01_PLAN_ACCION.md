@@ -199,6 +199,41 @@ patrón regex, se guarda la regla. Con más reglas = menos dependencia de IA = m
 
 ---
 
+## Integración con MOVI — recepción de tickets pendientes de clasificar
+
+Cuando el mini-extractor de MOVI falla o extrae campos incompletos, MOVI
+envía el PDF (agrupado en un "ticket", 1-30 PDFs por folio) a este repo
+para que un operador lo clasifique y sirva de entrenamiento. Implementado:
+`POST /api/integraciones/movi_beta/cola` (ver `api/routers/integraciones/`),
+modelo `TicketExterno` + columnas `origen`/`ticket_externo_id` en
+`ClasificacionCola`.
+
+**Decisión descartada:** un artifact previo (para `lector.movi.digital`,
+frontend de MOVI) proponía una tabla `lector_cola_entrenamiento` en
+Supabase, poblada directamente por MOVI, con su propia pantalla de revisión
+del lado de MOVI. Se descartó: la cola de entrenamiento vive en este repo
+(SQLite), gestionada por un admin de este lado; MOVI solo interactúa vía
+HTTP (POST del ticket + PDFs), nunca con acceso directo a esta base de
+datos ni viceversa. Si alguien retoma ese artifact, esta es la razón por
+la que no aplica a la arquitectura actual.
+
+**Deuda conocida:** el procesamiento del ticket corre en un
+`BackgroundTasks` de FastAPI sin retry ni persistencia — si el proceso se
+reinicia a medio camino, los `ClasificacionCola` de ese ticket quedan en
+`pendiente` para siempre sin aviso. Falta, a futuro, un chequeo (manual o
+programado) de items `pendiente` con más de ~1h de antigüedad que permita
+detectarlos/reintentarlos. Ver comentario `ponytail:` en
+`api/routers/integraciones/base.py::_procesar_ticket_en_serie`.
+
+| Tarea | Estado |
+|---|---|
+| Fase 1: modelo `TicketExterno` + endpoint `/integraciones/movi_beta/cola` con API key, rate limit y procesamiento en background | ✅ Hecho |
+| Fase 2: filtro por origen + vista agrupada por ticket en la UI de la cola | ⬜ Pendiente |
+| Fase 3: mecanismo de notificación hacia MOVI (polling recomendado sobre webhook) cuando un ticket termina de clasificarse | ⬜ Pendiente (solo diseño) |
+| Reintento de items `pendiente` huérfanos por caída del proceso | ⬜ Pendiente |
+
+---
+
 ## Criterios de lanzamiento a producción
 
 - [ ] Las 4 compañías prioritarias extraen correctamente los campos críticos (definidos por PM)

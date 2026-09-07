@@ -17,6 +17,7 @@ def _set_sqlite_pragmas(dbapi_connection, connection_record):
     cursor.execute("PRAGMA synchronous=NORMAL")     # balance velocidad/seguridad
     cursor.execute("PRAGMA cache_size=10000")       # ~10 MB de caché
     cursor.execute("PRAGMA foreign_keys=ON")        # integridad referencial
+    cursor.execute("PRAGMA busy_timeout=5000")      # espera hasta 5s si otra sesión escribe
     cursor.close()
 
 
@@ -60,6 +61,8 @@ def _migrate_add_columns():
         ("reglas_extraccion","total_lote",           "INTEGER"),
         ("extracciones",     "poliza_entrenamiento_id", "INTEGER"),
         ("selecciones_campo", "metodo",                 "VARCHAR(30)"),
+        ("clasificacion_cola", "origen",                "VARCHAR(20) DEFAULT 'manual'"),
+        ("clasificacion_cola", "ticket_externo_id",     "INTEGER"),
     ]
     with engine.connect() as conn:
         for table, col, col_type in migrations:

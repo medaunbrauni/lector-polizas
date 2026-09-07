@@ -2,7 +2,7 @@
 from datetime import datetime
 from sqlalchemy import (
     Column, String, Integer, Boolean, DateTime, Float,
-    ForeignKey, Text, JSON
+    ForeignKey, Text, JSON, UniqueConstraint
 )
 from sqlalchemy.orm import relationship
 from ..database import Base
@@ -192,8 +192,31 @@ class ClasificacionCola(Base):
     # Referencia al entrenamiento al que fue enviado
     poliza_entrenamiento_id = Column(Integer, ForeignKey("polizas_entrenamiento.id"), nullable=True)
 
+    # Procedencia: "manual" (subida/carpeta vigilada interna) o el nombre de
+    # una integración externa (ej. "movi_beta"). ticket_externo_id solo se
+    # llena cuando origen != "manual".
+    origen = Column(String(20), default="manual", nullable=False)
+    ticket_externo_id = Column(Integer, ForeignKey("tickets_externos.id"), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TicketExterno(Base):
+    """
+    Agrupa los N PDFs (1-30) que un CRM externo (MOVI, o futuros) envía
+    en una sola llamada bajo un folio único. estado_general NO se guarda
+    aquí — se calcula a partir de los ClasificacionCola hijos (fuente de
+    verdad única) para que nunca se desincronice.
+    """
+    __tablename__ = "tickets_externos"
+    id = Column(Integer, primary_key=True)
+    origen = Column(String(20), nullable=False)
+    folio = Column(String(120), nullable=False)
+    total_pdfs = Column(Integer, nullable=False)
+    recibido_en = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("origen", "folio", name="uq_ticket_origen_folio"),)
 
 
 class CarpetaVigilada(Base):
