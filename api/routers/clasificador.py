@@ -12,9 +12,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from sqlalchemy import func
+
 from ..config import MAX_FILE_MB, UPLOAD_FOLDER
 from ..database import get_db
-from ..models.db_models import ClasificacionCola, Compania, Ramo, Subramo
+from ..models.db_models import ClasificacionCola, Compania, Ramo, Subramo, TicketExterno
 from ..services.clasificador_service import (
     dedup_carpeta,
     enviar_a_entrenamiento,
@@ -70,6 +72,8 @@ def _item_schema(item: ClasificacionCola, db: Session) -> dict:
         "patrones_generados": item.patrones_generados,
         "patrones_guardados": item.patrones_guardados,
         "poliza_entrenamiento_id": item.poliza_entrenamiento_id,
+        "origen":            item.origen,
+        "ticket_externo_id": item.ticket_externo_id,
         "created_at":        item.created_at.isoformat() if item.created_at else None,
     }
 
@@ -167,12 +171,15 @@ async def upload_pdfs(
 @router.get("/cola")
 def get_cola(
     estado: str | None = None,
+    origen: str | None = None,
     db: Session = Depends(get_db),
 ):
-    """Lista todos los items de la cola, opcionalmente filtrados por estado."""
+    """Lista todos los items de la cola, opcionalmente filtrados por estado y/u origen."""
     q = db.query(ClasificacionCola).order_by(ClasificacionCola.created_at.desc())
     if estado:
         q = q.filter(ClasificacionCola.estado == estado)
+    if origen:
+        q = q.filter(ClasificacionCola.origen == origen)
     items = q.limit(300).all()
     return [_item_schema(i, db) for i in items]
 
@@ -202,6 +209,71 @@ def dedup_manual():
     """
     eliminados = dedup_carpeta(UPLOAD_FOLDER)
     return {"eliminados": eliminados, "total": len(eliminados)}
+
+
+# ── Tickets externos (MOVI y futuros CRMs) ────────────────────────────────────
+# estado_general se CALCULA aquí a partir de los ClasificacionCola hijos —
+# nunca se guarda en TicketExterno, para que no se desincronice de la
+# realidad (ver models/db_models.py::TicketExterno).
+
+def _ticket_schema(ticket: TicketExterno, conteos: dict[str, int]) -> dict:
+    procesados = ticket.total_pdfs - conteos.get("pendiente", 0)
+    return {
+        "id": ticket.id,
+        "origen": ticket.origen,
+        "folio": ticket.folio,
+        "total_pdfs": ticket.total_pdfs,
+        "recibido_en": ticket.recibido_en.isoformat() if ticket.recibido_en else None,
+        "conteos": conteos,
+        "resumen": f"{procesados} de {ticket.total_pdfs} procesados",
+    }
+
+
+@router.get("/tickets")
+def get_tickets(origen: str | None = None, db: Session = Depends(get_db)):
+    """Lista los tickets externos con su progreso calculado de los hijos."""
+    q = db.query(TicketExterno).order_by(TicketExterno.recibido_en.desc())
+    if origen:
+        q = q.filter(TicketExterno.origen == origen)
+    tickets = q.limit(300).all()
+    if not tickets:
+        return []
+
+    ticket_ids = [t.id for t in tickets]
+    filas = (
+        db.query(ClasificacionCola.ticket_externo_id, ClasificacionCola.estado, func.count())
+        .filter(ClasificacionCola.ticket_externo_id.in_(ticket_ids))
+        .group_by(ClasificacionCola.ticket_externo_id, ClasificacionCola.estado)
+        .all()
+    )
+    conteos_por_ticket: dict[int, dict[str, int]] = {}
+    for ticket_id, estado, total in filas:
+        conteos_por_ticket.setdefault(ticket_id, {})[estado] = total
+
+    return [_ticket_schema(t, conteos_por_ticket.get(t.id, {})) for t in tickets]
+
+
+@router.get("/tickets/{id}")
+def get_ticket_detalle(id: int, db: Session = Depends(get_db)):
+    """Detalle de un ticket externo + sus ClasificacionCola hijos."""
+    ticket = db.get(TicketExterno, id)
+    if not ticket:
+        raise HTTPException(404, "Ticket no encontrado")
+
+    hijos = (
+        db.query(ClasificacionCola)
+        .filter(ClasificacionCola.ticket_externo_id == id)
+        .order_by(ClasificacionCola.created_at)
+        .all()
+    )
+    conteos: dict[str, int] = {}
+    for h in hijos:
+        conteos[h.estado] = conteos.get(h.estado, 0) + 1
+
+    return {
+        **_ticket_schema(ticket, conteos),
+        "items": [_item_schema(h, db) for h in hijos],
+    }
 
 
 # ── Confirmar ─────────────────────────────────────────────────────────────────

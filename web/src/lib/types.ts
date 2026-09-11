@@ -273,6 +273,8 @@ export interface ItemCola {
   } | null;
   patrones_guardados: boolean;
   poliza_entrenamiento_id: number | null;
+  origen: string;
+  ticket_externo_id: number | null;
   created_at: string | null;
 }
 
@@ -300,4 +302,20 @@ export interface PatronesGenerados {
   compania_patrones_total?: number;
   ramo_patrones_total?: number;
   subramo_patrones_total?: number;
+}
+
+// ── Tickets externos (MOVI y futuros CRMs) ─────────────────────────────────────
+
+export interface TicketExterno {
+  id: number;
+  origen: string;
+  folio: string;
+  total_pdfs: number;
+  recibido_en: string | null;
+  conteos: Partial<Record<EstadoCola, number>>;
+  resumen: string;
+}
+
+export interface TicketExternoDetalle extends TicketExterno {
+  items: ItemCola[];
 }

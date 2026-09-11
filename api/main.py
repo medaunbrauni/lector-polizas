@@ -10,6 +10,7 @@ from .config import ALLOWED_ORIGINS, UPLOAD_FOLDER
 from .database import init_db, SessionLocal
 from .seed.data import sembrar
 from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador
+from .routers.integraciones import movi_beta
 from .seed.campos_globales import sembrar_campos_globales
 from .services.folder_watcher import iniciar_watcher, detener_watcher
 
@@ -62,6 +63,7 @@ api_router.include_router(catalogos.router)
 api_router.include_router(reglas.router)
 api_router.include_router(entrenamiento.router)
 api_router.include_router(clasificador.router)
+api_router.include_router(movi_beta.router)
 
 @api_router.get("/health")
 def health():

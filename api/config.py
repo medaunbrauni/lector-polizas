@@ -27,6 +27,15 @@ _desktop = os.path.join(os.path.expanduser("~"), "Desktop", "polizas_clasificado
 UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", _desktop)
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+# ── Integraciones externas (CRMs que envían tickets con PDFs vía API) ───────
+# Carpeta separada de UPLOAD_FOLDER a propósito: UPLOAD_FOLDER es vigilada
+# por el watchdog (folder_watcher.py) y un archivo dejado ahí se procesaría
+# dos veces (una por el watcher, otra por el propio endpoint).
+INTEGRACIONES_DIR = os.path.join(STORAGE_PATH, "integraciones")
+os.makedirs(INTEGRACIONES_DIR, exist_ok=True)
+MAX_PDFS_POR_TICKET = int(os.getenv("MAX_PDFS_POR_TICKET", "30"))
+MOVI_BETA_API_KEY = os.getenv("MOVI_BETA_API_KEY")
+
 # ── CORS ─────────────────────────────────────────────────────────────────────
 # En producción: ALLOWED_ORIGINS=https://tudominio.com,https://app.tudominio.com
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:5174")

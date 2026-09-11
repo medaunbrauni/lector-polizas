@@ -358,7 +358,7 @@ export async function generarYGuardarPatrones(subramo_id: number, texto_pdf: str
 
 // ── Clasificador ──────────────────────────────────────────────────────────────
 
-import type { ItemCola, ResultadoUpload, InfoClasificador } from './types';
+import type { ItemCola, ResultadoUpload, InfoClasificador, TicketExterno, TicketExternoDetalle } from './types';
 
 export async function clasificadorInfo(): Promise<InfoClasificador> {
   const res = await fetch(`${BASE}/clasificador/info`);
@@ -377,11 +377,27 @@ export async function uploadClasificador(files: File[]): Promise<ResultadoUpload
   return res.json();
 }
 
-export async function getColaClasificador(estado?: string): Promise<ItemCola[]> {
-  const url = estado
-    ? `${BASE}/clasificador/cola?estado=${estado}`
-    : `${BASE}/clasificador/cola`;
+export async function getColaClasificador(estado?: string, origen?: string): Promise<ItemCola[]> {
+  const params = new URLSearchParams();
+  if (estado) params.set('estado', estado);
+  if (origen) params.set('origen', origen);
+  const qs = params.toString();
+  const res = await fetch(`${BASE}/clasificador/cola${qs ? `?${qs}` : ''}`);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function getTickets(origen?: string): Promise<TicketExterno[]> {
+  const url = origen
+    ? `${BASE}/clasificador/tickets?origen=${origen}`
+    : `${BASE}/clasificador/tickets`;
   const res = await fetch(url);
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function getTicketDetalle(id: number): Promise<TicketExternoDetalle> {
+  const res = await fetch(`${BASE}/clasificador/tickets/${id}`);
   if (!res.ok) throw new Error(`Error ${res.status}`);
   return res.json();
 }
