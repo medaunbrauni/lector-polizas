@@ -5,12 +5,16 @@
  * de un ticket de MOVI (pages/TicketsMovi.tsx) sin duplicar la lógica de
  * override/confirmar/patrones.
  */
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   RefreshCw, CheckCircle2, AlertCircle, XCircle,
   ChevronDown, ChevronRight, Trash2, Cpu, Shield,
-  ShieldCheck, ShieldAlert, ShieldOff, Info,
+  ShieldCheck, ShieldAlert, ShieldOff, Info, Eye, RotateCw, FileSearch,
 } from 'lucide-react';
 import type { Compania, ItemCola, NivelConfianza } from '../../lib/types';
+import { urlPdfCola, urlPdfEntrenamiento } from '../../lib/api';
+import PdfVisor, { PdfVisorErrorBoundary } from './PdfVisor';
 
 export interface OverrideState {
   companiaId: string;
@@ -24,6 +28,20 @@ export interface PatronesSeleccion {
   compania: Set<string>;
   ramo: Set<string>;
   subramo: Set<string>;
+}
+
+/** Mismo mecanismo de navegación que linkVerReentrenar en pages/Historial.tsx. */
+function linkVer(item: ItemCola): string | null {
+  if (!item.compania_id_final || !item.ramo_id_final || !item.subramo_id_final) return null;
+  const params = new URLSearchParams({
+    companiaId: String(item.compania_id_final),
+    ramoId: String(item.ramo_id_final),
+    subramoId: String(item.subramo_id_final),
+  });
+  if (item.poliza_entrenamiento_id) {
+    params.set('polizaId', String(item.poliza_entrenamiento_id));
+  }
+  return `/reglas?${params.toString()}`;
 }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
@@ -82,6 +100,8 @@ interface Props {
   onTogglePatrones: () => void;
   onTogglePatron: (nivel: 'compania' | 'ramo' | 'subramo', patron: string) => void;
   onGuardarPatrones: () => void;
+  onReenviar: () => void;
+  reenviando: boolean;
 }
 
 export default function ColaItemRow({
@@ -89,10 +109,22 @@ export default function ColaItemRow({
   patronesSeleccionados: selPat, guardandoPatrones,
   onAbrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
   onConfirmar, onDescartar, onTogglePatrones, onTogglePatron, onGuardarPatrones,
+  onReenviar, reenviando,
 }: Props) {
+  const [previewOpen, setPreviewOpen] = useState(false);
   const finalComp = ov?.companiaId ? companias.find((c) => c.id === Number(ov.companiaId))?.nombre : null;
   const finalSub = ov?.subramoId ? ov.subramos.find((s) => s.id === Number(ov.subramoId))?.nombre : null;
   const terminado = item.estado === 'enviado' || item.estado === 'confirmado';
+  const enviado = item.estado === 'enviado';
+
+  // Antes de enviado, el preview sirve el PDF crudo de la cola (id negativo
+  // para no chocar en la caché de PdfVisor con ids de PolizaEntrenamiento,
+  // que son un espacio de ids totalmente distinto). Ya enviado, usa el
+  // mismo PDF servido para el Entrenador.
+  const previewId = enviado && item.poliza_entrenamiento_id ? item.poliza_entrenamiento_id : -item.id;
+  const previewUrl = enviado && item.poliza_entrenamiento_id
+    ? urlPdfEntrenamiento(item.poliza_entrenamiento_id)
+    : urlPdfCola(item.id);
 
   return (
     <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-sm">
@@ -136,38 +168,76 @@ export default function ColaItemRow({
         </div>
 
         {/* Acciones */}
-        {!terminado && (
-          <div className="flex items-center gap-1 flex-shrink-0">
-            {/* Botón Corregir */}
-            <button
-              onClick={onAbrirOverride}
-              title="Corregir clasificación"
-              className={`p-1.5 rounded-lg text-xs transition-colors ${overrideOpen ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-400'}`}
-            >
-              {overrideOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-            </button>
-
-            {/* Confirmar */}
-            {(item.estado === 'clasificado' || (overrideOpen && ov?.subramoId)) && (
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {!terminado && (
+            <>
+              {/* Botón Corregir */}
               <button
-                onClick={onConfirmar}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                onClick={onAbrirOverride}
+                title="Corregir clasificación"
+                className={`p-1.5 rounded-lg text-xs transition-colors ${overrideOpen ? 'bg-blue-100 text-blue-700' : 'hover:bg-gray-100 text-gray-400'}`}
               >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Confirmar
+                {overrideOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
               </button>
-            )}
 
-            {/* Descartar */}
-            <button
-              onClick={onDescartar}
-              title="Descartar"
-              className="p-1.5 hover:bg-red-50 text-gray-300 hover:text-red-400 rounded-lg transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        )}
+              {/* Confirmar */}
+              {(item.estado === 'clasificado' || (overrideOpen && ov?.subramoId)) && (
+                <button
+                  onClick={onConfirmar}
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Confirmar
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Ver + Reenviar — solo si ya se envió a entrenamiento */}
+          {enviado && (
+            <>
+              {linkVer(item) && (
+                <Link
+                  to={linkVer(item)!}
+                  title="Ver en el Entrenador"
+                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Ver
+                </Link>
+              )}
+              <button
+                onClick={onReenviar}
+                disabled={reenviando}
+                title="Reenviar a entrenamiento (recupera el lote si se borró por accidente)"
+                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${reenviando ? 'animate-spin' : ''}`} />
+                Reenviar
+              </button>
+            </>
+          )}
+
+          {/* Eliminar — siempre visible, en cualquier estado */}
+          <button
+            onClick={onDescartar}
+            title="Eliminar"
+            className="p-1.5 hover:bg-red-50 text-gray-300 hover:text-red-400 rounded-lg transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Botón preview PDF (cualquier estado) */}
+        <button
+          onClick={() => setPreviewOpen((v) => !v)}
+          title="Ver preview del PDF"
+          className={`flex items-center gap-1 px-2 py-1 text-xs rounded-lg border transition-colors flex-shrink-0
+            ${previewOpen ? 'border-blue-300 text-blue-600 bg-blue-50' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+        >
+          <FileSearch className="w-3.5 h-3.5" />
+          Preview
+        </button>
 
         {/* Botón patrones (siempre visible si hay patrones generados) */}
         {item.patrones_generados && (
@@ -182,6 +252,15 @@ export default function ColaItemRow({
           </button>
         )}
       </div>
+
+      {/* ── Preview de PDF ──────────────────────────────────────── */}
+      {previewOpen && (
+        <div className="mx-4 mb-3 relative h-[480px] border border-gray-200 rounded-xl overflow-hidden">
+          <PdfVisorErrorBoundary key={previewId}>
+            <PdfVisor polizaId={previewId} url={previewUrl} width={480} />
+          </PdfVisorErrorBoundary>
+        </div>
+      )}
 
       {/* ── Alerta compañía nueva ──────────────────────────────── */}
       {item.es_compania_nueva && (

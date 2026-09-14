@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,7 @@ from ..services.clasificador_service import (
     extraer_texto_pdf,
     guardar_patrones_aprobados,
     procesar_pdf,
+    reenviar_a_entrenamiento,
     sha256_bytes,
 )
 from ..services.folder_watcher import estado_watcher
@@ -192,6 +194,24 @@ def get_item(id: int, db: Session = Depends(get_db)):
     return _item_schema(item, db)
 
 
+@router.get("/cola/{id}/pdf")
+def servir_pdf_cola(id: int, db: Session = Depends(get_db)):
+    """
+    Sirve el PDF crudo de un item de la cola — para el preview ANTES de que
+    tenga poliza_entrenamiento_id (una vez enviado, el visor usa
+    /entrenamiento/polizas/{id}/pdf en su lugar).
+
+    ponytail: sin auth, igual que el resto de /clasificador/* hoy — ver
+    docs/07_Roadmaps/01_PLAN_ACCION.md ("Deuda técnica: API sin autenticación").
+    """
+    item = db.get(ClasificacionCola, id)
+    if not item:
+        raise HTTPException(404, "No encontrado")
+    if not item.ruta_archivo or not Path(item.ruta_archivo).exists():
+        raise HTTPException(404, "Archivo no encontrado en disco")
+    return FileResponse(item.ruta_archivo, media_type="application/pdf", filename=item.nombre_archivo)
+
+
 @router.get("/info")
 def get_info():
     """Información del clasificador: carpeta y estado del watcher."""
@@ -218,6 +238,18 @@ def dedup_manual():
 
 def _ticket_schema(ticket: TicketExterno, conteos: dict[str, int]) -> dict:
     procesados = ticket.total_pdfs - conteos.get("pendiente", 0)
+    hijos_restantes = sum(conteos.values())
+
+    # Los PDFs se pueden eliminar uno a uno de la cola (botón "Eliminar").
+    # Si se eliminaron todos, el ticket se conserva (es un registro de que
+    # MOVI mandó ese folio — ver 01_PLAN_ACCION.md), pero total_pdfs sigue
+    # reflejando el conteo original: sin este caso especial, el resumen
+    # mostraría un progreso engañoso ("3 de 3 procesados" con 0 hijos reales).
+    if ticket.total_pdfs > 0 and hijos_restantes == 0:
+        resumen = f"0 de {ticket.total_pdfs} — todos descartados"
+    else:
+        resumen = f"{procesados} de {ticket.total_pdfs} procesados"
+
     return {
         "id": ticket.id,
         "origen": ticket.origen,
@@ -225,7 +257,7 @@ def _ticket_schema(ticket: TicketExterno, conteos: dict[str, int]) -> dict:
         "total_pdfs": ticket.total_pdfs,
         "recibido_en": ticket.recibido_en.isoformat() if ticket.recibido_en else None,
         "conteos": conteos,
-        "resumen": f"{procesados} de {ticket.total_pdfs} procesados",
+        "resumen": resumen,
     }
 
 
@@ -314,6 +346,31 @@ def confirmar_item(id: int, data: ConfirmarIn, db: Session = Depends(get_db)):
             item.estado = "enviado"
         except Exception as exc:
             raise HTTPException(500, f"Error al enviar a entrenamiento: {exc}")
+
+    db.commit()
+    db.refresh(item)
+    return _item_schema(item, db)
+
+
+@router.post("/cola/{id}/reenviar")
+def reenviar_item(id: int, db: Session = Depends(get_db)):
+    """
+    Reenvía a entrenamiento un item ya 'enviado' — para recuperar un
+    PolizaEntrenamiento borrado por accidente en el Entrenador. No vuelve a
+    correr extracción ni clasificación IA: reutiliza compania/ramo/subramo
+    _final ya confirmados. Idempotente (ver reenviar_a_entrenamiento).
+    """
+    item = db.get(ClasificacionCola, id)
+    if not item:
+        raise HTTPException(404, "No encontrado")
+    if item.estado != "enviado":
+        raise HTTPException(400, "Solo se puede reenviar un item ya enviado a entrenamiento")
+
+    try:
+        pol = reenviar_a_entrenamiento(item, db)
+        item.poliza_entrenamiento_id = pol.id
+    except Exception as exc:
+        raise HTTPException(500, f"Error al reenviar a entrenamiento: {exc}")
 
     db.commit()
     db.refresh(item)

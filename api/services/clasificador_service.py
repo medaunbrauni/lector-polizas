@@ -315,6 +315,22 @@ def enviar_a_entrenamiento(item: ClasificacionCola, db: Session) -> PolizaEntren
     return pol
 
 
+def reenviar_a_entrenamiento(item: ClasificacionCola, db: Session) -> PolizaEntrenamiento:
+    """
+    Wrapper idempotente sobre enviar_a_entrenamiento(), pensado para el botón
+    "Reenviar": recupera un PolizaEntrenamiento borrado por accidente sin
+    duplicarlo si sigue existiendo. enviar_a_entrenamiento() por sí sola NO
+    es segura de llamar dos veces — no valida nada y crearía una fila nueva
+    cada vez.
+    """
+    if item.poliza_entrenamiento_id:
+        existente = db.get(PolizaEntrenamiento, item.poliza_entrenamiento_id)
+        if existente:
+            return existente  # ya existe, no duplicar
+
+    return enviar_a_entrenamiento(item, db)
+
+
 # ── Guardar patrones aprobados ────────────────────────────────────────────────
 
 def guardar_patrones_aprobados(
