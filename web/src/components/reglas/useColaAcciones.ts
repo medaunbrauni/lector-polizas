@@ -10,7 +10,7 @@ import { useState } from 'react';
 import type { ItemCola } from '../../lib/types';
 import {
   confirmarItemCola, aprobarPatronesCola, descartarItemCola,
-  getRamos, getSubramos,
+  getRamos, getSubramos, reenviarItemCola,
 } from '../../lib/api';
 import type { OverrideState, PatronesSeleccion } from './ColaItemRow';
 
@@ -20,6 +20,7 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
   const [patronesAbiertos, setPatronesAbiertos] = useState<Set<number>>(new Set());
   const [patronesSeleccionados, setPatronesSeleccionados] = useState<Record<number, PatronesSeleccion>>({});
   const [guardandoPatrones, setGuardandoPatrones] = useState<number | null>(null);
+  const [reenviando, setReenviando] = useState<number | null>(null);
 
   const abrirOverride = async (item: ItemCola) => {
     if (overrideActivo === item.id) { setOverrideActivo(null); return; }
@@ -129,9 +130,21 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
     }
   };
 
+  const reenviar = async (item: ItemCola) => {
+    setReenviando(item.id);
+    try {
+      const updated = await reenviarItemCola(item.id);
+      setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Error al reenviar');
+    } finally {
+      setReenviando(null);
+    }
+  };
+
   return {
-    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones,
+    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando,
     abrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
-    confirmarItem, descartar, togglePatrones, togglePatron, guardarPatrones,
+    confirmarItem, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
   };
 }
