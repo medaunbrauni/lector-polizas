@@ -4,6 +4,18 @@ from fastapi.responses import JSONResponse
 import os
 import secrets
 
+# ponytail: este sistema de sesión por cookie está completamente
+# desconectado del resto de la app. Ningún router (/clasificador,
+# /entrenamiento, /reglas, /catalogos, /extraccion) tiene un
+# Depends(...) que verifique esta cookie, y no existe ninguna pieza de
+# frontend (pantalla de login/logout, manejo de la cookie, redirect si
+# no hay sesión) que consuma /auth/login|verify|logout — están huérfanos.
+# Resultado: hoy toda la API de negocio responde sin ninguna protección
+# de acceso. Decisión documentada en docs/07_Roadmaps/01_PLAN_ACCION.md.
+# Upgrade: si se decide cerrar este hueco, hace falta construir la
+# pantalla de login en el frontend Y conectar un Depends(verificar_sesion)
+# a los routers — no basta con "activar" esto porque no hay nada del otro
+# lado que lo use.
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 PASSWORD = os.getenv("AUTH_PASSWORD")

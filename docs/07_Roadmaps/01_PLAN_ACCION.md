@@ -264,6 +264,29 @@ Ramos: **Autos** · GMM · Vida · Daños
 
 ---
 
+## Deuda técnica: API sin autenticación
+
+Confirmado en 2026-09 al evaluar si el nuevo endpoint `GET /clasificador/cola/{id}/pdf`
+debía protegerse: **no hay ninguna autenticación real activa en la API hoy**.
+
+- `api/routers/auth.py` implementa `/auth/login`, `/auth/verify` y `/auth/logout`
+  (cookie de sesión), pero **ningún router los usa** — no hay `Depends(...)` de
+  verificación de sesión en `/clasificador`, `/entrenamiento`, `/reglas`,
+  `/catalogos` ni `/extraccion`, y no hay middleware global que los proteja.
+- El frontend (`web/src/`) **no tiene ninguna pieza** que consuma ese sistema:
+  no existe pantalla de login, no hay manejo de la cookie, no hay redirect si
+  falta sesión. Se verificó con búsqueda exhaustiva — cero archivos con
+  "login"/"auth" en `web/src/`.
+- **Conclusión:** toda la API de negocio responde hoy sin ninguna protección
+  de acceso. El endpoint nuevo de PDFs de `/clasificador/cola/{id}/pdf` se
+  dejó deliberadamente igual de abierto que el resto, por consistencia con
+  el estado actual — no se inventó una protección aislada para un solo
+  endpoint mientras todo lo demás queda expuesto igual.
+- **Para resolverlo de raíz** hace falta un trabajo deliberado y más grande
+  de lo que parece a primera vista: construir la pantalla de login en el
+  frontend (no existe) + conectar `Depends(verificar_sesion)` a los routers
+  de negocio. No es "solo activar" el sistema existente.
+
 ## Referencias
 
 - **Repositorio MOVI:** https://github.com/crickmx/jiromovi
