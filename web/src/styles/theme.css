@@ -1,0 +1,72 @@
+/**
+ * Sistema de theming vía CSS custom properties. El atributo data-theme en
+ * <html> (seteado por ThemeContext) decide qué bloque de variables aplica.
+ *
+ * Alcance actual (retrofit por tandas, en curso):
+ * - Shell (Layout) y LoginPage: 100% temátizados.
+ * - Tanda 1: componentes compartidos (ConfirmDialog, PdfVisor, ColaItemRow).
+ * - Resto de páginas de negocio: aún con clases Tailwind fijas — tandas
+ *   siguientes.
+ *
+ * Principio aplicado en el retrofit: solo se reemplaza el "chrome" genérico
+ * (contenedores, texto por defecto, bordes) que descansa directamente sobre
+ * un fondo que SÍ cambia con el tema. Los bloques de color semántico
+ * autocontenidos (ej. bg-amber-50 + text-amber-800 de una alerta, o los
+ * badges de estado bg-x-100/text-x-700) NO se tocan a propósito: su fondo y
+ * su texto están fijados juntos y siguen siendo legibles entre sí sin
+ * importar el tema de la app alrededor — solo se re-temátiza lo que
+ * quedaría descolgado (texto fijo sobre fondo variable).
+ */
+:root {
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F2F4F7;
+  --color-brand-navy: #072146;
+  --color-brand-blue: #004481;
+  --color-text-primary: #0A0E1A;
+  --color-text-secondary: #4A5568;
+  --color-border: #D9DEE4;
+
+  --color-nav-active-bg: rgba(0, 68, 129, 0.08);
+  --color-nav-active-text: var(--color-brand-blue);
+
+  /* Texto de estado que NO vive dentro de su propio chip/panel con fondo
+     fijo (a diferencia de los badges) — por eso sí necesita adaptarse al
+     tema para no perder contraste sobre --color-bg-primary. */
+  --color-success-text: #15803D;
+  --color-warning-text: #B45309;
+  --color-info-text: #7E22CE;
+  --color-error-text: #DC2626;
+}
+
+[data-theme="dark"] {
+  /* Gris neutro estilo Facebook — el azul queda solo como acento
+     (brand/botones/links), ya no como base de fondos (a diferencia del
+     navy que se usó en la Tanda 1). --color-brand-navy NO vive aquí: solo
+     lo usa LoginPage.css (fuera de alcance), no hay conflicto. */
+  --color-bg-primary: #18191A;
+  --color-bg-secondary: #242526;
+  --color-brand-navy: #072146;
+  --color-brand-blue: #2E86D6;
+  --color-text-primary: #E4E6EB;
+  --color-text-secondary: #B0B3B8;
+  --color-border: #3A3B3C;
+
+  --color-nav-active-bg: rgba(46, 134, 214, 0.18);
+  --color-nav-active-text: var(--color-brand-blue);
+
+  --color-success-text: #4ADE80;
+  --color-warning-text: #FBBF24;
+  --color-info-text: #C084FC;
+  --color-error-text: #F87171;
+}
+
+/* Encabezados de grupo de campos (Reglas.tsx, "DATOS DEL SISTEMA" etc.) —
+   en claro son un pill azul fijo (bg-blue-50/text-blue-700) que se queda
+   intacto; en oscuro ese mismo azul claro choca con el resto del gris
+   neutro, así que aquí se sobreescribe puntualmente sin tocar el bloque
+   :root de arriba. */
+[data-theme="dark"] .campo-grupo-header {
+  background-color: var(--color-bg-secondary);
+  color: var(--color-brand-blue);
+  border-color: var(--color-border);
+}
