@@ -63,12 +63,12 @@ function AliasEditor({
           onChange={(e) => setValor(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') guardar(); if (e.key === 'Escape') cancelar(); }}
           placeholder={`Nombre exportación (default: ${nombreActual})`}
-          className="flex-1 text-xs border border-blue-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          className="flex-1 text-xs border border-blue-300 rounded px-2 py-1 bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400"
         />
         <button onClick={guardar} disabled={guardando} className="p-1 text-emerald-600 hover:text-emerald-800 disabled:opacity-40">
           <Check className="w-3.5 h-3.5" />
         </button>
-        <button onClick={cancelar} className="p-1 text-gray-400 hover:text-gray-600">
+        <button onClick={cancelar} className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -83,9 +83,9 @@ function AliasEditor({
           <span className="font-mono">{aliasActual}</span>
         </span>
       ) : (
-        <span className="text-[10px] text-gray-300">sin alias</span>
+        <span className="text-[10px] text-[var(--color-text-secondary)]">sin alias</span>
       )}
-      <button onClick={abrir} className="ml-1 p-0.5 text-gray-300 hover:text-gray-500 transition-colors">
+      <button onClick={abrir} className="ml-1 p-0.5 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors">
         <Pencil className="w-3 h-3" />
       </button>
     </div>
@@ -128,12 +128,12 @@ export default function Catalogos() {
   return (
     <div className="p-8 space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Catálogos</h1>
-        <p className="text-sm text-gray-500 mt-1">Compañías · Ramos · Subramos — Click en <Pencil className="w-3 h-3 inline" /> para configurar nombre de exportación</p>
+        <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Catálogos</h1>
+        <p className="text-sm text-[var(--color-text-secondary)] mt-1">Compañías · Ramos · Subramos — Click en <Pencil className="w-3 h-3 inline" /> para configurar nombre de exportación</p>
       </div>
 
       {/* Leyenda */}
-      <div className="flex items-center gap-4 flex-wrap text-xs text-gray-500">
+      <div className="flex items-center gap-4 flex-wrap text-xs text-[var(--color-text-secondary)]">
         <div className="flex items-center gap-2">
           <span className="font-medium">Prioridad:</span>
           {[
@@ -154,18 +154,18 @@ export default function Catalogos() {
       <div className="grid grid-cols-3 gap-4">
 
         {/* Compañías */}
-        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <Building2 className="w-4 h-4 text-gray-500" />
-            <h2 className="text-sm font-semibold text-gray-700">Compañías ({companias.length})</h2>
+        <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+            <Building2 className="w-4 h-4 text-[var(--color-text-secondary)]" />
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">Compañías ({companias.length})</h2>
           </div>
-          <ul className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
+          <ul className="divide-y divide-[var(--color-border)] max-h-[520px] overflow-y-auto">
             {companias.map((c) => (
               <li key={c.id} className="px-4 py-2.5">
                 <button
                   onClick={() => setSelCompania(selCompania === c.id ? null : c.id)}
                   className={`w-full flex items-center justify-between text-sm text-left transition-colors rounded px-1 -mx-1 ${
-                    selCompania === c.id ? 'text-blue-700 font-medium' : 'text-gray-700 hover:text-gray-900'
+                    selCompania === c.id ? 'text-[var(--color-brand-blue)] font-medium' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -174,7 +174,7 @@ export default function Catalogos() {
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
                     {c.porcentaje_docs != null && (
-                      <span className="text-[10px] text-gray-400">{(c.porcentaje_docs * 100).toFixed(1)}%</span>
+                      <span className="text-[10px] text-[var(--color-text-secondary)]">{(c.porcentaje_docs * 100).toFixed(1)}%</span>
                     )}
                     <ChevronRight className={`w-3.5 h-3.5 transition-transform ${selCompania === c.id ? 'rotate-90' : ''}`} />
                   </div>
@@ -190,23 +190,23 @@ export default function Catalogos() {
         </div>
 
         {/* Ramos */}
-        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <Tag className="w-4 h-4 text-gray-500" />
-            <h2 className="text-sm font-semibold text-gray-700">
+        <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+            <Tag className="w-4 h-4 text-[var(--color-text-secondary)]" />
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
               {selCompania ? `Ramos de ${compSelObj?.nombre ?? ''} (${ramos.length})` : 'Ramos'}
             </h2>
           </div>
           {!selCompania ? (
-            <p className="px-4 py-8 text-xs text-gray-400 text-center">Selecciona una compañía</p>
+            <p className="px-4 py-8 text-xs text-[var(--color-text-secondary)] text-center">Selecciona una compañía</p>
           ) : (
-            <ul className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
+            <ul className="divide-y divide-[var(--color-border)] max-h-[520px] overflow-y-auto">
               {ramos.map((r) => (
                 <li key={r.id} className="px-4 py-2.5">
                   <button
                     onClick={() => setSelRamo(selRamo === r.id ? null : r.id)}
                     className={`w-full flex items-center justify-between text-sm text-left transition-colors rounded px-1 -mx-1 ${
-                      selRamo === r.id ? 'text-blue-700 font-medium' : 'text-gray-700 hover:text-gray-900'
+                      selRamo === r.id ? 'text-[var(--color-brand-blue)] font-medium' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
                     }`}
                   >
                     <span>{r.nombre}</span>
@@ -224,23 +224,23 @@ export default function Catalogos() {
         </div>
 
         {/* Subramos */}
-        <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-100 bg-gray-50">
-            <Layers className="w-4 h-4 text-gray-500" />
-            <h2 className="text-sm font-semibold text-gray-700">
+        <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
+            <Layers className="w-4 h-4 text-[var(--color-text-secondary)]" />
+            <h2 className="text-sm font-semibold text-[var(--color-text-primary)]">
               {selRamo ? `Subramos (${subramos.length})` : 'Subramos'}
             </h2>
           </div>
           {!selRamo ? (
-            <p className="px-4 py-8 text-xs text-gray-400 text-center">Selecciona un ramo</p>
+            <p className="px-4 py-8 text-xs text-[var(--color-text-secondary)] text-center">Selecciona un ramo</p>
           ) : (
-            <ul className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
+            <ul className="divide-y divide-[var(--color-border)] max-h-[520px] overflow-y-auto">
               {subramos.map((s) => (
                 <li key={s.id} className="px-4 py-3">
                   <div className="flex items-center justify-between mb-0.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <PrioridadBadge prioridad={s.prioridad} />
-                      <span className="text-sm text-gray-700 truncate">{s.nombre}</span>
+                      <span className="text-sm text-[var(--color-text-primary)] truncate">{s.nombre}</span>
                     </div>
                     <span className={`ml-2 text-xs font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
                       s.cobertura.porcentaje === 100 ? 'bg-emerald-100 text-emerald-700' :
@@ -257,18 +257,18 @@ export default function Catalogos() {
                   />
                   {s.porcentaje_docs != null && s.porcentaje_docs > 0 && (
                     <div className="flex items-center gap-2 mt-1.5">
-                      <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="flex-1 h-1 bg-[var(--color-bg-secondary)] rounded-full overflow-hidden">
                         <div
-                          className="h-full bg-blue-400 rounded-full"
+                          className="h-full bg-[var(--color-brand-blue)] rounded-full"
                           style={{ width: `${Math.min(100, s.porcentaje_docs * 100 / 0.4)}%` }}
                         />
                       </div>
-                      <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                      <span className="text-[10px] text-[var(--color-text-secondary)] whitespace-nowrap">
                         {(s.porcentaje_docs * 100).toFixed(2)}% docs
                       </span>
                     </div>
                   )}
-                  <p className="text-[10px] text-gray-400 mt-0.5">
+                  <p className="text-[10px] text-[var(--color-text-secondary)] mt-0.5">
                     {s.cobertura.campos_con_regla}/{s.cobertura.total_campos} campos con regla
                   </p>
                 </li>

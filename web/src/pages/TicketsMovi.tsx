@@ -45,31 +45,31 @@ function TicketCard({ ticket, companias }: { ticket: TicketExterno; companias: C
   const pct = ticket.total_pdfs ? Math.round((procesados / ticket.total_pdfs) * 100) : 0;
 
   return (
-    <div className="border border-gray-200 rounded-2xl bg-white shadow-sm overflow-hidden">
+    <div className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-bg-primary)] shadow-sm overflow-hidden">
       <button
         onClick={toggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-secondary)] transition-colors"
       >
-        {abierto ? <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+        {abierto ? <ChevronDown className="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" />}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-gray-800">Ticket #{ticket.folio}</p>
-          <p className="text-xs text-gray-400 mt-0.5">{fecha}</p>
+          <p className="text-sm font-semibold text-[var(--color-text-primary)]">Ticket #{ticket.folio}</p>
+          <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{fecha}</p>
         </div>
         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 flex-shrink-0">
           {ticket.origen}
         </span>
         <div className="w-40 flex-shrink-0">
-          <p className="text-xs text-gray-600 text-right mb-1">{ticket.resumen}</p>
-          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-            <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+          <p className="text-xs text-[var(--color-text-secondary)] text-right mb-1">{ticket.resumen}</p>
+          <div className="h-1.5 bg-[var(--color-bg-secondary)] rounded-full overflow-hidden">
+            <div className="h-full bg-[var(--color-brand-blue)] rounded-full" style={{ width: `${pct}%` }} />
           </div>
         </div>
       </button>
 
       {abierto && (
-        <div className="px-4 pb-4 space-y-3 border-t border-gray-100 pt-3">
+        <div className="px-4 pb-4 space-y-3 border-t border-[var(--color-border)] pt-3">
           {cargando && (
-            <div className="flex items-center gap-2 text-sm text-gray-400 py-4 justify-center">
+            <div className="flex items-center gap-2 text-sm text-[var(--color-text-secondary)] py-4 justify-center">
               <RefreshCw className="w-4 h-4 animate-spin" /> Cargando ticket…
             </div>
           )}
@@ -124,15 +124,15 @@ export default function TicketsMovi() {
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-bold text-gray-900">Tickets MOVI</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Tickets MOVI</h1>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-0.5">
             PDFs que MOVI (CRM BETA) envía agrupados por ticket cuando su extractor no logra procesarlos.
           </p>
         </div>
         <button
           onClick={cargar}
           disabled={cargando}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)] hover:opacity-80 rounded-lg transition-colors"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${cargando ? 'animate-spin' : ''}`} />
           Actualizar
@@ -140,7 +140,7 @@ export default function TicketsMovi() {
       </div>
 
       {!cargando && tickets.length === 0 && (
-        <div className="text-center py-12 text-gray-400">
+        <div className="text-center py-12 text-[var(--color-text-secondary)]">
           <Inbox className="w-10 h-10 mx-auto mb-3 opacity-30" />
           <p className="text-sm">No hay tickets recibidos todavía.</p>
         </div>
