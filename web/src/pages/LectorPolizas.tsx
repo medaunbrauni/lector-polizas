@@ -36,10 +36,10 @@ const BADGE_COMPANIA: Record<string, string> = {
 };
 
 const CONFIANZA_BADGE: Record<NivelConfianza, { cls: string; icon: React.ReactNode; label: string }> = {
-  alta:      { cls: 'text-emerald-600', icon: <ShieldCheck className="w-3 h-3" />, label: 'Alta' },
-  media:     { cls: 'text-amber-500',   icon: <Shield      className="w-3 h-3" />, label: 'Media' },
-  baja:      { cls: 'text-red-500',     icon: <ShieldAlert className="w-3 h-3" />, label: 'Baja' },
-  sin_datos: { cls: 'text-gray-400',    icon: <ShieldOff   className="w-3 h-3" />, label: '?' },
+  alta:      { cls: 'text-[var(--color-success-text)]', icon: <ShieldCheck className="w-3 h-3" />, label: 'Alta' },
+  media:     { cls: 'text-[var(--color-warning-text)]', icon: <Shield      className="w-3 h-3" />, label: 'Media' },
+  baja:      { cls: 'text-[var(--color-error-text)]',   icon: <ShieldAlert className="w-3 h-3" />, label: 'Baja' },
+  sin_datos: { cls: 'text-[var(--color-text-secondary)]', icon: <ShieldOff className="w-3 h-3" />, label: '?' },
 };
 
 function badgeCompania(compania?: string) {
@@ -478,16 +478,16 @@ export default function LectorPolizas() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-[var(--color-bg-secondary)]">
       {/* ── Header ── */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+      <header className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-blue-600 rounded-xl">
             <Car className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-gray-900">Lector de Pólizas</h1>
-            <p className="text-xs text-gray-500">GNP · Quálitas · ANA · HDI · Banorte · El Potosí y más</p>
+            <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Lector de Pólizas</h1>
+            <p className="text-xs text-[var(--color-text-secondary)]">GNP · Quálitas · ANA · HDI · Banorte · El Potosí y más</p>
           </div>
         </div>
         {totalAcumulado > 0 && (
@@ -510,7 +510,7 @@ export default function LectorPolizas() {
           onClick={() => !procesando && inputRef.current?.click()}
           className={`
             border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all
-            ${dragActive ? 'border-blue-500 bg-blue-50 scale-[1.01]' : 'border-gray-200 hover:border-blue-400 hover:bg-gray-50'}
+            ${dragActive ? 'border-blue-500 bg-blue-50 scale-[1.01]' : 'border-[var(--color-border)] hover:border-[var(--color-brand-blue)] hover:bg-[var(--color-bg-secondary)]'}
             ${procesando ? 'pointer-events-none opacity-70' : ''}
           `}
         >
@@ -520,28 +520,28 @@ export default function LectorPolizas() {
           {procesando ? (
             <div className="flex flex-col items-center gap-3">
               <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
-              <p className="font-semibold text-gray-700">{procesandoMsg}</p>
-              <p className="text-xs text-gray-400">
+              <p className="font-semibold text-[var(--color-text-primary)]">{procesandoMsg}</p>
+              <p className="text-xs text-[var(--color-text-secondary)]">
                 El sistema detecta compañía · ramo · subramo y genera reglas si son necesarias
               </p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <div className="p-4 bg-gray-100 rounded-2xl">
-                <FileUp className="w-8 h-8 text-gray-400" />
+              <div className="p-4 bg-[var(--color-bg-secondary)] rounded-2xl">
+                <FileUp className="w-8 h-8 text-[var(--color-text-secondary)]" />
               </div>
-              <p className="font-semibold text-gray-700">Arrastra archivos PDF aquí</p>
-              <p className="text-sm text-gray-400">o haz clic para seleccionar · Múltiples archivos permitidos</p>
+              <p className="font-semibold text-[var(--color-text-primary)]">Arrastra archivos PDF aquí</p>
+              <p className="text-sm text-[var(--color-text-secondary)]">o haz clic para seleccionar · Múltiples archivos permitidos</p>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); inputRef.current?.click(); }}
-                className="mt-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors"
+                className="mt-2 px-5 py-2.5 bg-[var(--color-brand-blue)] hover:opacity-90 text-white rounded-xl text-sm font-medium transition-opacity"
               >
                 <Upload className="w-4 h-4 inline mr-1.5" />
                 Seleccionar Archivos
               </button>
               {limiteAlcanzado && (
-                <p className="text-xs text-amber-600 font-medium">
+                <p className="text-xs text-[var(--color-warning-text)] font-medium">
                   Límite de {MAX_PDFS_ACUMULADOS} PDFs alcanzado — usa "Limpiar interfaz" para subir más.
                 </p>
               )}
@@ -581,7 +581,7 @@ export default function LectorPolizas() {
                 )}
                 <button
                   onClick={limpiarInterfaz}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 hover:bg-gray-100 text-gray-700 rounded-xl text-sm font-medium transition-colors"
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-bg-primary)] border border-[var(--color-border)] hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] rounded-xl text-sm font-medium transition-colors"
                   title="Borra todas las tandas de la vista y del almacenamiento local"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -630,7 +630,7 @@ export default function LectorPolizas() {
       {/* ── Toast: informativo, no bloqueante ── */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 max-w-sm">
-          <div className="flex items-start gap-3 p-4 bg-gray-900 text-white rounded-xl shadow-lg">
+          <div className="flex items-start gap-3 p-4 bg-gray-900 border border-[var(--color-border)] text-white rounded-xl shadow-lg">
             <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
             <p className="text-sm flex-1">{toast}</p>
             <button onClick={() => setToast(null)} className="flex-shrink-0">
@@ -683,17 +683,17 @@ function ExportarModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-        <div className="px-5 py-4 border-b border-gray-100">
-          <h3 className="text-sm font-semibold text-gray-900">¿Qué tandas quieres exportar?</h3>
-          <p className="text-xs text-gray-500 mt-0.5">Elige una o varias de las tandas visibles en pantalla.</p>
+      <div className="bg-[var(--color-bg-primary)] rounded-2xl shadow-xl w-full max-w-md">
+        <div className="px-5 py-4 border-b border-[var(--color-border)]">
+          <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">¿Qué tandas quieres exportar?</h3>
+          <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">Elige una o varias de las tandas visibles en pantalla.</p>
         </div>
 
         <div className="px-5 py-3 max-h-80 overflow-y-auto space-y-1.5">
           {tandas.map((t, idx) => (
             <label
               key={t.id}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer transition-colors"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-[var(--color-border)] hover:bg-[var(--color-bg-secondary)] cursor-pointer transition-colors"
             >
               <input
                 type="checkbox"
@@ -701,7 +701,7 @@ function ExportarModal({
                 onChange={() => { onToggle(t.id); setErrorMsg(null); }}
                 className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-400"
               />
-              <span className="text-sm text-gray-700">
+              <span className="text-sm text-[var(--color-text-primary)]">
                 Tanda {idx + 1} · {new Date(t.timestamp).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })} ·{' '}
                 {t.resultados.length} archivo{t.resultados.length !== 1 ? 's' : ''}
               </span>
@@ -713,10 +713,10 @@ function ExportarModal({
           <p className="px-5 text-xs text-red-600">{errorMsg}</p>
         )}
 
-        <div className="px-5 py-4 flex items-center justify-end gap-2 border-t border-gray-100 mt-2">
+        <div className="px-5 py-4 flex items-center justify-end gap-2 border-t border-[var(--color-border)] mt-2">
           <button
             onClick={onCancelar}
-            className="px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 rounded-xl transition-colors"
+            className="px-4 py-2 text-sm font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] rounded-xl transition-colors"
           >
             Cancelar
           </button>
@@ -765,10 +765,10 @@ function TandaSeccion({
   const sinSubramo    = resultados.filter((r) => r.compania && !r.subramo && !r.error);
 
   return (
-    <div className="space-y-3 pt-2 border-t border-gray-200 first:border-t-0 first:pt-0">
+    <div className="space-y-3 pt-2 border-t border-[var(--color-border)] first:border-t-0 first:pt-0">
       {/* ── Encabezado de la tanda ── */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-sm font-semibold text-gray-500">
+        <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
           Tanda {numero} · {new Date(tanda.timestamp).toLocaleTimeString('es-MX')}
         </h2>
         <div className="flex gap-3 flex-wrap">
@@ -788,7 +788,7 @@ function TandaSeccion({
           )}
           <button
             onClick={onEliminarTanda}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-500/10 rounded-lg transition-colors"
             title="Elimina esta tanda completa de la vista y del almacenamiento local"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -890,11 +890,11 @@ function TandaSeccion({
       )}
 
       {/* ── Tabla de resultados de esta tanda ── */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+      <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
+              <tr className="bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
                 <th className="px-3 py-3 w-8">
                   <input
                     type="checkbox"
@@ -911,11 +911,11 @@ function TandaSeccion({
                   />
                 </th>
                 {['Archivo', 'Compañía / Detección', 'N. Póliza', 'Cliente', 'Placas', 'Prima Total', 'Vigencia', 'Método', 'Estado', ''].map((h) => (
-                  <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-3 py-3 text-left text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100">
+            <tbody className="divide-y divide-[var(--color-border)]">
               {resultados.map((r, i) => {
                 const det     = r.deteccion;
                 const conf    = det?.confianza ?? 'sin_datos';
@@ -927,7 +927,7 @@ function TandaSeccion({
                 return (
                   <>
                     {/* ── Main row ── */}
-                    <tr key={`row-${i}`} className={`hover:bg-gray-50 transition-colors ${enCorr ? 'bg-blue-50/40' : ''}`}>
+                    <tr key={`row-${i}`} className={`hover:bg-[var(--color-bg-secondary)] transition-colors ${enCorr ? 'bg-blue-50/40' : ''}`}>
                       {/* Checkbox de selección para borrado individual */}
                       <td className="px-3 py-2.5">
                         <input
@@ -938,7 +938,7 @@ function TandaSeccion({
                         />
                       </td>
                       {/* Archivo */}
-                      <td className="px-3 py-2.5 text-xs font-medium text-gray-800 max-w-[140px]">
+                      <td className="px-3 py-2.5 text-xs font-medium text-[var(--color-text-primary)] max-w-[140px]">
                         <p className="truncate">{r.archivo}</p>
                       </td>
 
@@ -947,20 +947,20 @@ function TandaSeccion({
                         <div className="flex flex-col gap-0.5">
                           {r.compania
                             ? <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold self-start ${badgeCompania(r.compania)}`}>{r.compania}</span>
-                            : <span className="text-xs text-gray-400">No detectada</span>}
+                            : <span className="text-xs text-[var(--color-text-secondary)]">No detectada</span>}
                           {r.ramo && (
-                            <span className="text-[10px] text-gray-500">{r.ramo}{r.subramo ? ` › ${r.subramo}` : <span className="text-amber-500 ml-1">(sin subramo)</span>}</span>
+                            <span className="text-[10px] text-[var(--color-text-secondary)]">{r.ramo}{r.subramo ? ` › ${r.subramo}` : <span className="text-[var(--color-warning-text)] ml-1">(sin subramo)</span>}</span>
                           )}
                           <div className={`flex items-center gap-1 text-[10px] font-medium ${confCfg.cls}`}>
                             {confCfg.icon}
                             <span>{confCfg.label}</span>
                             {det && (
-                              <span className="text-gray-400 font-normal">
+                              <span className="text-[var(--color-text-secondary)] font-normal">
                                 · {det.score_compania}+{det.score_ramo}+{det.score_subramo} pts
                               </span>
                             )}
                             {det?.patrones_generados && (
-                              <span className="text-purple-500 flex items-center gap-0.5 ml-1">
+                              <span className="text-[var(--color-info-text)] flex items-center gap-0.5 ml-1">
                                 <Sparkles className="w-2.5 h-2.5" />nuevas reglas
                               </span>
                             )}
@@ -969,19 +969,19 @@ function TandaSeccion({
                       </td>
 
                       {/* Campos — nombres canónicos post-migración */}
-                      <td className="px-3 py-2.5 text-xs text-gray-600 font-mono">
+                      <td className="px-3 py-2.5 text-xs text-[var(--color-text-secondary)] font-mono">
                         {r.campos?.documento?.valor || r.campos?.numero_poliza?.valor || '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-600 max-w-[160px] truncate">
+                      <td className="px-3 py-2.5 text-xs text-[var(--color-text-secondary)] max-w-[160px] truncate">
                         {r.campos?.nombre_cliente?.valor || '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-600 font-mono">
+                      <td className="px-3 py-2.5 text-xs text-[var(--color-text-secondary)] font-mono">
                         {r.campos?.placas?.valor || '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-xs font-semibold text-gray-800">
+                      <td className="px-3 py-2.5 text-xs font-semibold text-[var(--color-text-primary)]">
                         {r.campos?.prima_total?.valor || '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-xs text-gray-500">
+                      <td className="px-3 py-2.5 text-xs text-[var(--color-text-secondary)]">
                         {(r.campos?.desde?.valor || r.campos?.inicio_vigencia?.valor) &&
                          (r.campos?.hasta?.valor || r.campos?.fin_vigencia?.valor)
                           ? `${r.campos?.desde?.valor ?? r.campos?.inicio_vigencia?.valor} – ${r.campos?.hasta?.valor ?? r.campos?.fin_vigencia?.valor}`
@@ -989,8 +989,8 @@ function TandaSeccion({
                       </td>
                       <td className="px-3 py-2.5">
                         {r.stats?.por_ia > 0
-                          ? <span className="inline-flex items-center gap-1 text-[10px] text-purple-600 font-medium"><Cpu className="w-3 h-3" />IA ({r.stats.por_ia})</span>
-                          : <span className="text-[10px] text-gray-400">Regla ({r.stats?.por_regla ?? 0})</span>}
+                          ? <span className="inline-flex items-center gap-1 text-[10px] text-[var(--color-info-text)] font-medium"><Cpu className="w-3 h-3" />IA ({r.stats.por_ia})</span>
+                          : <span className="text-[10px] text-[var(--color-text-secondary)]">Regla ({r.stats?.por_regla ?? 0})</span>}
                       </td>
                       <td className="px-3 py-2.5">
                         {r.error
@@ -1000,13 +1000,13 @@ function TandaSeccion({
                       {/* Acciones */}
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          <button onClick={() => onVerDetalle(i)} className="text-blue-600 hover:text-blue-800 text-xs font-medium inline-flex items-center gap-1">
+                          <button onClick={() => onVerDetalle(i)} className="text-[var(--color-brand-blue)] hover:opacity-80 text-xs font-medium inline-flex items-center gap-1">
                             <Eye className="w-3.5 h-3.5" />Ver
                           </button>
                           {!r.error && r.id != null && (
                             <button
                               onClick={() => onEntrarCorreccion(i, r)}
-                              className={`text-xs font-medium inline-flex items-center gap-1 transition-colors ${enCorr ? 'text-blue-700 font-semibold' : 'text-gray-400 hover:text-gray-700'}`}
+                              className={`text-xs font-medium inline-flex items-center gap-1 transition-colors ${enCorr ? 'text-[var(--color-brand-blue)] font-semibold' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
                               title="Seleccionar subramo manualmente y re-extraer"
                             >
                               <PenLine className="w-3.5 h-3.5" />
@@ -1086,7 +1086,7 @@ function TandaSeccion({
                                 <button
                                   onClick={() => onAplicarCorreccion(i, r)}
                                   disabled={!cs.subramoId || cs.cargando}
-                                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-colors"
+                                  className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-[var(--color-brand-blue)] hover:opacity-90 disabled:opacity-50 text-white text-xs font-semibold rounded-lg transition-opacity"
                                 >
                                   {cs.cargando
                                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Aplicando…</>
@@ -1117,7 +1117,7 @@ function TandaSeccion({
 
 function Chip({ icon, label, color }: { icon: React.ReactNode; label: string; color: 'gray' | 'green' | 'red' | 'purple' }) {
   const cls = {
-    gray:   'bg-gray-100 text-gray-600',
+    gray:   'bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]',
     green:  'bg-emerald-50 text-emerald-700',
     red:    'bg-red-50 text-red-700',
     purple: 'bg-purple-50 text-purple-700',
