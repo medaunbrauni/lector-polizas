@@ -1,5 +1,33 @@
 const BASE = '/api';
 
+// ── Auth ─────────────────────────────────────────────────────────────────────
+// La cookie de sesión (httponly) la maneja el navegador solo — nunca se lee
+// ni se guarda el token a mano aquí. credentials: 'include' es explícito por
+// robustez (hoy el dev proxy de Vite hace que todo sea same-origin, donde ya
+// viaja por default, pero así queda a prueba de un despliegue futuro donde
+// frontend y backend vivan en subdominios distintos).
+
+export async function verifySession(): Promise<boolean> {
+  const res = await fetch(`${BASE}/auth/verify`, { credentials: 'include' });
+  return res.ok;
+}
+
+export async function loginRequest(password: string): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok && data.ok) return { ok: true };
+  return { ok: false, error: data.error ?? 'Error al iniciar sesión' };
+}
+
+export async function logoutRequest(): Promise<void> {
+  await fetch(`${BASE}/auth/logout`, { method: 'POST', credentials: 'include' });
+}
+
 export async function extraerPolizas(files: File[]) {
   const form = new FormData();
   files.forEach((f) => form.append('files', f));
