@@ -21,27 +21,27 @@ import { AlertTriangle, CheckCircle2, Info, XCircle, X } from 'lucide-react';
 export type ConfirmVariant = 'success' | 'info' | 'warning' | 'error';
 
 const VARIANTES: Record<ConfirmVariant, {
-  bg: string; border: string; iconBg: string; iconColor: string;
+  border: string; iconBg: string; iconColor: string;
   icon: React.FC<{ className?: string }>;
   botonDefault: string;
 }> = {
   success: {
-    bg: 'bg-emerald-50', border: 'border-emerald-200',
+    border: 'border-emerald-200',
     iconBg: 'bg-emerald-100', iconColor: 'text-emerald-600',
     icon: CheckCircle2, botonDefault: 'bg-emerald-600 hover:bg-emerald-700',
   },
   info: {
-    bg: 'bg-blue-50', border: 'border-blue-200',
+    border: 'border-blue-200',
     iconBg: 'bg-blue-100', iconColor: 'text-blue-600',
     icon: Info, botonDefault: 'bg-blue-600 hover:bg-blue-700',
   },
   warning: {
-    bg: 'bg-amber-50', border: 'border-amber-200',
+    border: 'border-amber-200',
     iconBg: 'bg-amber-100', iconColor: 'text-amber-600',
     icon: AlertTriangle, botonDefault: 'bg-amber-600 hover:bg-amber-700',
   },
   error: {
-    bg: 'bg-red-50', border: 'border-red-200',
+    border: 'border-red-200',
     iconBg: 'bg-red-100', iconColor: 'text-red-600',
     icon: XCircle, botonDefault: 'bg-red-600 hover:bg-red-700',
   },
@@ -89,7 +89,7 @@ export default function ConfirmDialog({
       onClick={onCancel}
     >
       <div
-        className={`w-full max-w-sm rounded-2xl border ${v.border} ${v.bg} shadow-xl p-4`}
+        className={`w-full max-w-sm rounded-2xl border ${v.border} bg-[var(--color-bg-primary)] shadow-xl p-4`}
         onClick={(e) => e.stopPropagation()}
         role="alertdialog"
         aria-modal="true"
@@ -99,12 +99,12 @@ export default function ConfirmDialog({
             <Icon className={`w-5 h-5 ${v.iconColor}`} />
           </div>
           <div className="flex-1 min-w-0 pt-0.5">
-            <p className="text-sm font-bold text-gray-900">{title}</p>
-            <p className="text-xs text-gray-600 mt-1 leading-snug">{message}</p>
+            <p className="text-sm font-bold text-[var(--color-text-primary)]">{title}</p>
+            <p className="text-xs text-[var(--color-text-secondary)] mt-1 leading-snug">{message}</p>
           </div>
           <button
             onClick={onCancel}
-            className="flex-shrink-0 text-gray-400 hover:text-gray-600 transition-colors"
+            className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
             aria-label="Cerrar"
           >
             <X className="w-4 h-4" />
@@ -115,7 +115,7 @@ export default function ConfirmDialog({
           <button
             onClick={onCancel}
             disabled={procesando}
-            className="px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-white/60 rounded-lg transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 text-xs font-semibold text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] rounded-lg transition-colors disabled:opacity-50"
           >
             {cancelLabel}
           </button>

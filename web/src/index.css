@@ -3,5 +3,7 @@
 @tailwind utilities;
 
 body {
-  @apply bg-gray-50 text-gray-900 antialiased;
+  @apply antialiased;
+  background-color: var(--color-bg-secondary);
+  color: var(--color-text-primary);
 }
