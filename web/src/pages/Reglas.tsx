@@ -753,7 +753,7 @@ export default function Reglas() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-gray-50">
+    <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-secondary)]">
 
       <ConfirmDialog
         open={mostrarConfirmVaciar}
@@ -782,10 +782,10 @@ export default function Reglas() {
       </DismissibleAlert>
 
       {/* ── Header ── */}
-      <div className="px-6 py-4 bg-white border-b border-gray-200 flex items-center gap-4 flex-wrap">
+      <div className="px-6 py-4 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-4 flex-wrap">
         <div>
-          <h1 className="text-lg font-bold text-gray-900">Entrenador PDFs</h1>
-          <p className="text-xs text-gray-400">
+          <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Entrenador PDFs</h1>
+          <p className="text-xs text-[var(--color-text-secondary)]">
             {tabActivo === 'clasificador'
               ? 'Sube pólizas, clasifícalas con IA y envíalas al entrenamiento automáticamente'
               : 'Sube pólizas, selecciona valores, genera regex que funcionen en todo el lote'}
@@ -793,13 +793,13 @@ export default function Reglas() {
         </div>
 
         {/* ── Tabs ── */}
-        <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+        <div className="flex items-center gap-1 bg-[var(--color-bg-secondary)] rounded-xl p-1">
           <button
             onClick={() => setTabActivo('clasificador')}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               tabActivo === 'clasificador'
-                ? 'bg-white text-blue-700 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-[var(--color-bg-primary)] text-[var(--color-brand-blue)] shadow-sm'
+                : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
             Clasificador
@@ -808,8 +808,8 @@ export default function Reglas() {
             onClick={() => setTabActivo('reglas')}
             className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
               tabActivo === 'reglas'
-                ? 'bg-white text-blue-700 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'bg-[var(--color-bg-primary)] text-[var(--color-brand-blue)] shadow-sm'
+                : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
             }`}
           >
             Entrenamiento
@@ -829,7 +829,7 @@ export default function Reglas() {
               {detectando ? 'Analizando…' : 'Detectar con PDF'}
             </button>
             {detectMsg && (
-              <span className={`text-xs font-medium ${detectMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>
+              <span className={`text-xs font-medium ${detectMsg.ok ? 'text-[var(--color-success-text)]' : 'text-[var(--color-error-text)]'}`}>
                 {detectMsg.ok ? '✓' : '✕'} {detectMsg.texto}
               </span>
             )}
@@ -848,19 +848,19 @@ export default function Reglas() {
       {tabActivo === 'reglas' && (<>
 
       {/* ── Selector compañía / ramo / subramo ── */}
-      <div className="px-6 py-3 bg-white border-b border-gray-100 flex gap-3">
+      <div className="px-6 py-3 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex gap-3">
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Compañía…</option>
           {companias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
         </select>
         <select value={selRamo} onChange={(e) => setSelRamo(e.target.value)}
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Ramo…</option>
           {ramos.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
         </select>
         <select value={selSubramo} onChange={(e) => setSelSubramo(e.target.value)}
-          className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+          className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Subramo…</option>
           {subramos.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
         </select>
@@ -891,7 +891,7 @@ export default function Reglas() {
       )}
 
       {!selSubramo ? (
-        <div className="flex-1 flex items-center justify-center text-gray-400">
+        <div className="flex-1 flex items-center justify-center text-[var(--color-text-secondary)]">
           <div className="text-center">
             <Zap className="w-8 h-8 mx-auto mb-3 opacity-30" />
             <p className="text-sm">Selecciona Compañía → Ramo → Subramo para empezar</p>
@@ -901,20 +901,20 @@ export default function Reglas() {
         <div ref={filaPanelesRef} className="flex flex-1 min-h-0 overflow-hidden">
 
           {/* ══ Panel izquierdo: Lote de pólizas ══ */}
-          <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-white border-r border-gray-200 flex flex-col">
-            <div className="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+          <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
+            <div className="px-3 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
+              <span className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">
                 Lote de pólizas
               </span>
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] text-gray-400 font-medium bg-gray-100 px-1.5 py-0.5 rounded-full">
+                <span className="text-[10px] text-[var(--color-text-secondary)] font-medium bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded-full">
                   {polizas.length} / 5
                 </span>
                 {polizas.length > 0 && (
                   <button
                     onClick={handleVaciarLote}
                     title="Vaciar lote de pólizas"
-                    className="text-gray-300 hover:text-red-500 transition-colors"
+                    className="text-[var(--color-text-secondary)] hover:text-red-500 transition-colors"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -923,7 +923,7 @@ export default function Reglas() {
             </div>
 
             {/* Upload */}
-            <div className="p-3 border-b border-gray-100">
+            <div className="p-3 border-b border-[var(--color-border)]">
               <input
                 ref={loteInputRef} type="file" accept=".pdf" multiple className="hidden"
                 onChange={handleSubirPolizas}
@@ -931,7 +931,7 @@ export default function Reglas() {
               <button
                 onClick={() => loteInputRef.current?.click()}
                 disabled={subiendo}
-                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-dashed border-gray-300 hover:border-blue-400 hover:bg-blue-50 disabled:opacity-50 rounded-lg text-xs font-medium text-gray-600 hover:text-blue-600 transition-colors"
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 border-2 border-dashed border-[var(--color-border)] hover:border-[var(--color-brand-blue)] hover:bg-blue-500/10 disabled:opacity-50 rounded-lg text-xs font-medium text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] transition-colors"
               >
                 <Upload className="w-3.5 h-3.5" />
                 {subiendo ? 'Subiendo…' : 'Agregar PDFs'}
@@ -939,9 +939,9 @@ export default function Reglas() {
             </div>
 
             {/* Lista de pólizas */}
-            <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+            <div className="flex-1 overflow-y-auto divide-y divide-[var(--color-border)]">
               {polizas.length === 0 && (
-                <div className="p-4 text-center text-xs text-gray-400">
+                <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
                   Sin pólizas. Agrega al menos una para empezar.
                 </div>
               )}
@@ -953,21 +953,21 @@ export default function Reglas() {
                     key={p.id}
                     onClick={() => setPolizaIdx(idx)}
                     className={`px-3 py-2.5 cursor-pointer transition-colors flex items-start gap-2 ${
-                      idx === polizaIdx ? 'bg-blue-50 border-l-2 border-blue-500' : 'hover:bg-gray-50'
+                      idx === polizaIdx ? 'bg-[var(--color-nav-active-bg)] border-l-2 border-[var(--color-brand-blue)]' : 'hover:bg-[var(--color-bg-secondary)]'
                     }`}
                   >
-                    <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
+                    <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-text-secondary)]" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-gray-800 truncate leading-tight">
+                      <p className="text-xs font-medium text-[var(--color-text-primary)] truncate leading-tight">
                         {p.nombre_archivo}
                       </p>
                       <div className="flex items-center justify-between mt-0.5">
-                        <span className="text-[10px] text-gray-400">
+                        <span className="text-[10px] text-[var(--color-text-secondary)]">
                           {p.paginas ? `${p.paginas} págs.` : '–'}
                         </span>
                         <span className={`text-[10px] font-medium ${
                           selCount === totalCampos && totalCampos > 0
-                            ? 'text-emerald-600' : 'text-gray-400'
+                            ? 'text-[var(--color-success-text)]' : 'text-[var(--color-text-secondary)]'
                         }`}>
                           {selCount}/{totalCampos} campos
                         </span>
@@ -975,7 +975,7 @@ export default function Reglas() {
                     </div>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleEliminarPoliza(p.id); }}
-                      className="flex-shrink-0 text-gray-300 hover:text-red-500 transition-colors mt-0.5"
+                      className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-red-500 transition-colors mt-0.5"
                     >
                       <Trash2 className="w-3 h-3" />
                     </button>
@@ -996,37 +996,37 @@ export default function Reglas() {
 
             {/* Barra de navegación del visor */}
             {polizaActiva && (
-              <div className="px-4 py-2 bg-white border-b border-gray-100 flex items-center gap-3">
+              <div className="px-4 py-2 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-3">
                 <button
                   onClick={() => setPolizaIdx((i) => Math.max(0, i - 1))}
                   disabled={polizaIdx === 0}
-                  className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-colors"
+                  className="p-1 rounded hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 transition-colors text-[var(--color-text-secondary)]"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-xs font-medium text-gray-700 flex-1 text-center truncate">
+                <span className="text-xs font-medium text-[var(--color-text-primary)] flex-1 text-center truncate">
                   {polizaActiva.nombre_archivo}
-                  <span className="text-gray-400 ml-2">({polizaIdx + 1} / {polizas.length})</span>
+                  <span className="text-[var(--color-text-secondary)] ml-2">({polizaIdx + 1} / {polizas.length})</span>
                 </span>
                 <button
                   onClick={() => setPolizaIdx((i) => Math.min(polizas.length - 1, i + 1))}
                   disabled={polizaIdx === polizas.length - 1}
-                  className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-colors"
+                  className="p-1 rounded hover:bg-[var(--color-bg-secondary)] disabled:opacity-30 transition-colors text-[var(--color-text-secondary)]"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
 
                 {/* Toggle PDF texto / Imagen */}
-                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs">
+                <div className="flex rounded-lg border border-[var(--color-border)] overflow-hidden text-xs">
                   <button
                     onClick={() => setModoImagen(false)}
-                    className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${!modoImagen ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                    className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${!modoImagen ? 'bg-[var(--color-brand-blue)] text-white' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'}`}
                   >
                     <FileText className="w-3 h-3" />PDF
                   </button>
                   <button
                     onClick={() => setModoImagen(true)}
-                    className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${modoImagen ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+                    className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${modoImagen ? 'bg-[var(--color-brand-blue)] text-white' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'}`}
                   >
                     <Image className="w-3 h-3" />Imagen
                   </button>
@@ -1035,7 +1035,7 @@ export default function Reglas() {
                 {/* Toggle texto extraído */}
                 <button
                   onClick={() => setMostrarTexto((v) => !v)}
-                  className={`px-2.5 py-1 rounded-lg text-xs flex items-center gap-1 transition-colors border ${mostrarTexto ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                  className={`px-2.5 py-1 rounded-lg text-xs flex items-center gap-1 transition-colors border ${mostrarTexto ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'}`}
                 >
                   <FileText className="w-3 h-3" />
                   Texto extraído
@@ -1058,11 +1058,11 @@ export default function Reglas() {
               onMouseUp={(!modoImagen && polizaActiva) ? handleSeleccion : undefined}
             >
               {!polizaActiva ? (
-                <div className="absolute inset-0 flex items-center justify-center text-gray-400 text-sm bg-gray-200">
+                <div className="absolute inset-0 flex items-center justify-center text-[var(--color-text-secondary)] text-sm bg-[var(--color-bg-secondary)]">
                   Agrega pólizas al lote para empezar
                 </div>
               ) : modoImagen ? (
-                <div className="absolute inset-0 overflow-y-auto bg-gray-200">
+                <div className="absolute inset-0 overflow-y-auto bg-[var(--color-bg-secondary)]">
                   <VisorImagen
                     polizaId={polizaActiva.id}
                     page={paginaImagen}
@@ -1095,7 +1095,7 @@ export default function Reglas() {
                   }}
                   className="h-1 flex-shrink-0 cursor-row-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
                 />
-                <div className="border-t border-gray-200 bg-white flex-shrink-0">
+                <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-primary)] flex-shrink-0">
                 <TextoExtraido
                   texto={textoPdfActivo}
                   highlight={textoSeleccionado}
@@ -1111,12 +1111,12 @@ export default function Reglas() {
 
             {/* Botón guardar selección — SIEMPRE visible cuando hay campo activo */}
             {polizaActiva && campoActivo && (
-              <div className="bg-white border-t border-gray-200 px-4 py-3 space-y-2">
+              <div className="bg-[var(--color-bg-primary)] border-t border-[var(--color-border)] px-4 py-3 space-y-2">
                 {textoSeleccionado ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-semibold text-blue-600 uppercase">Capturado</span>
-                      <code className="flex-1 text-sm font-mono font-bold text-blue-900 truncate">
+                      <span className="text-[10px] font-semibold text-[var(--color-brand-blue)] uppercase">Capturado</span>
+                      <code className="flex-1 text-sm font-mono font-bold text-[var(--color-brand-blue)] truncate">
                         "{textoSeleccionado}"
                       </code>
                       {bboxCapturado && (
@@ -1126,19 +1126,19 @@ export default function Reglas() {
                       )}
                       <button
                         onClick={() => { setTextoSeleccionado(''); setBboxCapturado(null); }}
-                        className="text-gray-400 hover:text-gray-600 text-xs"
+                        className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] text-xs"
                       >✕</button>
                     </div>
                     <button
                       onClick={handleGuardarSeleccion}
-                      className="w-full py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors inline-flex items-center justify-center gap-1.5"
+                      className="w-full py-1.5 bg-[var(--color-brand-blue)] hover:opacity-90 text-white rounded-lg text-xs font-semibold transition-opacity inline-flex items-center justify-center gap-1.5"
                     >
                       <Save className="w-3.5 h-3.5" />
                       Guardar selección para "{campos.find((c) => c.nombre === campoActivo)?.label}"
                     </button>
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-400 text-center py-1">
+                  <p className="text-xs text-[var(--color-text-secondary)] text-center py-1">
                     Arrastra para seleccionar el valor de <strong>{campos.find((c) => c.nombre === campoActivo)?.label}</strong> en el PDF
                   </p>
                 )}
@@ -1148,7 +1148,7 @@ export default function Reglas() {
                     aparecer aquí (punto 4). */}
                 {autoDeteccion.length > 0 && (
                   <div className="mt-1 space-y-1.5">
-                    <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <p className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">
                       Búsqueda automática en las demás pólizas — elige cuáles agregar
                     </p>
                     <div className="space-y-1">
@@ -1202,19 +1202,19 @@ export default function Reglas() {
           />
 
           {/* ══ Panel derecho: Campos ══ */}
-          <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+          <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
             {/* Pestañas: cuando se llegó desde Historial, o cuando la
                 póliza activa ya tiene al menos un dato real sembrado
                 (ej. al subir al lote se le aplicaron las reglas ya
                 entrenadas del subramo) — ver mostrarSwitcherCampos. */}
             {mostrarSwitcherCampos && (
-              <div className="flex border-b border-gray-100">
+              <div className="flex border-b border-[var(--color-border)]">
                 <button
                   onClick={() => setPanelDerechoTab('campos')}
                   className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
                     panelDerechoTab === 'campos'
-                      ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50/50'
-                      : 'text-gray-400 hover:text-gray-600'
+                      ? 'text-[var(--color-brand-blue)] border-b-2 border-[var(--color-brand-blue)] bg-[var(--color-nav-active-bg)]'
+                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
                   }`}
                 >
                   Campos
@@ -1223,8 +1223,8 @@ export default function Reglas() {
                   onClick={() => setPanelDerechoTab('entrenar')}
                   className={`flex-1 px-3 py-2 text-xs font-semibold transition-colors ${
                     panelDerechoTab === 'entrenar'
-                      ? 'text-blue-700 border-b-2 border-blue-600 bg-blue-50/50'
-                      : 'text-gray-400 hover:text-gray-600'
+                      ? 'text-[var(--color-brand-blue)] border-b-2 border-[var(--color-brand-blue)] bg-[var(--color-nav-active-bg)]'
+                      : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
                   }`}
                 >
                   Entrenar/Corregir
@@ -1232,14 +1232,14 @@ export default function Reglas() {
               </div>
             )}
 
-            <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between">
-              <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+            <div className="px-4 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
+              <span className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">
                 {mostrarVistaSimple ? 'Campos' : 'Entrenar/Corregir'}
               </span>
               {mostrarVistaSimple ? (
-                <span className="text-[10px] text-gray-400">Valores extraídos</span>
+                <span className="text-[10px] text-[var(--color-text-secondary)]">Valores extraídos</span>
               ) : (
-                <span className="text-[10px] text-gray-400">
+                <span className="text-[10px] text-[var(--color-text-secondary)]">
                   {camposConRegla.size + camposValorFijo.size}/{camposVisibles.length} cubiertos
                 </span>
               )}
@@ -1278,7 +1278,7 @@ export default function Reglas() {
                 </DismissibleAlert>
                 {polizaActiva && agruparCampos(camposOrdenados, (c) => c.nombre).map((grupo) => (
                   <div key={grupo.titulo}>
-                    <div className="px-4 pt-3 pb-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 border-l-4 border-blue-300">
+                    <div className="campo-grupo-header px-4 pt-3 pb-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 border-l-4 border-blue-300">
                       {grupo.titulo}
                     </div>
                     {grupo.items.map((campo) => {
@@ -1299,14 +1299,14 @@ export default function Reglas() {
                         : sel?.metodo ?? (campo.valor_fijo ? 'valor_fijo' : null);
                       const badge = badgeMetodo(metodo);
                       return (
-                        <div key={`${campo.es_global ? 'g' : 'e'}-${campo.id}`} className="px-4 py-2.5 border-b border-gray-50">
+                        <div key={`${campo.es_global ? 'g' : 'e'}-${campo.id}`} className="px-4 py-2.5 border-b border-[var(--color-border)]">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="text-[10px] text-gray-400 uppercase tracking-wide">{labelCampo(campo.nombre, campo.label)}</p>
+                            <p className="text-[10px] text-[var(--color-text-secondary)] uppercase tracking-wide">{labelCampo(campo.nombre, campo.label)}</p>
                             <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${badge.cls}`}>
                               {badge.label}
                             </span>
                           </div>
-                          <p className={`text-xs mt-0.5 ${valor ? 'text-gray-800' : 'text-gray-300 italic'}`}>
+                          <p className={`text-xs mt-0.5 ${valor ? 'text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)] italic'}`}>
                             {valor || 'sin valor'}
                           </p>
                         </div>
@@ -1319,7 +1319,7 @@ export default function Reglas() {
             <div className="flex-1 overflow-y-auto">
               {agruparCampos(camposOrdenados, (c) => c.nombre).map((grupo) => (
               <div key={grupo.titulo}>
-                <div className="px-4 pt-3 pb-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 border-l-4 border-blue-300">
+                <div className="campo-grupo-header px-4 pt-3 pb-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 border-l-4 border-blue-300">
                   {grupo.titulo}
                 </div>
               {grupo.items.map((campo) => {
@@ -1335,16 +1335,16 @@ export default function Reglas() {
                     {/* Fila del campo */}
                     <div
                       onClick={() => !esValorFijo && setCampoActivo(campo.nombre === campoActivo ? '' : campo.nombre)}
-                      className={`px-4 py-2.5 border-b border-gray-50 transition-colors ${
+                      className={`px-4 py-2.5 border-b border-[var(--color-border)] transition-colors ${
                         esValorFijo ? 'opacity-60 cursor-default' :
-                        esActivo ? 'bg-blue-50 border-l-2 border-blue-500 cursor-pointer' :
-                        'hover:bg-gray-50 cursor-pointer'
+                        esActivo ? 'bg-[var(--color-nav-active-bg)] border-l-2 border-[var(--color-brand-blue)] cursor-pointer' :
+                        'hover:bg-[var(--color-bg-secondary)] cursor-pointer'
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-gray-800 truncate">{labelCampo(campo.nombre, campo.label)}</p>
-                          <p className="text-[10px] text-gray-400 font-mono">{campo.nombre}</p>
+                          <p className="text-xs font-semibold text-[var(--color-text-primary)] truncate">{labelCampo(campo.nombre, campo.label)}</p>
+                          <p className="text-[10px] text-[var(--color-text-secondary)] font-mono">{campo.nombre}</p>
                         </div>
                         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                           {tieneRegla && (
@@ -1378,13 +1378,13 @@ export default function Reglas() {
                                 key={p.id}
                                 title={sel ? `"${sel.texto_seleccionado}"` : p.nombre_archivo}
                                 className={`flex-1 h-1.5 rounded-full ${
-                                  sel ? (sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-gray-200'
+                                  sel ? (sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-[var(--color-border)]'
                                 }`}
                               />
                             );
                           })}
                           {Array.from({ length: Math.max(0, 5 - polizas.length) }).map((_, i) => (
-                            <div key={`empty-${i}`} className="flex-1 h-1.5 rounded-full bg-gray-100" />
+                            <div key={`empty-${i}`} className="flex-1 h-1.5 rounded-full bg-[var(--color-bg-secondary)]" />
                           ))}
                         </div>
                       )}
@@ -1572,10 +1572,10 @@ function VisorImagen({
   return (
     <div className="flex flex-col items-center py-2 gap-2">
       {/* Navegación de página */}
-      <div className="flex items-center gap-2 text-xs text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1 shadow-sm">
-        <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="disabled:opacity-30 hover:text-blue-600">‹</button>
+      <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1 shadow-sm">
+        <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="disabled:opacity-30 hover:text-[var(--color-brand-blue)]">‹</button>
         <span>Página {page} / {totalPages}</span>
-        <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="disabled:opacity-30 hover:text-blue-600">›</button>
+        <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="disabled:opacity-30 hover:text-[var(--color-brand-blue)]">›</button>
       </div>
 
       {!campoActivo && (
@@ -1592,7 +1592,7 @@ function VisorImagen({
 
       {/* Spinner mientras carga */}
       {!imgLoaded && (
-        <div className="text-xs text-gray-400 py-4">Cargando imagen…</div>
+        <div className="text-xs text-[var(--color-text-secondary)] py-4">Cargando imagen…</div>
       )}
 
       {/* Imagen con canvas superpuesto */}
@@ -1631,7 +1631,7 @@ function TextoExtraido({
 
   if (!texto) {
     return (
-      <div className="px-4 py-3 text-xs text-gray-400 italic">Sin texto extraído disponible para esta póliza.</div>
+      <div className="px-4 py-3 text-xs text-[var(--color-text-secondary)] italic">Sin texto extraído disponible para esta póliza.</div>
     );
   }
 
@@ -1656,7 +1656,7 @@ function TextoExtraido({
 
   let header: React.ReactNode;
   if (!highlight) {
-    header = <span className="text-gray-400">Selecciona texto en el PDF o aquí abajo ↓</span>;
+    header = <span className="text-[var(--color-text-secondary)]">Selecciona texto en el PDF o aquí abajo ↓</span>;
   } else if (encontrado) {
     header = (
       <span className="font-medium px-2 py-0.5 rounded-full flex items-center gap-1 bg-emerald-100 text-emerald-700">
@@ -1673,8 +1673,8 @@ function TextoExtraido({
 
   return (
     <div>
-      <div className="flex items-center justify-between px-4 py-1.5 bg-gray-50 border-b border-gray-100">
-        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide flex items-center gap-1">
+      <div className="flex items-center justify-between px-4 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
+        <span className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide flex items-center gap-1">
           <FileText className="w-3 h-3" />Texto extraído · validación
         </span>
         <div className="flex items-center gap-2">
@@ -1684,16 +1684,16 @@ function TextoExtraido({
               type="button"
               onClick={() => setZoomTexto((z) => Math.max(60, z - 10))}
               title="Disminuir tamaño de texto"
-              className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+              className="w-5 h-5 flex items-center justify-center text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-primary)] rounded"
             >
               <ZoomOut className="w-3 h-3" />
             </button>
-            <span className="text-[10px] text-gray-400 w-8 text-center select-none">{zoomTexto}%</span>
+            <span className="text-[10px] text-[var(--color-text-secondary)] w-8 text-center select-none">{zoomTexto}%</span>
             <button
               type="button"
               onClick={() => setZoomTexto((z) => Math.min(200, z + 10))}
               title="Aumentar tamaño de texto"
-              className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+              className="w-5 h-5 flex items-center justify-center text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-primary)] rounded"
             >
               <ZoomIn className="w-3 h-3" />
             </button>
@@ -1701,7 +1701,7 @@ function TextoExtraido({
               type="button"
               onClick={() => setZoomTexto(100)}
               title="Restaurar tamaño de texto"
-              className="w-5 h-5 flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded"
+              className="w-5 h-5 flex items-center justify-center text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-primary)] rounded"
             >
               <RotateCcw className="w-3 h-3" />
             </button>
@@ -1723,12 +1723,12 @@ function TextoExtraido({
           return (
             <div
               key={i}
-              className="grid grid-cols-[2.5rem_1fr] hover:bg-gray-50"
+              className="grid grid-cols-[2.5rem_1fr] hover:bg-[var(--color-bg-secondary)]"
             >
-              <span className="select-none text-right pr-2 text-gray-400 border-r border-gray-100">
+              <span className="select-none text-right pr-2 text-[var(--color-text-secondary)] border-r border-[var(--color-border)]">
                 {numero}
               </span>
-              <span className="px-2 text-gray-600 whitespace-pre-wrap break-words">
+              <span className="px-2 text-[var(--color-text-secondary)] whitespace-pre-wrap break-words">
                 {tieneHighlightAqui ? (
                   <>
                     {linea.substring(0, localIdx)}
@@ -1774,7 +1774,7 @@ function ResultadoPanel({
         <input
           value={regexEditado}
           onChange={(e) => onChangeRegex(e.target.value)}
-          className="mt-0.5 w-full border border-purple-200 bg-white rounded-lg px-2 py-1.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-purple-400"
+          className="mt-0.5 w-full border border-purple-200 bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] rounded-lg px-2 py-1.5 text-[11px] font-mono focus:outline-none focus:ring-1 focus:ring-purple-400"
         />
       </div>
 
@@ -1814,7 +1814,7 @@ function ResultadoPanel({
         <button
           onClick={onProbar}
           disabled={probando}
-          className="flex-1 py-1.5 border border-gray-300 hover:bg-gray-50 rounded-lg text-[10px] font-medium text-gray-700 disabled:opacity-40 inline-flex items-center justify-center gap-1"
+          className="flex-1 py-1.5 border border-[var(--color-border)] hover:bg-[var(--color-bg-secondary)] rounded-lg text-[10px] font-medium text-[var(--color-text-secondary)] disabled:opacity-40 inline-flex items-center justify-center gap-1"
         >
           {probando ? <SpinIcon /> : <RefreshCw className="w-3 h-3" />}
           Reintentar
@@ -1870,26 +1870,26 @@ function PatronesList({
 }) {
   return (
     <div className={`space-y-1.5 ${cls}`}>
-      <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{titulo}</p>
+      <p className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">{titulo}</p>
       {patrones.length === 0 && (
-        <p className="text-[10px] text-gray-400 italic">Sin patrones</p>
+        <p className="text-[10px] text-[var(--color-text-secondary)] italic">Sin patrones</p>
       )}
       {patrones.map((p, i) => (
         <div key={i} className="flex items-center gap-1">
           <input
             value={p}
             onChange={(e) => { const n = [...patrones]; n[i] = e.target.value; onChange(n); }}
-            className="flex-1 font-mono text-[10px] px-1.5 py-0.5 border border-gray-200 rounded bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+            className="flex-1 font-mono text-[10px] px-1.5 py-0.5 border border-[var(--color-border)] rounded bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-400"
           />
           <button
             onClick={() => onChange(patrones.filter((_, j) => j !== i))}
-            className="text-gray-300 hover:text-red-500 flex-shrink-0"
+            className="text-[var(--color-text-secondary)] hover:text-red-500 flex-shrink-0"
           >×</button>
         </div>
       ))}
       <button
         onClick={() => onChange([...patrones, ''])}
-        className="text-[10px] text-blue-600 hover:text-blue-700 font-medium"
+        className="text-[10px] text-[var(--color-brand-blue)] hover:opacity-80 font-medium"
       >+ Agregar patrón</button>
     </div>
   );
@@ -1928,25 +1928,25 @@ function PanelDeteccion({
   const alertar = confianza === 'sin_datos' || confianza === 'baja';
 
   return (
-    <div className={`bg-white border-b flex-shrink-0 ${alertar && !abierto ? 'border-amber-200' : 'border-gray-200'}`}>
+    <div className={`bg-[var(--color-bg-primary)] border-b flex-shrink-0 ${alertar && !abierto ? 'border-amber-200' : 'border-[var(--color-border)]'}`}>
       {/* ── Cabecera colapsable ── */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-2 hover:bg-gray-50 transition-colors text-left"
+        className="w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--color-bg-secondary)] transition-colors text-left"
       >
         <Target className={`w-3.5 h-3.5 flex-shrink-0 ${alertar ? 'text-amber-500' : 'text-emerald-600'}`} />
-        <span className="text-xs font-semibold text-gray-700">Detección automática</span>
+        <span className="text-xs font-semibold text-[var(--color-text-primary)]">Detección automática</span>
 
         {/* Resumen en línea */}
         {deteccion ? (
-          <div className="flex items-center gap-2 text-[10px] text-gray-500">
+          <div className="flex items-center gap-2 text-[10px] text-[var(--color-text-secondary)]">
             <BadgeConfianza confianza={deteccion.confianza} />
             <span>
               {deteccion.compania_nombre
                 ? `${deteccion.compania_nombre} → ${deteccion.ramo_nombre ?? '?'} → ${deteccion.subramo_nombre ?? '?'}`
                 : 'No detectado'}
             </span>
-            <span className="text-gray-300">
+            <span className="text-[var(--color-text-secondary)]">
               ({deteccion.score_compania}+{deteccion.score_ramo}+{deteccion.score_subramo} pts)
             </span>
           </div>
@@ -1957,7 +1957,7 @@ function PanelDeteccion({
           </span>
         ) : null}
 
-        <span className="ml-auto text-gray-400">
+        <span className="ml-auto text-[var(--color-text-secondary)]">
           {abierto ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </span>
       </button>
@@ -2012,7 +2012,7 @@ function PanelDeteccion({
               <button
                 onClick={onProbar}
                 disabled={probando || !hayPolizas}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-gray-300 hover:bg-gray-50 disabled:opacity-40 rounded-lg transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-40 rounded-lg transition-colors"
               >
                 {probando ? <SpinIcon /> : <RefreshCw className="w-3 h-3" />}
                 Probar con PDF activo
@@ -2062,7 +2062,7 @@ function PanelDeteccion({
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={onCancelarPreview}
-                  className="px-3 py-1.5 text-xs border border-gray-300 hover:bg-gray-50 rounded-lg font-medium transition-colors"
+                  className="px-3 py-1.5 text-xs border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)] rounded-lg font-medium transition-colors"
                 >Cancelar</button>
                 <button
                   onClick={onGuardar}

@@ -168,25 +168,25 @@ export default function PolizaDetalle({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[var(--color-bg-primary)] rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-xl">
               <Car className="w-5 h-5 text-blue-600" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-bold text-gray-900">Detalle de Póliza</h2>
+                <h2 className="font-bold text-[var(--color-text-primary)]">Detalle de Póliza</h2>
                 {tandaNumero != null && (
-                  <span className="text-[10px] font-semibold text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                  <span className="text-[10px] font-semibold text-[var(--color-text-secondary)] bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded-full">
                     Tanda {tandaNumero}
                   </span>
                 )}
               </div>
               {data.compania && (
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--color-text-secondary)]">
                   {data.compania}{data.ramo ? ` · ${data.ramo}` : ''}{data.subramo ? ` · ${data.subramo}` : ''}
                 </p>
               )}
@@ -199,27 +199,27 @@ export default function PolizaDetalle({
                   onClick={onAnterior}
                   disabled={indiceActual === 1}
                   className={`p-2 rounded-lg transition-colors ${
-                    indiceActual === 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100'
+                    indiceActual === 1 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[var(--color-bg-secondary)]'
                   }`}
                 >
-                  <ChevronLeft className="w-4 h-4 text-gray-500" />
+                  <ChevronLeft className="w-4 h-4 text-[var(--color-text-secondary)]" />
                 </button>
-                <span className="text-xs text-gray-400 px-1 tabular-nums">
+                <span className="text-xs text-[var(--color-text-secondary)] px-1 tabular-nums">
                   {indiceActual} / {totalPolizas}
                 </span>
                 <button
                   onClick={onSiguiente}
                   disabled={indiceActual === totalPolizas}
                   className={`p-2 rounded-lg transition-colors ${
-                    indiceActual === totalPolizas ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-100'
+                    indiceActual === totalPolizas ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[var(--color-bg-secondary)]'
                   }`}
                 >
-                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                  <ChevronRight className="w-4 h-4 text-[var(--color-text-secondary)]" />
                 </button>
               </>
             )}
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-              <X className="w-4 h-4 text-gray-500" />
+            <button onClick={onClose} className="p-2 hover:bg-[var(--color-bg-secondary)] rounded-lg transition-colors">
+              <X className="w-4 h-4 text-[var(--color-text-secondary)]" />
             </button>
           </div>
         </div>
@@ -279,10 +279,10 @@ export default function PolizaDetalle({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100">
+        <div className="px-6 py-4 border-t border-[var(--color-border)]">
           <button
             onClick={onClose}
-            className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-sm font-medium transition-colors"
+            className="w-full py-2.5 bg-[var(--color-bg-secondary)] hover:opacity-80 text-[var(--color-text-primary)] rounded-xl text-sm font-medium transition-opacity"
           >
             Cerrar
           </button>
@@ -303,12 +303,12 @@ function Stat({ label, value, color, campos, abierto, onToggle }: {
   const cls = {
     blue:   'bg-blue-50 text-blue-700 hover:bg-blue-100',
     purple: 'bg-purple-50 text-purple-700 hover:bg-purple-100',
-    gray:   'bg-gray-100 text-gray-500 hover:bg-gray-200',
+    gray:   'bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)] hover:opacity-80',
   }[color];
   const clsPopover = {
     blue:   'bg-blue-50 border-blue-200 text-blue-800',
     purple: 'bg-purple-50 border-purple-200 text-purple-800',
-    gray:   'bg-gray-50 border-gray-200 text-gray-700',
+    gray:   'bg-[var(--color-bg-primary)] border-[var(--color-border)] text-[var(--color-text-primary)]',
   }[color];
 
   return (
@@ -337,10 +337,10 @@ function Stat({ label, value, color, campos, abierto, onToggle }: {
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
         {icon}{title}
       </div>
-      <dl className="divide-y divide-gray-50">{children}</dl>
+      <dl className="divide-y divide-[var(--color-border)]">{children}</dl>
     </div>
   );
 }
@@ -355,8 +355,8 @@ function Row({ label, value, metodo, mono, bold }: {
   if (!value) return null;   // no mostrar filas vacías
   return (
     <div className="flex items-start py-2 gap-4">
-      <dt className="w-36 flex-shrink-0 text-xs text-gray-400 pt-0.5">{label}</dt>
-      <dd className={`flex-1 text-sm break-words ${bold ? 'font-bold text-gray-900' : 'text-gray-700'} ${mono ? 'font-mono' : ''}`}>
+      <dt className="w-36 flex-shrink-0 text-xs text-[var(--color-text-secondary)] pt-0.5">{label}</dt>
+      <dd className={`flex-1 text-sm break-words ${bold ? 'font-bold text-[var(--color-text-primary)]' : 'text-[var(--color-text-secondary)]'} ${mono ? 'font-mono' : ''}`}>
         <span className="flex items-center gap-1.5">
           {value}
           {metodo === 'ia'       && <Cpu className="w-3 h-3 text-purple-400 flex-shrink-0" />}

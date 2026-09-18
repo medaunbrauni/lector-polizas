@@ -227,34 +227,34 @@ function PanelTextosGuardados({ compania, companiaId, onElegir, onClose }: {
 
   return (
     <div
-      className="bg-white rounded-2xl shadow-xl w-80 flex flex-col overflow-hidden"
+      className="bg-[var(--color-bg-primary)] rounded-2xl shadow-xl w-80 flex flex-col overflow-hidden"
       style={{ height: `${altoPx}rem`, maxHeight: '85vh' }}
     >
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 shrink-0">
-        <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-          <FileStack className="w-4 h-4 text-blue-600" />Textos guardados
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] shrink-0">
+        <h3 className="font-semibold text-[var(--color-text-primary)] text-sm flex items-center gap-2">
+          <FileStack className="w-4 h-4 text-[var(--color-brand-blue)]" />Textos guardados
         </h3>
-        <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+        <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"><X className="w-4 h-4" /></button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-2">
         {error ? (
-          <div className="text-center py-10 text-gray-400">
+          <div className="text-center py-10 text-[var(--color-text-secondary)]">
             <Inbox className="w-8 h-8 mx-auto mb-3 opacity-30" />
             <p className="text-xs">No se pudo cargar el listado.</p>
           </div>
         ) : polizas === null ? (
-          <div className="flex items-center justify-center py-10 text-gray-400">
+          <div className="flex items-center justify-center py-10 text-[var(--color-text-secondary)]">
             <Loader2 className="w-5 h-5 animate-spin" />
           </div>
         ) : polizas.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
+          <div className="text-center py-8 text-[var(--color-text-secondary)]">
             <Inbox className="w-8 h-8 mx-auto mb-3 opacity-30" />
             <p className="text-xs">No hay pólizas guardadas para esta aseguradora.</p>
             {companiaId != null && (
               <a
                 href={`/reglas?companiaId=${companiaId}`}
-                className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-gray-900 hover:bg-gray-700 text-white rounded-lg text-xs font-medium transition-colors"
+                className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[var(--color-brand-blue)] hover:opacity-90 text-white rounded-lg text-xs font-medium transition-opacity"
               >
                 Subir un PDF en Entrenador PDFs
               </a>
@@ -266,13 +266,13 @@ function PanelTextosGuardados({ compania, companiaId, onElegir, onClose }: {
               key={p.id}
               onClick={() => elegir(p.id)}
               disabled={cargandoId !== null}
-              className="w-full text-left px-3 py-2.5 rounded-xl border border-gray-200 hover:border-blue-300 hover:bg-blue-50/50 transition-colors disabled:opacity-50"
+              className="w-full text-left px-3 py-2.5 rounded-xl border border-[var(--color-border)] hover:border-[var(--color-brand-blue)] hover:bg-blue-500/10 transition-colors disabled:opacity-50"
             >
               <div className="flex items-center gap-2">
-                <FileText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                <span className="text-xs font-medium text-gray-800 truncate">{p.nombre_archivo}</span>
+                <FileText className="w-3.5 h-3.5 text-[var(--color-text-secondary)] shrink-0" />
+                <span className="text-xs font-medium text-[var(--color-text-primary)] truncate">{p.nombre_archivo}</span>
               </div>
-              <div className="text-[10px] text-gray-400 mt-1 pl-5.5">
+              <div className="text-[10px] text-[var(--color-text-secondary)] mt-1 pl-5.5">
                 {p.paginas != null ? `${p.paginas} pág. · ` : ''}
                 {p.created_at ? new Date(p.created_at).toLocaleDateString() : ''}
                 {cargandoId === p.id && <span className="ml-1">Cargando…</span>}
@@ -303,14 +303,14 @@ function CajaPatrones({ patrones, seleccionados, onToggle, resaltarIndex }: {
   const seleccionable = patrones.length > 1;
   return (
     <div
-      className="text-xs font-mono bg-gray-50 border border-gray-200 rounded-lg overflow-y-auto divide-y divide-gray-100"
+      className="text-xs font-mono bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-lg overflow-y-auto divide-y divide-[var(--color-border)]"
       style={{ height: `${CAJA_PATRONES_ALTO_REM}rem` }}
     >
       {patrones.map((p, i) => (
         <label
           key={i}
           className={`flex items-start gap-2 px-3 py-1.5 break-all cursor-pointer ${
-            resaltarIndex === i ? 'bg-green-50 text-green-800 font-semibold' : 'text-gray-700 hover:bg-gray-100'
+            resaltarIndex === i ? 'bg-green-50 text-green-800 font-semibold' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-primary)]'
           } ${!seleccionable ? 'cursor-default' : ''}`}
         >
           {seleccionable && (
@@ -322,7 +322,7 @@ function CajaPatrones({ patrones, seleccionados, onToggle, resaltarIndex }: {
             />
           )}
           <span>
-            {patrones.length > 1 && <span className="text-gray-400 mr-1.5 select-none">#{i + 1}</span>}
+            {patrones.length > 1 && <span className="text-[var(--color-text-secondary)] mr-1.5 select-none">#{i + 1}</span>}
             {p}
           </span>
         </label>
@@ -360,14 +360,14 @@ function ModalProbarRegla({ campo, patrones, preseleccionado, nota, onClose, com
   if (nota) {
     return (
       <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-3" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-[var(--color-bg-primary)] rounded-2xl shadow-xl w-full max-w-lg p-6 space-y-3" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+            <h3 className="font-semibold text-[var(--color-text-primary)] text-sm flex items-center gap-2">
               <Lock className="w-4 h-4 text-amber-600" />
               Sin regex probable
-              <span className="font-mono font-normal text-gray-400">· {campo}</span>
+              <span className="font-mono font-normal text-[var(--color-text-secondary)]">· {campo}</span>
             </h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"><X className="w-4 h-4" /></button>
           </div>
           <div className="flex items-start gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5 text-sm leading-relaxed">
             <Lock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -445,15 +445,15 @@ function ModalProbarPatrones({ campo, patrones, preseleccionado, onClose, compan
       <div className="flex gap-3" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center">
         <div
-          className={`bg-white rounded-2xl shadow-xl w-[36rem] max-w-xl p-6 space-y-3.5 transition-transform duration-300 ${panelAbierto ? '-translate-x-1' : ''}`}
+          className={`bg-[var(--color-bg-primary)] rounded-2xl shadow-xl w-[36rem] max-w-xl p-6 space-y-3.5 transition-transform duration-300 ${panelAbierto ? '-translate-x-1' : ''}`}
         >
           <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
-              <FlaskConical className="w-4 h-4 text-blue-600" />
+            <h3 className="font-semibold text-[var(--color-text-primary)] text-sm flex items-center gap-2">
+              <FlaskConical className="w-4 h-4 text-[var(--color-brand-blue)]" />
               {patrones.length > 1 ? `Probar patrones (${patrones.length})` : 'Probar regla'}
-              <span className="font-mono font-normal text-gray-400">· {campo}</span>
+              <span className="font-mono font-normal text-[var(--color-text-secondary)]">· {campo}</span>
             </h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+            <button onClick={onClose} className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"><X className="w-4 h-4" /></button>
           </div>
           <CajaPatrones
             patrones={patrones}
@@ -466,14 +466,14 @@ function ModalProbarPatrones({ campo, patrones, preseleccionado, onClose, compan
               value={texto}
               onChange={(e) => setTexto(e.target.value)}
               placeholder="Pega aquí un texto de ejemplo (ej. texto extraído de un PDF)…"
-              className="w-full h-48 text-xs font-mono border border-gray-200 rounded-lg p-3 pr-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full h-48 text-xs font-mono border border-[var(--color-border)] bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] rounded-lg p-3 pr-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           {compania && (
             <button
               onClick={() => setPanelAbierto((v) => !v)}
               className={`w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                panelAbierto ? 'bg-blue-50 border-blue-200 text-blue-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                panelAbierto ? 'bg-[var(--color-nav-active-bg)] border-[var(--color-brand-blue)] text-[var(--color-nav-active-text)]' : 'border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'
               }`}
             >
               <FileStack className="w-3.5 h-3.5" />Elegir texto guardado
@@ -482,7 +482,7 @@ function ModalProbarPatrones({ campo, patrones, preseleccionado, onClose, compan
           <button
             onClick={probar}
             disabled={!texto || probando}
-            className="w-full py-2 bg-gray-900 hover:bg-gray-700 disabled:opacity-40 text-white rounded-lg text-sm font-medium transition-colors"
+            className="w-full py-2 bg-[var(--color-brand-blue)] hover:opacity-90 disabled:opacity-40 text-white rounded-lg text-sm font-medium transition-opacity"
           >
             {probando ? 'Probando…' : tituloBoton}
           </button>
@@ -548,19 +548,19 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
   }, [abierto, compania, reglas]);
 
   return (
-    <div className="bg-white border border-amber-200 rounded-2xl overflow-hidden shadow-sm">
+    <div className="bg-[var(--color-bg-primary)] border border-amber-200 rounded-2xl overflow-hidden shadow-sm">
       <button
         onClick={() => setAbierto((v) => !v)}
         className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-amber-50/50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          {abierto ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-          <span className="font-semibold text-gray-900 text-sm">{compania}</span>
+          {abierto ? <ChevronDown className="w-4 h-4 text-[var(--color-text-secondary)]" /> : <ChevronRight className="w-4 h-4 text-[var(--color-text-secondary)]" />}
+          <span className="font-semibold text-[var(--color-text-primary)] text-sm">{compania}</span>
           <span className="inline-flex items-center gap-1 text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded-full font-medium">
             <Lock className="w-2.5 h-2.5" />extractor dedicado · solo lectura
           </span>
         </div>
-        {reglas && <span className="text-xs text-gray-400 font-medium">{reglas.length} campo{reglas.length !== 1 ? 's' : ''}</span>}
+        {reglas && <span className="text-xs text-[var(--color-text-secondary)] font-medium">{reglas.length} campo{reglas.length !== 1 ? 's' : ''}</span>}
       </button>
 
       {abierto && (
@@ -571,22 +571,22 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
             automáticamente a partir del código fuente — no se editan desde aquí.
           </div>
           {reglas === null ? (
-            <div className="px-5 py-4 text-xs text-gray-400">Cargando…</div>
+            <div className="px-5 py-4 text-xs text-[var(--color-text-secondary)]">Cargando…</div>
           ) : reglas.length === 0 ? (
-            <div className="px-5 py-4 text-xs text-gray-400">No se pudieron detectar reglas.</div>
+            <div className="px-5 py-4 text-xs text-[var(--color-text-secondary)]">No se pudieron detectar reglas.</div>
           ) : (
             <table className="w-full text-xs">
               <thead>
-                <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide">
+                <tr className="bg-[var(--color-bg-secondary)] text-[10px] text-[var(--color-text-secondary)] uppercase tracking-wide">
                   <th className="pl-5 pr-3 py-2 text-left font-medium">Campo</th>
                   <th className="px-3 py-2 text-left font-medium">Función / patrones</th>
                   <th className="px-3 py-2 text-left font-medium w-40">Ubicación</th>
                   <th className="px-3 py-2 text-left font-medium w-20"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-[var(--color-border)]">
                 {reglas.map((r) => (
-                  <tr key={r.campo} className="hover:bg-gray-50 align-top">
+                  <tr key={r.campo} className="hover:bg-[var(--color-bg-secondary)] align-top">
                     <td className="pl-5 pr-3 py-2 whitespace-nowrap">
                       {r.patrones.length > 0 ? (
                         <button
@@ -594,7 +594,7 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
                           title={r.patrones.length > 1
                             ? `Probar los ${r.patrones.length} patrones de este campo, en el mismo orden que usa el extractor`
                             : 'Probar esta regla'}
-                          className="font-mono text-blue-700 font-medium hover:underline decoration-dotted underline-offset-2"
+                          className="font-mono text-[var(--color-brand-blue)] font-medium hover:underline decoration-dotted underline-offset-2"
                         >
                           {r.campo}
                         </button>
@@ -602,40 +602,40 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
                         <button
                           onClick={() => setProbando({ campo: r.campo, patrones: [], nota: r.nota })}
                           title="Ver por qué este campo no se prueba por regex"
-                          className="font-mono text-blue-700 font-medium hover:underline decoration-dotted underline-offset-2"
+                          className="font-mono text-[var(--color-brand-blue)] font-medium hover:underline decoration-dotted underline-offset-2"
                         >
                           {r.campo}
                         </button>
                       ) : (
-                        <span className="font-mono text-blue-700 font-medium">{r.campo}</span>
+                        <span className="font-mono text-[var(--color-brand-blue)] font-medium">{r.campo}</span>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-gray-700">
-                      <div className="font-mono text-gray-500 mb-1">{r.funcion ?? '—'}</div>
+                    <td className="px-3 py-2 text-[var(--color-text-secondary)]">
+                      <div className="font-mono text-[var(--color-text-secondary)] mb-1">{r.funcion ?? '—'}</div>
                       {r.patrones.length === 0 ? (
                         r.nota ? (
                           <button
                             onClick={() => setProbando({ campo: r.campo, patrones: [], nota: r.nota })}
-                            className="flex items-center gap-1.5 text-amber-700 hover:text-amber-800 hover:underline"
+                            className="flex items-center gap-1.5 text-[var(--color-warning-text)] hover:opacity-80 hover:underline"
                           >
                             <Lock className="w-3 h-3 shrink-0" />
                             <span className="text-[11px]">Sin regex utilizado aún</span>
                           </button>
                         ) : (
-                          <span className="text-gray-300">sin regex directo detectado</span>
+                          <span className="text-[var(--color-text-secondary)]">sin regex directo detectado</span>
                         )
                       ) : (
                         <div className="space-y-1">
                           {r.patrones.map((p, i) => (
                             <div key={p} className="flex items-center gap-1.5">
-                              {r.patrones.length > 1 && <span className="text-gray-300 text-[10px] shrink-0">#{i + 1}</span>}
-                              <code className="block truncate max-w-xs font-mono text-gray-700" title={p}>{p}</code>
+                              {r.patrones.length > 1 && <span className="text-[var(--color-text-secondary)] text-[10px] shrink-0">#{i + 1}</span>}
+                              <code className="block truncate max-w-xs font-mono text-[var(--color-text-secondary)]" title={p}>{p}</code>
                             </div>
                           ))}
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-gray-400 font-mono">{r.archivo}:{r.linea}</td>
+                    <td className="px-3 py-2 text-[var(--color-text-secondary)] font-mono">{r.archivo}:{r.linea}</td>
                     <td className="px-3 py-2"></td>
                   </tr>
                 ))}
@@ -697,7 +697,7 @@ export default function ReglasCodigo() {
   }
 
   if (cargando) {
-    return <div className="p-8 text-sm text-gray-400">Cargando…</div>;
+    return <div className="p-8 text-sm text-[var(--color-text-secondary)]">Cargando…</div>;
   }
 
   const companiasSinPatrones = deteccion.filter((c) => totalPatrones(c) === 0);
@@ -706,8 +706,8 @@ export default function ReglasCodigo() {
     <div className="p-8 space-y-5">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Código de Reglas</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Código de Reglas</h1>
+          <p className="text-sm text-[var(--color-text-secondary)] mt-1">
             {tab === 'extraccion'
               ? subTabExtraccion === 'nivel1'
                 ? `${COMPANIAS_NIVEL1.length} aseguradora${COMPANIAS_NIVEL1.length !== 1 ? 's' : ''} con extractor dedicado`
@@ -718,23 +718,23 @@ export default function ReglasCodigo() {
         </div>
         {!(tab === 'extraccion' && subTabExtraccion === 'nivel1') && (
           <div className="flex items-center gap-2">
-            <div className="flex border border-gray-200 rounded-xl overflow-hidden text-sm">
+            <div className="flex border border-[var(--color-border)] rounded-xl overflow-hidden text-sm">
               <button
                 onClick={() => setVista('arbol')}
-                className={`px-4 py-2 font-medium transition-colors ${vista === 'arbol' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`px-4 py-2 font-medium transition-colors ${vista === 'arbol' ? 'bg-[var(--color-nav-active-bg)] text-[var(--color-nav-active-text)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'}`}
               >
                 Árbol
               </button>
               <button
                 onClick={() => setVista('codigo')}
-                className={`px-4 py-2 font-medium transition-colors ${vista === 'codigo' ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`px-4 py-2 font-medium transition-colors ${vista === 'codigo' ? 'bg-[var(--color-nav-active-bg)] text-[var(--color-nav-active-text)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'}`}
               >
                 <Code2 className="w-4 h-4 inline mr-1.5" />Código
               </button>
             </div>
             <button
               onClick={copiarCodigo}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 hover:bg-gray-700 text-white rounded-xl text-sm font-medium transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--color-brand-blue)] hover:opacity-90 text-white rounded-xl text-sm font-medium transition-opacity"
             >
               {copiado ? <><Check className="w-4 h-4" />Copiado</> : <><Copy className="w-4 h-4" />Copiar código</>}
             </button>
@@ -743,11 +743,11 @@ export default function ReglasCodigo() {
       </div>
 
       {/* Tabs extracción / detección */}
-      <div className="flex gap-1 border-b border-gray-200">
+      <div className="flex gap-1 border-b border-[var(--color-border)]">
         <button
           onClick={() => setTab('extraccion')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-            tab === 'extraccion' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
+            tab === 'extraccion' ? 'border-[var(--color-brand-blue)] text-[var(--color-brand-blue)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
           }`}
         >
           <Search className="w-4 h-4" />
@@ -757,7 +757,7 @@ export default function ReglasCodigo() {
         <button
           onClick={() => setTab('deteccion')}
           className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px ${
-            tab === 'deteccion' ? 'border-purple-600 text-purple-700' : 'border-transparent text-gray-500 hover:text-gray-700'
+            tab === 'deteccion' ? 'border-[var(--color-info-text)] text-[var(--color-info-text)]' : 'border-transparent text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'
           }`}
         >
           <Shield className="w-4 h-4" />
@@ -776,7 +776,7 @@ export default function ReglasCodigo() {
             <button
               onClick={() => setSubTabExtraccion('nivel1')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                subTabExtraccion === 'nivel1' ? 'bg-amber-100 text-amber-800' : 'text-gray-500 hover:bg-gray-100'
+                subTabExtraccion === 'nivel1' ? 'bg-amber-100 text-amber-800' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'
               }`}
             >
               <Wrench className="w-3.5 h-3.5" />Extractor dedicado
@@ -785,7 +785,7 @@ export default function ReglasCodigo() {
             <button
               onClick={() => setSubTabExtraccion('nivel2')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                subTabExtraccion === 'nivel2' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'
+                subTabExtraccion === 'nivel2' ? 'bg-blue-100 text-blue-700' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)]'
               }`}
             >
               <Database className="w-3.5 h-3.5" />Entrenador / Reglas BD
@@ -802,13 +802,13 @@ export default function ReglasCodigo() {
           )}
 
           {subTabExtraccion === 'nivel2' && (reglas.length === 0 ? (
-            <div className="text-center py-20 text-gray-400">
+            <div className="text-center py-20 text-[var(--color-text-secondary)]">
               <Code2 className="w-8 h-8 mx-auto mb-3 opacity-30" />
               <p className="text-sm">No hay reglas activas. Créalas en la sección Entrenador PDFs.</p>
             </div>
           ) : vista === 'codigo' ? (
             <div className="relative">
-              <pre className="bg-gray-900 text-gray-100 rounded-2xl p-6 text-xs font-mono leading-relaxed overflow-auto max-h-[75vh] whitespace-pre">
+              <pre className="bg-gray-900 text-gray-100 border border-[var(--color-border)] rounded-2xl p-6 text-xs font-mono leading-relaxed overflow-auto max-h-[75vh] whitespace-pre">
                 {codigoReglas}
               </pre>
             </div>
@@ -819,14 +819,14 @@ export default function ReglasCodigo() {
                 const totalComp = Object.values(ramos).flatMap(Object.values).flat().length;
                 const tieneNivel1 = COMPANIAS_NIVEL1.includes(comp);
                 return (
-                  <div key={comp} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                  <div key={comp} className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
                     <button
                       onClick={() => toggleNodo(compKey)}
-                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[var(--color-bg-secondary)] transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        {abiertos.has(compKey) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                        <span className="font-semibold text-gray-900 text-sm">{comp}</span>
+                        {abiertos.has(compKey) ? <ChevronDown className="w-4 h-4 text-[var(--color-text-secondary)]" /> : <ChevronRight className="w-4 h-4 text-[var(--color-text-secondary)]" />}
+                        <span className="font-semibold text-[var(--color-text-primary)] text-sm">{comp}</span>
                         {tieneNivel1 && (
                           <span
                             title="Esta compañía también tiene reglas en el mini-tab «Extractor dedicado»"
@@ -836,11 +836,11 @@ export default function ReglasCodigo() {
                           </span>
                         )}
                       </div>
-                      <span className="text-xs text-gray-400 font-medium">{totalComp} regla{totalComp !== 1 ? 's' : ''}</span>
+                      <span className="text-xs text-[var(--color-text-secondary)] font-medium">{totalComp} regla{totalComp !== 1 ? 's' : ''}</span>
                     </button>
 
                     {abiertos.has(compKey) && (
-                      <div className="border-t border-gray-100 divide-y divide-gray-50">
+                      <div className="border-t border-[var(--color-border)] divide-y divide-[var(--color-border)]">
                         {Object.entries(ramos).map(([ramo, subramos]) => {
                           const ramoKey = `${comp}::${ramo}`;
                           const totalRamo = Object.values(subramos).flat().length;
@@ -848,36 +848,36 @@ export default function ReglasCodigo() {
                             <div key={ramo}>
                               <button
                                 onClick={() => toggleNodo(ramoKey)}
-                                className="w-full flex items-center justify-between px-8 py-2.5 hover:bg-gray-50 transition-colors"
+                                className="w-full flex items-center justify-between px-8 py-2.5 hover:bg-[var(--color-bg-secondary)] transition-colors"
                               >
                                 <div className="flex items-center gap-2">
-                                  {abiertos.has(ramoKey) ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
-                                  <span className="text-sm text-gray-700 font-medium">{ramo}</span>
+                                  {abiertos.has(ramoKey) ? <ChevronDown className="w-3.5 h-3.5 text-[var(--color-text-secondary)]" /> : <ChevronRight className="w-3.5 h-3.5 text-[var(--color-text-secondary)]" />}
+                                  <span className="text-sm text-[var(--color-text-secondary)] font-medium">{ramo}</span>
                                 </div>
-                                <span className="text-xs text-gray-400">{totalRamo} regla{totalRamo !== 1 ? 's' : ''}</span>
+                                <span className="text-xs text-[var(--color-text-secondary)]">{totalRamo} regla{totalRamo !== 1 ? 's' : ''}</span>
                               </button>
 
                               {abiertos.has(ramoKey) && (
-                                <div className="divide-y divide-gray-50">
+                                <div className="divide-y divide-[var(--color-border)]">
                                   {Object.entries(subramos).map(([subramo, regs]) => {
                                     const subKey = `${comp}::${ramo}::${subramo}`;
                                     return (
                                       <div key={subramo}>
                                         <button
                                           onClick={() => toggleNodo(subKey)}
-                                          className="w-full flex items-center justify-between px-12 py-2 hover:bg-gray-50 transition-colors"
+                                          className="w-full flex items-center justify-between px-12 py-2 hover:bg-[var(--color-bg-secondary)] transition-colors"
                                         >
                                           <div className="flex items-center gap-2">
-                                            {abiertos.has(subKey) ? <ChevronDown className="w-3 h-3 text-gray-400" /> : <ChevronRight className="w-3 h-3 text-gray-400" />}
-                                            <span className="text-xs text-gray-600 font-medium">{subramo}</span>
+                                            {abiertos.has(subKey) ? <ChevronDown className="w-3 h-3 text-[var(--color-text-secondary)]" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-secondary)]" />}
+                                            <span className="text-xs text-[var(--color-text-secondary)] font-medium">{subramo}</span>
                                           </div>
-                                          <span className="text-[10px] text-gray-400">{regs.length} campo{regs.length !== 1 ? 's' : ''}</span>
+                                          <span className="text-[10px] text-[var(--color-text-secondary)]">{regs.length} campo{regs.length !== 1 ? 's' : ''}</span>
                                         </button>
 
                                         {abiertos.has(subKey) && (
                                           <table className="w-full text-xs">
                                             <thead>
-                                              <tr className="bg-gray-50 text-[10px] text-gray-500 uppercase tracking-wide">
+                                              <tr className="bg-[var(--color-bg-secondary)] text-[10px] text-[var(--color-text-secondary)] uppercase tracking-wide">
                                                 <th className="pl-16 pr-3 py-2 text-left font-medium">Campo</th>
                                                 <th className="px-3 py-2 text-left font-medium">Patrón Regex</th>
                                                 <th className="px-3 py-2 text-left font-medium w-20">Confianza</th>
@@ -885,14 +885,14 @@ export default function ReglasCodigo() {
                                                 <th className="px-3 py-2 text-left font-medium w-10"></th>
                                               </tr>
                                             </thead>
-                                            <tbody className="divide-y divide-gray-50">
+                                            <tbody className="divide-y divide-[var(--color-border)]">
                                               {regs.map((r) => (
-                                                <tr key={r.id} className="hover:bg-gray-50">
-                                                  <td className="pl-16 pr-3 py-2 font-mono text-blue-700 font-medium">{r.nombre_campo}</td>
-                                                  <td className="px-3 py-2 font-mono text-gray-700 max-w-xs">
+                                                <tr key={r.id} className="hover:bg-[var(--color-bg-secondary)]">
+                                                  <td className="pl-16 pr-3 py-2 font-mono text-[var(--color-brand-blue)] font-medium">{r.nombre_campo}</td>
+                                                  <td className="px-3 py-2 font-mono text-[var(--color-text-secondary)] max-w-xs">
                                                     <code className="block truncate" title={r.patron_regex}>{r.patron_regex}</code>
                                                   </td>
-                                                  <td className="px-3 py-2 text-gray-500">{Math.round(r.confianza * 100)}%</td>
+                                                  <td className="px-3 py-2 text-[var(--color-text-secondary)]">{Math.round(r.confianza * 100)}%</td>
                                                   <td className="px-3 py-2">
                                                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                                                       r.creado_por === 'ia' ? 'bg-purple-100 text-purple-700'
@@ -906,7 +906,7 @@ export default function ReglasCodigo() {
                                                     <button
                                                       onClick={() => setProbandoNivel2({ campo: r.nombre_campo, patrones: [r.patron_regex] })}
                                                       title="Probar esta regla"
-                                                      className="p-1 rounded hover:bg-blue-50 text-blue-600"
+                                                      className="p-1 rounded hover:bg-[var(--color-bg-primary)] text-[var(--color-brand-blue)]"
                                                     >
                                                       <FlaskConical className="w-3.5 h-3.5" />
                                                     </button>
@@ -946,7 +946,7 @@ export default function ReglasCodigo() {
 
           {vista === 'codigo' ? (
             <div className="relative">
-              <pre className="bg-gray-900 text-gray-100 rounded-2xl p-6 text-xs font-mono leading-relaxed overflow-auto max-h-[75vh] whitespace-pre">
+              <pre className="bg-gray-900 text-gray-100 border border-[var(--color-border)] rounded-2xl p-6 text-xs font-mono leading-relaxed overflow-auto max-h-[75vh] whitespace-pre">
                 {codigoDeteccion}
               </pre>
             </div>
@@ -956,14 +956,14 @@ export default function ReglasCodigo() {
                 const compKey = `det::${c.nombre}`;
                 const totalC = totalPatrones(c);
                 return (
-                  <div key={c.id} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
+                  <div key={c.id} className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
                     <button
                       onClick={() => toggleNodo(compKey)}
-                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors"
+                      className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-[var(--color-bg-secondary)] transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        {abiertos.has(compKey) ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                        <span className="font-semibold text-gray-900 text-sm">{c.nombre}</span>
+                        {abiertos.has(compKey) ? <ChevronDown className="w-4 h-4 text-[var(--color-text-secondary)]" /> : <ChevronRight className="w-4 h-4 text-[var(--color-text-secondary)]" />}
+                        <span className="font-semibold text-[var(--color-text-primary)] text-sm">{c.nombre}</span>
                         {totalC === 0 && (
                           <span className="text-[10px] bg-amber-100 text-amber-700 border border-amber-200 px-1.5 py-0.5 rounded font-medium">sin patrones</span>
                         )}
@@ -979,28 +979,28 @@ export default function ReglasCodigo() {
                     </button>
 
                     {abiertos.has(compKey) && (
-                      <div className="border-t border-gray-100">
+                      <div className="border-t border-[var(--color-border)]">
                         {/* Compañía patterns */}
                         {(c.keywords.length > 0 || c.patrones_deteccion.length > 0) && (
-                          <div className="px-5 py-3 bg-gray-50 flex flex-wrap gap-1.5">
+                          <div className="px-5 py-3 bg-[var(--color-bg-secondary)] flex flex-wrap gap-1.5">
                             {c.keywords.map((kw) => <PatronBadge key={kw} tipo="keyword" valor={kw} />)}
                             {c.patrones_deteccion.map((p) => <PatronBadge key={p} tipo="regex" valor={p} />)}
                           </div>
                         )}
 
                         {/* Ramos */}
-                        <div className="divide-y divide-gray-50">
+                        <div className="divide-y divide-[var(--color-border)]">
                           {c.ramos.map((r) => {
                             const ramoKey = `det::${c.nombre}::${r.nombre}`;
                             return (
                               <div key={r.id}>
                                 <button
                                   onClick={() => toggleNodo(ramoKey)}
-                                  className="w-full flex items-center justify-between px-8 py-2.5 hover:bg-gray-50 transition-colors"
+                                  className="w-full flex items-center justify-between px-8 py-2.5 hover:bg-[var(--color-bg-secondary)] transition-colors"
                                 >
                                   <div className="flex items-center gap-2">
-                                    {abiertos.has(ramoKey) ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
-                                    <span className="text-sm text-gray-700 font-medium">{r.nombre}</span>
+                                    {abiertos.has(ramoKey) ? <ChevronDown className="w-3.5 h-3.5 text-[var(--color-text-secondary)]" /> : <ChevronRight className="w-3.5 h-3.5 text-[var(--color-text-secondary)]" />}
+                                    <span className="text-sm text-[var(--color-text-secondary)] font-medium">{r.nombre}</span>
                                   </div>
                                   <div className="flex items-center gap-2">
                                     {r.patrones_deteccion.length > 0 && (
@@ -1015,7 +1015,7 @@ export default function ReglasCodigo() {
                                 {abiertos.has(ramoKey) && (
                                   <div>
                                     {(r.keywords.length > 0 || r.patrones_deteccion.length > 0) && (
-                                      <div className="px-12 py-2 bg-gray-50 flex flex-wrap gap-1.5">
+                                      <div className="px-12 py-2 bg-[var(--color-bg-secondary)] flex flex-wrap gap-1.5">
                                         {r.keywords.map((kw) => <PatronBadge key={kw} tipo="keyword" valor={kw} />)}
                                         {r.patrones_deteccion.map((p) => <PatronBadge key={p} tipo="regex" valor={p} />)}
                                       </div>
@@ -1025,14 +1025,14 @@ export default function ReglasCodigo() {
                                     {r.subramos.map((s) => {
                                       const subKey = `det::${c.nombre}::${r.nombre}::${s.nombre}`;
                                       return (
-                                        <div key={s.id} className="border-t border-gray-50">
+                                        <div key={s.id} className="border-t border-[var(--color-border)]">
                                           <button
                                             onClick={() => toggleNodo(subKey)}
-                                            className="w-full flex items-center justify-between px-12 py-2 hover:bg-gray-50 transition-colors"
+                                            className="w-full flex items-center justify-between px-12 py-2 hover:bg-[var(--color-bg-secondary)] transition-colors"
                                           >
                                             <div className="flex items-center gap-2">
-                                              {abiertos.has(subKey) ? <ChevronDown className="w-3 h-3 text-gray-400" /> : <ChevronRight className="w-3 h-3 text-gray-400" />}
-                                              <span className="text-xs text-gray-600 font-medium">{s.nombre}</span>
+                                              {abiertos.has(subKey) ? <ChevronDown className="w-3 h-3 text-[var(--color-text-secondary)]" /> : <ChevronRight className="w-3 h-3 text-[var(--color-text-secondary)]" />}
+                                              <span className="text-xs text-[var(--color-text-secondary)] font-medium">{s.nombre}</span>
                                             </div>
                                             <div className="flex items-center gap-1.5">
                                               {s.patrones_deteccion.length > 0 && (
@@ -1042,13 +1042,13 @@ export default function ReglasCodigo() {
                                                 <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{s.keywords.length} kw</span>
                                               )}
                                               {s.patrones_deteccion.length === 0 && s.keywords.length === 0 && (
-                                                <span className="text-[10px] text-gray-300">sin patrones</span>
+                                                <span className="text-[10px] text-[var(--color-text-secondary)]">sin patrones</span>
                                               )}
                                             </div>
                                           </button>
 
                                           {abiertos.has(subKey) && (s.keywords.length > 0 || s.patrones_deteccion.length > 0) && (
-                                            <div className="px-16 py-2 bg-gray-50 flex flex-wrap gap-1.5">
+                                            <div className="px-16 py-2 bg-[var(--color-bg-secondary)] flex flex-wrap gap-1.5">
                                               {s.keywords.map((kw) => <PatronBadge key={kw} tipo="keyword" valor={kw} />)}
                                               {s.patrones_deteccion.map((p) => <PatronBadge key={p} tipo="regex" valor={p} />)}
                                             </div>

@@ -1,0 +1,105 @@
+.login-page {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 45%, #0d3a6b 0%, var(--color-brand-navy) 55%, #050d1c 100%);
+}
+
+.login-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.login-star {
+  position: absolute;
+  border-radius: 50%;
+  background: #E6EAF0;
+  box-shadow: 0 0 4px 1px rgba(230, 234, 240, 0.6);
+  animation-name: login-twinkle;
+  animation-iteration-count: infinite;
+  animation-timing-function: ease-in-out;
+}
+
+@keyframes login-twinkle {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 1; }
+}
+
+.login-card-wrapper {
+  position: relative;
+  z-index: 1;
+}
+
+/* Contenedor de los aros: ya no vive "pegado" a la card ni depende de su
+   padding — ocupa su propio recuadro centrado en la página completa
+   (min(100vmin, 1300px)), así puede crecer mucho más allá del contorno de
+   la card sin que un wrapper angosto lo recorte. vmin (el menor entre
+   ancho/alto de viewport) hace que se achique solo en pantallas angostas
+   O bajas, sin reglas de breakpoint manuales. */
+.login-rings {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: min(83vmin, 1080px);
+  height: min(83vmin, 1080px);
+  transform: translate(-50%, -50%);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.login-ring {
+  transform-origin: 100px 100px;
+  animation-name: login-ring-spin;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  /* Promueve cada aro a su propia capa de composición — la rotación
+     (transform) y el glow (filter) corren en la GPU sin forzar reflow del
+     resto de la página. */
+  will-change: transform;
+}
+
+.login-ring path {
+  /* Antes había DOS drop-shadow apilados por trazo (8 pasadas de blur en
+     total entre los 4 aros): cada uno se recalcula en cada frame de la
+     transición de color, y con los aros ahora mucho más grandes esa
+     recomputación es sobre un área de raster mucho mayor — esa es la
+     causa real del "lag" al cambiar de color, no la generación del color
+     en sí. Se deja un solo drop-shadow (más intenso, para no perder
+     presencia de neón) y se anima "color" junto con "stroke" para que el
+     glow (que depende de currentColor) no salte instantáneo mientras el
+     trazo todavía está en transición — antes solo "stroke" tenía
+     transition, así que el resplandor cambiaba de golpe y el trazo se
+     quedaba rezagado, lo cual también se sentía como jank aunque la
+     duración fuera corta. */
+  filter: drop-shadow(0 0 18px currentColor);
+  transition: stroke 0.25s ease, color 0.25s ease;
+  will-change: stroke, filter;
+}
+
+@keyframes login-ring-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.login-card {
+  position: relative;
+  width: 360px;
+  max-width: 88vw;
+  border-radius: 18px;
+  padding: 2.5rem 2rem;
+  background: rgba(10, 14, 26, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-star,
+  .login-ring {
+    animation: none;
+  }
+}

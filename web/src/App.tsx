@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/ui/Layout';
+import ProtectedRoute from './components/ui/ProtectedRoute';
+import LoginPage from './pages/LoginPage';
 import LectorPolizas from './pages/LectorPolizas';
 import Historial from './pages/Historial';
 import Catalogos from './pages/Catalogos';
@@ -10,17 +12,27 @@ import TicketsMovi from './pages/TicketsMovi';
 export default function App() {
   return (
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/"             element={<LectorPolizas />} />
-          <Route path="/historial"    element={<Historial />} />
-          <Route path="/catalogos"    element={<Catalogos />} />
-          <Route path="/reglas"       element={<Reglas />} />
-          <Route path="/trainer"      element={<Reglas />} />
-          <Route path="/reglas/codigo" element={<ReglasCodigo />} />
-          <Route path="/clasificador/tickets" element={<TicketsMovi />} />
-        </Routes>
-      </Layout>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/*"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <Routes>
+                  <Route path="/"             element={<LectorPolizas />} />
+                  <Route path="/historial"    element={<Historial />} />
+                  <Route path="/catalogos"    element={<Catalogos />} />
+                  <Route path="/reglas"       element={<Reglas />} />
+                  <Route path="/trainer"      element={<Reglas />} />
+                  <Route path="/reglas/codigo" element={<ReglasCodigo />} />
+                  <Route path="/clasificador/tickets" element={<TicketsMovi />} />
+                </Routes>
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   );
 }

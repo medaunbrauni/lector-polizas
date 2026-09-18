@@ -39,7 +39,7 @@ export class PdfVisorErrorBoundary extends Component<{ children: ReactNode }, { 
     if (this.state.fallo) {
       return (
         <div className="absolute inset-0 flex items-center justify-center p-6">
-          <p className="text-sm text-gray-500 bg-white px-4 py-3 rounded-lg shadow-sm text-center max-w-sm">
+          <p className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm text-center max-w-sm">
             No se pudo mostrar el PDF de esta póliza. Elige otra póliza de la lista e intenta de nuevo.
           </p>
         </div>
@@ -80,51 +80,51 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
     <div className="absolute inset-0 flex flex-col overflow-hidden">
 
       {/* ── Barra de navegación + zoom ── */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border-b border-gray-300 flex-shrink-0 select-none">
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0 select-none">
 
         {/* Páginas */}
         <button
           onClick={() => setPagina((p) => Math.max(1, p - 1))}
           disabled={pagina <= 1 || numPages === 0}
-          className="px-2 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+          className="px-2 py-0.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
         >‹</button>
-        <span className="text-xs font-medium text-gray-600 tabular-nums min-w-[72px] text-center">
+        <span className="text-xs font-medium text-[var(--color-text-secondary)] tabular-nums min-w-[72px] text-center">
           {numPages > 0 ? `Pág. ${pagina} / ${numPages}` : '—'}
         </span>
         <button
           onClick={() => setPagina((p) => Math.min(numPages, p + 1))}
           disabled={pagina >= numPages || numPages === 0}
-          className="px-2 py-0.5 text-xs text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+          className="px-2 py-0.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
         >›</button>
 
         {/* Separador */}
-        <div className="w-px h-4 bg-gray-300 mx-1" />
+        <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
 
         {/* Zoom */}
         <button
           onClick={zoomOut}
           disabled={zoom <= 0.5}
-          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
           title="Reducir"
         >−</button>
         <button
           onClick={() => setZoom(1.0)}
-          className="text-xs font-mono font-semibold text-gray-700 hover:text-blue-600 bg-white border border-gray-200 rounded px-1.5 py-0.5 transition-colors min-w-[44px] text-center"
+          className="text-xs font-mono font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-brand-blue)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-1.5 py-0.5 transition-colors min-w-[44px] text-center"
           title="Restablecer zoom"
         >{Math.round(zoom * 100)}%</button>
         <button
           onClick={zoomIn}
           disabled={zoom >= 3.0}
-          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-gray-600 hover:text-blue-600 disabled:opacity-30 bg-white border border-gray-200 rounded transition-colors"
+          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
           title="Ampliar"
         >+</button>
       </div>
 
       {/* ── Página actual — scroll dentro del visor ── */}
-      <div className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-gray-200">
+      <div className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-[var(--color-bg-secondary)]">
         {noDisponible ? (
           <div className="absolute inset-0 flex items-center justify-center p-6">
-            <p className="text-sm text-gray-500 bg-white px-4 py-3 rounded-lg shadow-sm text-center max-w-sm">
+            <p className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm text-center max-w-sm">
               El archivo original ya no está disponible, pero los datos extraídos se conservan.
             </p>
           </div>
@@ -132,7 +132,7 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
           <>
             {cargando && (
               <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                <span className="text-sm text-gray-500 bg-white px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
+                <span className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
               </div>
             )}
             {fileProp && (
