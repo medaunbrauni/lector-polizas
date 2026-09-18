@@ -1,6 +1,6 @@
 import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
@@ -10,6 +10,7 @@ from .config import ALLOWED_ORIGINS, UPLOAD_FOLDER
 from .database import init_db, SessionLocal
 from .seed.data import sembrar
 from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador
+from .routers.auth import verificar_sesion
 from .routers.integraciones import movi_beta
 from .seed.campos_globales import sembrar_campos_globales
 from .services.folder_watcher import iniciar_watcher, detener_watcher
@@ -57,17 +58,28 @@ app.add_middleware(
 # tal cual (https://lector.movi.digital/api/x -> 127.0.0.1:8000/api/x),
 # por lo que FastAPI debe exponer sus rutas bajo ese mismo prefijo.
 api_router = APIRouter(prefix="/api")
+
+# ── Sin protección de sesión ──────────────────────────────────────────────
+# auth: son los propios endpoints de login/verify/logout.
+# movi_beta: se autentica con su propio X-API-Key (ver
+#   routers/integraciones/base.py), no con la cookie de sesión de usuario —
+#   es un CRM externo server-to-server, no un navegador con sesión.
 api_router.include_router(auth.router)
-api_router.include_router(extraccion.router)
-api_router.include_router(catalogos.router)
-api_router.include_router(reglas.router)
-api_router.include_router(entrenamiento.router)
-api_router.include_router(clasificador.router)
 api_router.include_router(movi_beta.router)
 
 @api_router.get("/health")
 def health():
     return {"status": "ok", "version": "2.1.0"}
+
+# ── Con protección de sesión ──────────────────────────────────────────────
+# Punto único de control: la dependencia se agrega aquí, no en cada router,
+# para no tener que recordar replicarla si se agrega un router de negocio
+# nuevo y para que quede visible de un vistazo cuál grupo es cuál.
+api_router.include_router(extraccion.router, dependencies=[Depends(verificar_sesion)])
+api_router.include_router(catalogos.router, dependencies=[Depends(verificar_sesion)])
+api_router.include_router(reglas.router, dependencies=[Depends(verificar_sesion)])
+api_router.include_router(entrenamiento.router, dependencies=[Depends(verificar_sesion)])
+api_router.include_router(clasificador.router, dependencies=[Depends(verificar_sesion)])
 
 app.include_router(api_router)
 
