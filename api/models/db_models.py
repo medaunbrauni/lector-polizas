@@ -269,3 +269,17 @@ class CampoExtraido(Base):
     confianza = Column(Float, default=1.0)
 
     extraccion = relationship("Extraccion", back_populates="campos_extraidos")
+
+
+class SesionAuth(Base):
+    """
+    Sesión de login persistente (reemplaza el set() en memoria que se
+    perdía en cada reinicio del proceso). Un solo usuario compartido
+    (AUTH_PASSWORD) puede tener varias sesiones activas a la vez (una por
+    navegador/dispositivo que haya iniciado sesión).
+    """
+    __tablename__ = "sesiones_auth"
+    id = Column(Integer, primary_key=True)
+    token = Column(String(64), unique=True, index=True, nullable=False)
+    creado_en = Column(DateTime, default=datetime.utcnow)
+    expira_en = Column(DateTime, nullable=False)
