@@ -3,11 +3,12 @@ import os
 import re
 import json
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
-from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal
+from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion
 from ..services.rule_engine import cobertura_subramo, _es_vehiculo, _ramo_de_subramo
 
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
@@ -43,7 +44,7 @@ class CampoIn(BaseModel):
     orden: int = 0
 
 
-def _comp_dict(c: Compania) -> dict:
+def _comp_dict(c: Compania, total_extraidas: int = 0) -> dict:
     return {
         "id": c.id, "nombre": c.nombre,
         "nombre_exportacion": c.nombre_exportacion,
@@ -52,10 +53,11 @@ def _comp_dict(c: Compania) -> dict:
         "activo": c.activo,
         "prioridad": c.prioridad,
         "porcentaje_docs": c.porcentaje_docs,
+        "total_extraidas": total_extraidas,
     }
 
 
-def _ramo_dict(r: Ramo) -> dict:
+def _ramo_dict(r: Ramo, total_extraidas: int = 0) -> dict:
     return {
         "id": r.id, "nombre": r.nombre,
         "nombre_exportacion": r.nombre_exportacion,
@@ -63,10 +65,11 @@ def _ramo_dict(r: Ramo) -> dict:
         "keywords": r.keywords or [],
         "patrones_deteccion": r.patrones_deteccion or [],
         "activo": r.activo,
+        "total_extraidas": total_extraidas,
     }
 
 
-def _subramo_dict(s: Subramo, db: Session) -> dict:
+def _subramo_dict(s: Subramo, db: Session, total_extraidas: int = 0) -> dict:
     cob = cobertura_subramo(s.id, db)
     return {
         "id": s.id, "nombre": s.nombre,
@@ -78,7 +81,24 @@ def _subramo_dict(s: Subramo, db: Session) -> dict:
         "prioridad": s.prioridad,
         "porcentaje_docs": s.porcentaje_docs,
         "cobertura": cob,
+        "total_extraidas": total_extraidas,
     }
+
+
+def _conteo_extraidas(db: Session, columna) -> dict[int, int]:
+    """
+    GROUP BY + COUNT sobre `extracciones` para una sola columna (compania_id,
+    ramo_id o subramo_id) — un query para toda la lista, no uno por fila.
+    Filas con esa columna en NULL (extracción sin clasificar del todo) se
+    excluyen del conteo: no hay compañía/ramo/subramo al cual sumarlas.
+    """
+    filas = (
+        db.query(columna, func.count(Extraccion.id))
+        .filter(columna.isnot(None))
+        .group_by(columna)
+        .all()
+    )
+    return dict(filas)
 
 
 # ── Compañías ────────────────────────────────────────────────────────────────
@@ -91,7 +111,8 @@ def listar_companias(db: Session = Depends(get_db)):
         .order_by(Compania.prioridad.asc().nulls_last(), Compania.nombre)
         .all()
     )
-    return [_comp_dict(c) for c in rows]
+    conteos = _conteo_extraidas(db, Extraccion.compania_id)
+    return [_comp_dict(c, conteos.get(c.id, 0)) for c in rows]
 
 @router.post("/companias")
 def crear_compania(data: CompaniaIn, db: Session = Depends(get_db)):
@@ -146,7 +167,8 @@ def listar_ramos(compania_id: int | None = None, db: Session = Depends(get_db)):
     q = db.query(Ramo).filter(Ramo.activo == True)
     if compania_id:
         q = q.filter(Ramo.compania_id == compania_id)
-    return [_ramo_dict(r) for r in q.order_by(Ramo.nombre).all()]
+    conteos = _conteo_extraidas(db, Extraccion.ramo_id)
+    return [_ramo_dict(r, conteos.get(r.id, 0)) for r in q.order_by(Ramo.nombre).all()]
 
 @router.post("/ramos")
 def crear_ramo(data: RamoIn, db: Session = Depends(get_db)):
@@ -193,7 +215,8 @@ def listar_subramos(ramo_id: int | None = None, db: Session = Depends(get_db)):
     if ramo_id:
         q = q.filter(Subramo.ramo_id == ramo_id)
     items = q.order_by(Subramo.prioridad.asc().nulls_last(), Subramo.nombre).all()
-    return [_subramo_dict(s, db) for s in items]
+    conteos = _conteo_extraidas(db, Extraccion.subramo_id)
+    return [_subramo_dict(s, db, conteos.get(s.id, 0)) for s in items]
 
 @router.post("/subramos")
 def crear_subramo(data: SubramoIn, db: Session = Depends(get_db)):

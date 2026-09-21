@@ -852,17 +852,17 @@ export default function Reglas() {
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Compañía…</option>
-          {companias.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+          {companias.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({c.total_extraidas})</option>)}
         </select>
         <select value={selRamo} onChange={(e) => setSelRamo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Ramo…</option>
-          {ramos.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+          {ramos.map((r) => <option key={r.id} value={r.id}>{r.nombre} ({r.total_extraidas})</option>)}
         </select>
         <select value={selSubramo} onChange={(e) => setSelSubramo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Subramo…</option>
-          {subramos.map((s) => <option key={s.id} value={s.id}>{s.nombre}</option>)}
+          {subramos.map((s) => <option key={s.id} value={s.id}>{s.nombre} ({s.total_extraidas})</option>)}
         </select>
       </div>
 
