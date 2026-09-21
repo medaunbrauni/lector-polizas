@@ -54,6 +54,8 @@ export interface Compania {
   activo: boolean;
   prioridad: number | null;
   porcentaje_docs: number | null;
+  /** Pólizas en el historial de extracciones (tabla `extracciones`) para esta compañía. */
+  total_extraidas: number;
 }
 
 export interface Ramo {
@@ -64,6 +66,8 @@ export interface Ramo {
   keywords: string[];
   patrones_deteccion: string[];
   activo: boolean;
+  /** Pólizas en el historial de extracciones (tabla `extracciones`) para este ramo. */
+  total_extraidas: number;
 }
 
 export interface Subramo {
@@ -82,6 +86,8 @@ export interface Subramo {
     campos_sin_regla: number;
     porcentaje: number;
   };
+  /** Pólizas en el historial de extracciones (tabla `extracciones`) para este subramo. */
+  total_extraidas: number;
 }
 
 export interface Campo {
