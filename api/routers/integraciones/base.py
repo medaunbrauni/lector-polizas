@@ -22,6 +22,14 @@ from ...services.rate_limiter import get_bucket
 MAX_SIZE = MAX_FILE_MB * 1024 * 1024
 
 
+def verificar_api_key(x_api_key: str | None, api_key_esperada: str | None, origen: str) -> None:
+    """Chequeo compartido de X-API-Key -- usado por cada ruta de cada integración."""
+    if not api_key_esperada:
+        raise HTTPException(500, f"{origen}: API key no configurada en el servidor")
+    if not x_api_key or not secrets.compare_digest(x_api_key, api_key_esperada):
+        raise HTTPException(401, "API key inválida")
+
+
 def crear_router_integracion(origen: str, api_key_esperada: str | None) -> APIRouter:
     """Arma el router de un CRM externo. `origen` debe ser único (ej. 'movi_beta')."""
     router = APIRouter(prefix=f"/integraciones/{origen}", tags=[f"Integración {origen}"])
@@ -34,10 +42,7 @@ def crear_router_integracion(origen: str, api_key_esperada: str | None) -> APIRo
         x_api_key: str | None = Header(None, alias="X-API-Key"),
         db: Session = Depends(get_db),
     ):
-        if not api_key_esperada:
-            raise HTTPException(500, f"{origen}: API key no configurada en el servidor")
-        if not x_api_key or not secrets.compare_digest(x_api_key, api_key_esperada):
-            raise HTTPException(401, "API key inválida")
+        verificar_api_key(x_api_key, api_key_esperada, origen)
 
         ticket_id = ticket_id.strip()
         if not ticket_id:
