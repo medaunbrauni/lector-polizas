@@ -5,6 +5,11 @@ Agregar otra integración (ej. la versión oficial de MOVI, u otro CRM) es
 un archivo así de corto: elegir un `origen` único y su propia env var de
 API key, y montar el router en main.py.
 """
+# Obligatorio en Python 3.9 (server de producción): sin esto, "str | None"
+# en la firma de extraer_sincrono() se evalúa al definir la función y
+# truena -- esa sintaxis de unión es de 3.10+. Ver INCIDENTE_2026-07-27.md.
+from __future__ import annotations
+
 from fastapi import Depends, File, Header, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
