@@ -9,7 +9,7 @@ import PdfVisor, { PdfVisorErrorBoundary } from '../components/reglas/PdfVisor';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
-  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza,
+  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza, reentrenarPoliza,
   urlPdfEntrenamiento, urlImagenPagina, getTextoPdf,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
@@ -43,12 +43,13 @@ function badgeMetodo(metodo: string | null): { label: string; cls: string } {
   return { label: 'NO ENC.', cls: 'bg-gray-100 text-gray-500' };
 }
 
-// Texto de los <option> de Compañía/Ramo/Subramo: solo se muestra el
-// conteo de entrenadas (entrenado=true en el lote, ver botón "Terminar").
-// total_extraidas sigue viajando en la respuesta del backend (Historial la
-// puede necesitar), solo se dejó de renderizar aquí.
-function formatConteos(nombre: string, totalEntrenadas: number): string {
-  return `${nombre} (${totalEntrenadas} entrenadas)`;
+// Texto de los <option> de Compañía/Ramo/Subramo: dos métricas distintas,
+// no una sola — "extraídas" es el universo de Historial (tabla
+// extracciones), "entrenadas" es cuántas de esas quedaron marcadas
+// entrenado=true en el lote (ver botón "Terminar"). Se listan explícitas
+// con su propia palabra para no dejar ambigüedad de cuál es cuál.
+function formatConteos(nombre: string, totalExtraidas: number, totalEntrenadas: number): string {
+  return `${nombre} (${totalExtraidas} procesadas · ${totalEntrenadas} entrenadas)`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,6 +74,10 @@ export default function Reglas() {
   // `entrenado`. Colapsada por default para no ganar protagonismo sobre el
   // lote de trabajo activo.
   const [mostrarEntrenados, setMostrarEntrenados] = useState(false);
+  // "Lote de pólizas" arranca expandida (a diferencia de "PDFs Entrenados",
+  // colapsada por default) — es la sección de trabajo activo, tiene sentido
+  // que se vea de entrada; "PDFs Entrenados" es más una bandeja de consulta.
+  const [mostrarLote, setMostrarLote] = useState(true);
 
   // ── Selecciones y reglas ───────────────────────────────────────────────────
   const [selecciones, setSelecciones] = useState<MapaSelecciones>({});
@@ -484,6 +489,26 @@ export default function Reglas() {
     }
   }
 
+  // ── Bloqueo de edición para pólizas ya entrenadas ──────────────────────────
+  // entrenado=true en BD es la única fuente de verdad — no hay estado
+  // "desbloqueada" de cliente aparte: "Corregir/Reentrenar" revierte el
+  // flag de una vez en el backend (ver handleReentrenarPoliza), así que
+  // bloqueada se recalcula sola en cuanto `polizas` se actualiza.
+  const bloqueada = !!polizaActiva?.entrenado;
+
+  // Ajusta +1/-1 el contador "(N entrenadas)" de los 3 selects ya cargados
+  // en memoria (compañía/ramo/subramo actualmente seleccionados — la
+  // póliza afectada siempre pertenece a esa jerarquía), sin refetch.
+  // Math.max(0, ...) por robustez ante una doble-llamada accidental.
+  function ajustarContadoresEntrenadas(delta: number) {
+    const compId = Number(selCompania);
+    const ramoId = Number(selRamo);
+    const subramoId = Number(selSubramo);
+    setCompanias((prev) => prev.map((c) => (c.id === compId ? { ...c, total_entrenadas: Math.max(0, c.total_entrenadas + delta) } : c)));
+    setRamos((prev) => prev.map((r) => (r.id === ramoId ? { ...r, total_entrenadas: Math.max(0, r.total_entrenadas + delta) } : r)));
+    setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, total_entrenadas: Math.max(0, s.total_entrenadas + delta) } : s)));
+  }
+
   // ── "Terminar" (marcar póliza como entrenada) ──────────────────────────────
   const [terminando, setTerminando] = useState(false);
   const [terminarError, setTerminarError] = useState<string[] | null>(null);
@@ -497,29 +522,33 @@ export default function Reglas() {
       const res = await terminarPoliza(polizaActiva.id);
       if (res.ok) {
         setPolizas((prev) => prev.map((p) => (p.id === polizaActiva.id ? res.poliza : p)));
-        // Sincroniza el contador "(N entrenadas)" de los 3 selects sin
-        // refetch: companias/ramos/subramos ya están cargados en estado
-        // local (companias una sola vez al montar; ramos/subramos al
-        // elegir cada nivel — ver los useEffect de arriba), y sabemos
-        // exactamente cuál compañía/ramo/subramo subió +1, porque
-        // polizaActiva siempre pertenece al que está seleccionado ahora
-        // mismo. Solo suma si esta póliza pasó de no-entrenada a
-        // entrenada — si ya estaba entrenada (re-clic de "Terminar" tras
-        // corregir algo), el conteo real en BD no cambia, así que tampoco
-        // debe subir aquí.
-        if (!yaEstabaEntrenada) {
-          const compId = Number(selCompania);
-          const ramoId = Number(selRamo);
-          const subramoId = Number(selSubramo);
-          setCompanias((prev) => prev.map((c) => (c.id === compId ? { ...c, total_entrenadas: c.total_entrenadas + 1 } : c)));
-          setRamos((prev) => prev.map((r) => (r.id === ramoId ? { ...r, total_entrenadas: r.total_entrenadas + 1 } : r)));
-          setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, total_entrenadas: s.total_entrenadas + 1 } : s)));
-        }
+        // Solo suma si esta póliza pasó de no-entrenada a entrenada — un
+        // re-clic sobre una ya entrenada no debe volver a sumar.
+        if (!yaEstabaEntrenada) ajustarContadoresEntrenadas(1);
       } else {
         setTerminarError(res.camposFaltantes);
       }
     } finally {
       setTerminando(false);
+    }
+  }
+
+  // ── "Corregir/Reentrenar" (revierte entrenado=false) ───────────────────────
+  const [reentrenando, setReentrenando] = useState(false);
+
+  async function handleReentrenarPoliza(poliza: PolizaEntrenamiento) {
+    if (reentrenando) return;
+    setReentrenando(true);
+    try {
+      const yaEstabaEntrenada = poliza.entrenado;
+      const actualizada = await reentrenarPoliza(poliza.id);
+      setPolizas((prev) => prev.map((p) => (p.id === poliza.id ? actualizada : p)));
+      // Guard simétrico al de "Terminar": solo resta si de verdad estaba
+      // entrenada antes de esta llamada (evita descontar dos veces si por
+      // algún motivo se dispara repetido).
+      if (yaEstabaEntrenada) ajustarContadoresEntrenadas(-1);
+    } finally {
+      setReentrenando(false);
     }
   }
 
@@ -595,6 +624,18 @@ export default function Reglas() {
     setAutoDeteccionSel(new Set(autoDet.filter((ad) => ad.encontrado).map((ad) => ad.poliza_id)));
     setTextoSeleccionado('');
     setBboxCapturado(null);
+    // Acordeón secuencial: al guardar un valor para el campo activo, se
+    // colapsa y se abre solo el siguiente de la lista (mismo orden visual
+    // que agruparCampos ya usa para pintar los grupos), saltando los
+    // campos de sistema (valorFijo) porque no son clickeables/editables —
+    // abrir uno de esos dejaría el acordeón "sin nada" visiblemente
+    // expandido. Si no queda ninguno después, simplemente se cierra todo
+    // (fin del recorrido secuencial). El usuario sigue pudiendo reabrir
+    // cualquier campo ya colapsado a mano sin que esto interfiera.
+    const flat = agruparCampos(camposOrdenados, (c) => c.nombre).flatMap((g) => g.items);
+    const idxActivo = flat.findIndex((c) => c.nombre === campoActivo);
+    const siguiente = flat.slice(idxActivo + 1).find((c) => !camposValorFijo.has(c.nombre));
+    setCampoActivo(siguiente ? siguiente.nombre : '');
   }
 
   function toggleAutoDeteccionSel(polizaId: number) {
@@ -851,6 +892,19 @@ export default function Reglas() {
             </span>
           </div>
         </div>
+        {p.entrenado && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setPolizaIdx(idx);
+              handleReentrenarPoliza(p);
+            }}
+            title="Corregir/Reentrenar"
+            className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] transition-colors mt-0.5"
+          >
+            <RotateCcw className="w-3 h-3" />
+          </button>
+        )}
         <button
           onClick={(e) => { e.stopPropagation(); handleEliminarPoliza(p.id); }}
           className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-red-500 transition-colors mt-0.5"
@@ -962,17 +1016,17 @@ export default function Reglas() {
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Compañía…</option>
-          {companias.map((c) => <option key={c.id} value={c.id}>{formatConteos(c.nombre, c.total_entrenadas)}</option>)}
+          {companias.map((c) => <option key={c.id} value={c.id}>{formatConteos(c.nombre, c.total_extraidas, c.total_entrenadas)}</option>)}
         </select>
         <select value={selRamo} onChange={(e) => setSelRamo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Ramo…</option>
-          {ramos.map((r) => <option key={r.id} value={r.id}>{formatConteos(r.nombre, r.total_entrenadas)}</option>)}
+          {ramos.map((r) => <option key={r.id} value={r.id}>{formatConteos(r.nombre, r.total_extraidas, r.total_entrenadas)}</option>)}
         </select>
         <select value={selSubramo} onChange={(e) => setSelSubramo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Subramo…</option>
-          {subramos.map((s) => <option key={s.id} value={s.id}>{formatConteos(s.nombre, s.total_entrenadas)}</option>)}
+          {subramos.map((s) => <option key={s.id} value={s.id}>{formatConteos(s.nombre, s.total_extraidas, s.total_entrenadas)}</option>)}
         </select>
       </div>
 
@@ -1013,13 +1067,20 @@ export default function Reglas() {
           {/* ══ Panel izquierdo: Lote de pólizas ══ */}
           <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
             <div className="px-3 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
-              <span className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">
+              <button
+                onClick={() => setMostrarLote((v) => !v)}
+                className="flex items-center gap-1.5 text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                {mostrarLote ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                 Lote de pólizas
-              </span>
+              </button>
               <div className="flex items-center gap-1.5">
                 {/* El tope de 5 aplica solo al lote pendiente de entrenar —
                     las ya entrenadas (sección de abajo) no compiten por ese
-                    cupo, viven aparte una vez que se les dio "Terminar". */}
+                    cupo, viven aparte una vez que se les dio "Terminar".
+                    El contador queda fuera del botón de colapsar a
+                    propósito, para que siga visible aunque la lista esté
+                    colapsada — mismo criterio que "PDFs Entrenados". */}
                 <span className="text-[10px] text-[var(--color-text-secondary)] font-medium bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded-full">
                   {polizasPendientes.length} / 5
                 </span>
@@ -1053,14 +1114,16 @@ export default function Reglas() {
 
             {/* Lista de pólizas */}
             <div className="flex-1 overflow-y-auto">
-              <div className="divide-y divide-[var(--color-border)]">
-                {polizasPendientes.length === 0 && (
-                  <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
-                    Sin pólizas. Agrega al menos una para empezar.
-                  </div>
-                )}
-                {polizasPendientes.map(({ p, idx }) => renderFilaPoliza(p, idx))}
-              </div>
+              {mostrarLote && (
+                <div className="divide-y divide-[var(--color-border)]">
+                  {polizasPendientes.length === 0 && (
+                    <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
+                      Sin pólizas. Agrega al menos una para empezar.
+                    </div>
+                  )}
+                  {polizasPendientes.map(({ p, idx }) => renderFilaPoliza(p, idx))}
+                </div>
+              )}
 
               {/* "PDFs Entrenados" — mismo array `polizas`, particionado por
                   `entrenado`. Colapsable, debajo del lote pendiente; las
@@ -1353,6 +1416,23 @@ export default function Reglas() {
               )}
             </div>
 
+            {/* Póliza ya entrenada: campos bloqueados por defecto (ver
+                `bloqueada` más arriba). Este botón es la única forma de
+                desbloquear — vive ARRIBA de la lista, separado a propósito
+                del botón "Terminar" que sigue al fondo. */}
+            {!mostrarVistaSimple && bloqueada && (
+              <div className="px-4 py-2.5 border-b border-[var(--color-border)] bg-amber-50">
+                <button
+                  onClick={() => polizaActiva && handleReentrenarPoliza(polizaActiva)}
+                  disabled={reentrenando}
+                  className="w-full py-1.5 inline-flex items-center justify-center gap-1.5 rounded-lg text-xs font-semibold text-amber-800 border border-amber-300 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  {reentrenando ? 'Reabriendo…' : 'Corregir/Reentrenar'}
+                </button>
+              </div>
+            )}
+
             {/* Pestaña "Campos" (llegada desde Historial): solo lista los
                 valores YA EXTRAÍDOS de la póliza activa — sin conteo de
                 selecciones ni modo de selección masiva/generación de regex,
@@ -1425,6 +1505,13 @@ export default function Reglas() {
               </div>
             ) : (
             <div className="flex-1 overflow-y-auto">
+              {/* Póliza entrenada y aún no desbloqueada: campos atenuados y
+                  sin interacción (opacity + pointer-events:none es más
+                  simple que deshabilitar cada input/onClick uno por uno
+                  dado cómo está armada hoy esta lista). El botón "Terminar"
+                  de más abajo queda FUERA de este wrapper a propósito, para
+                  que siga siempre clickeable. */}
+              <div className={bloqueada ? 'opacity-50 pointer-events-none' : ''}>
               {agruparCampos(camposOrdenados, (c) => c.nombre).map((grupo) => (
               <div key={grupo.titulo}>
                 <div className="campo-grupo-header px-4 pt-3 pb-1 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50 border-l-4 border-blue-300">
@@ -1450,9 +1537,21 @@ export default function Reglas() {
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-[var(--color-text-primary)] truncate">{labelCampo(campo.nombre, campo.label)}</p>
-                          <p className="text-[10px] text-[var(--color-text-secondary)] font-mono">{campo.nombre}</p>
+                        <div className="min-w-0 flex items-start gap-1.5">
+                          {/* Palomita puramente visual: ¿esta póliza (la
+                              activa en el visor) ya tiene un valor para este
+                              campo? Mismo mecanismo que usa "Terminar"
+                              (SeleccionCampo), aquí solo para pintar el
+                              check — no cambia nada del guardado. */}
+                          {polizaActiva && sels[polizaActiva.id]?.texto_seleccionado ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-success-text)]" />
+                          ) : (
+                            <span className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 rounded-full border border-[var(--color-border)]" />
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold text-[var(--color-text-primary)] truncate">{labelCampo(campo.nombre, campo.label)}</p>
+                            <p className="text-[10px] text-[var(--color-text-secondary)] font-mono">{campo.nombre}</p>
+                          </div>
                         </div>
                         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                           {tieneRegla && (
@@ -1571,6 +1670,7 @@ export default function Reglas() {
               })}
               </div>
               ))}
+              </div>
 
               {/* Botón "Terminar" — al fondo del panel scrollable, tras
                   todos los grupos de campos. Deshabilitado con tooltip si

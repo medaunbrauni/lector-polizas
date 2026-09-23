@@ -296,6 +296,24 @@ def terminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
     return _poliza_dict(p, db)
 
 
+@router.patch("/polizas/{poliza_id}/reentrenar")
+def reentrenar_poliza(poliza_id: int, db: Session = Depends(get_db)):
+    """
+    Revierte entrenado=False para volver a habilitar la edición de una
+    póliza ya entrenada ("Corregir/Reentrenar" en el panel). A diferencia
+    de "Terminar", no valida nada — simplemente reabre la póliza para
+    corrección. No toca ninguna SeleccionCampo: los valores ya guardados
+    siguen ahí, el usuario los ve y corrige en vez de partir de cero.
+    """
+    p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == poliza_id).first()
+    if not p:
+        raise HTTPException(404, "Póliza no encontrada")
+
+    p.entrenado = False
+    db.commit()
+    return _poliza_dict(p, db)
+
+
 @router.delete("/subramos/{subramo_id}/polizas")
 def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     """

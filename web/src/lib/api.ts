@@ -290,6 +290,12 @@ export async function terminarPoliza(
   return { ok: false, camposFaltantes: data?.detail?.campos_faltantes ?? [] };
 }
 
+export async function reentrenarPoliza(polizaId: number): Promise<PolizaEntrenamiento> {
+  const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}/reentrenar`, { method: 'PATCH' });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
 export async function guardarSeleccion(data: {
   poliza_id: number; nombre_campo: string; texto_seleccionado: string;
   contexto?: string; bbox?: object | null; es_auto?: boolean;
