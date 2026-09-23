@@ -493,9 +493,28 @@ export default function Reglas() {
     setTerminando(true);
     setTerminarError(null);
     try {
+      const yaEstabaEntrenada = polizaActiva.entrenado;
       const res = await terminarPoliza(polizaActiva.id);
       if (res.ok) {
         setPolizas((prev) => prev.map((p) => (p.id === polizaActiva.id ? res.poliza : p)));
+        // Sincroniza el contador "(N entrenadas)" de los 3 selects sin
+        // refetch: companias/ramos/subramos ya están cargados en estado
+        // local (companias una sola vez al montar; ramos/subramos al
+        // elegir cada nivel — ver los useEffect de arriba), y sabemos
+        // exactamente cuál compañía/ramo/subramo subió +1, porque
+        // polizaActiva siempre pertenece al que está seleccionado ahora
+        // mismo. Solo suma si esta póliza pasó de no-entrenada a
+        // entrenada — si ya estaba entrenada (re-clic de "Terminar" tras
+        // corregir algo), el conteo real en BD no cambia, así que tampoco
+        // debe subir aquí.
+        if (!yaEstabaEntrenada) {
+          const compId = Number(selCompania);
+          const ramoId = Number(selRamo);
+          const subramoId = Number(selSubramo);
+          setCompanias((prev) => prev.map((c) => (c.id === compId ? { ...c, total_entrenadas: c.total_entrenadas + 1 } : c)));
+          setRamos((prev) => prev.map((r) => (r.id === ramoId ? { ...r, total_entrenadas: r.total_entrenadas + 1 } : r)));
+          setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, total_entrenadas: s.total_entrenadas + 1 } : s)));
+        }
       } else {
         setTerminarError(res.camposFaltantes);
       }
