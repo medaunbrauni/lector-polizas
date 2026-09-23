@@ -126,6 +126,12 @@ class PolizaEntrenamiento(Base):
     ruta_archivo = Column(String(512), nullable=False)   # ruta local en disco
     texto_pdf = Column(Text, nullable=True)              # texto extraído por pdfplumber
     paginas = Column(Integer, nullable=True)
+    # True cuando el usuario le dio "Terminar" en el panel de Entrenar/Corregir
+    # y en ese momento todos los campos requerido=True del subramo tenían una
+    # SeleccionCampo con valor (ver PATCH /entrenamiento/polizas/{id}/terminar).
+    # No se revierte automáticamente si luego se borra un valor — queda
+    # marcada hasta que alguien vuelva a pedir "Terminar" explícitamente.
+    entrenado = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     selecciones = relationship(
