@@ -2,6 +2,7 @@ from __future__ import annotations
 import os
 import re
 import json
+from typing import NamedTuple
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -107,52 +108,17 @@ def _conteo_extraidas(db: Session, columna) -> dict[int, int]:
     return dict(filas)
 
 
-def _conteo_entrenadas_por_subramo(db: Session) -> dict[int, int]:
-    """GROUP BY + COUNT de PolizaEntrenamiento.entrenado=True, por subramo_id directo."""
-    filas = (
-        db.query(PolizaEntrenamiento.subramo_id, func.count(PolizaEntrenamiento.id))
-        .filter(PolizaEntrenamiento.entrenado == True)
-        .group_by(PolizaEntrenamiento.subramo_id)
-        .all()
-    )
-    return dict(filas)
-
-
-def _conteo_entrenadas_por_ramo(db: Session) -> dict[int, int]:
-    """Igual que arriba, pero subiendo un nivel vía JOIN subramos.ramo_id."""
-    filas = (
-        db.query(Subramo.ramo_id, func.count(PolizaEntrenamiento.id))
-        .join(PolizaEntrenamiento, PolizaEntrenamiento.subramo_id == Subramo.id)
-        .filter(PolizaEntrenamiento.entrenado == True)
-        .group_by(Subramo.ramo_id)
-        .all()
-    )
-    return dict(filas)
-
-
-def _conteo_entrenadas_por_compania(db: Session) -> dict[int, int]:
-    """Igual que arriba, subiendo dos niveles vía JOIN subramos -> ramos.compania_id."""
-    filas = (
-        db.query(Ramo.compania_id, func.count(PolizaEntrenamiento.id))
-        .join(Subramo, Subramo.ramo_id == Ramo.id)
-        .join(PolizaEntrenamiento, PolizaEntrenamiento.subramo_id == Subramo.id)
-        .filter(PolizaEntrenamiento.entrenado == True)
-        .group_by(Ramo.compania_id)
-        .all()
-    )
-    return dict(filas)
-
-
-def _conteo_lote_por_subramo(db: Session) -> dict[int, int]:
+def _polizas_visibles_por_subramo(db: Session) -> dict[int, list[PolizaEntrenamiento]]:
     """
-    Universo completo de PolizaEntrenamiento por subramo (Lote de Pólizas +
-    PDFs Entrenados combinados, sin filtrar por `entrenado`) — pero con el
-    MISMO criterio de "visible" que ya usa el listado del lote
-    (_polizas_visibles en entrenamiento.py): se excluyen filas sin archivo
-    físico en disco y se dedupea por nombre_archivo, quedándose con la más
-    reciente. No se reutiliza esa función directamente para evitar un
-    import circular (entrenamiento.py ya importa de este módulo) — es la
-    misma lógica, reimplementada aquí.
+    Única fuente de verdad de qué cuenta como "una póliza de entrenamiento
+    real" para fines de conteo — tanto total_lote como total_entrenadas
+    parten de aquí, para que nunca puedan divergir en su definición.
+
+    Mismo criterio que _polizas_visibles en entrenamiento.py: se excluyen
+    filas sin archivo físico en disco, y se dedupea por nombre_archivo
+    quedándose con la más reciente. No se importa esa función directamente
+    para evitar un import circular (entrenamiento.py ya importa de este
+    módulo) — es la misma lógica, reimplementada aquí.
 
     Un COUNT(*) crudo sin este criterio queda muy inflado: se encontraron
     27 grupos de filas duplicadas en producción (mismo subramo+archivo),
@@ -169,29 +135,53 @@ def _conteo_lote_por_subramo(db: Session) -> dict[int, int]:
         if not os.path.exists(p.ruta_archivo):
             continue
         por_subramo.setdefault(p.subramo_id, {})[p.nombre_archivo] = p
-    return {sid: len(nombres) for sid, nombres in por_subramo.items()}
+    return {sid: list(nombres.values()) for sid, nombres in por_subramo.items()}
 
 
-def _conteo_lote_por_ramo(db: Session) -> dict[int, int]:
-    por_subramo = _conteo_lote_por_subramo(db)
+def _rollup_ramo_y_compania(db: Session, por_subramo: dict[int, int]) -> tuple[dict[int, int], dict[int, int]]:
+    """Sube un dict {subramo_id: n} a {ramo_id: n} y {compania_id: n} vía la jerarquía real."""
     subramo_a_ramo = dict(db.query(Subramo.id, Subramo.ramo_id).all())
-    resultado: dict[int, int] = {}
+    ramo_a_compania = dict(db.query(Ramo.id, Ramo.compania_id).all())
+    por_ramo: dict[int, int] = {}
     for sid, cnt in por_subramo.items():
         rid = subramo_a_ramo.get(sid)
         if rid is not None:
-            resultado[rid] = resultado.get(rid, 0) + cnt
-    return resultado
-
-
-def _conteo_lote_por_compania(db: Session) -> dict[int, int]:
-    por_ramo = _conteo_lote_por_ramo(db)
-    ramo_a_compania = dict(db.query(Ramo.id, Ramo.compania_id).all())
-    resultado: dict[int, int] = {}
+            por_ramo[rid] = por_ramo.get(rid, 0) + cnt
+    por_compania: dict[int, int] = {}
     for rid, cnt in por_ramo.items():
         cid = ramo_a_compania.get(rid)
         if cid is not None:
-            resultado[cid] = resultado.get(cid, 0) + cnt
-    return resultado
+            por_compania[cid] = por_compania.get(cid, 0) + cnt
+    return por_ramo, por_compania
+
+
+class ConteosLoteEntrenadas(NamedTuple):
+    """dict {id: n} por nivel — un campo por métrica × nivel, para no depender
+    de posiciones en una tupla al leer el resultado en cada endpoint."""
+    lote_subramo: dict[int, int]
+    lote_ramo: dict[int, int]
+    lote_compania: dict[int, int]
+    entrenadas_subramo: dict[int, int]
+    entrenadas_ramo: dict[int, int]
+    entrenadas_compania: dict[int, int]
+
+
+def _conteos_lote_y_entrenadas(db: Session) -> ConteosLoteEntrenadas:
+    """
+    Calcula total_lote y total_entrenadas para los 3 niveles a partir de la
+    MISMA base (_polizas_visibles_por_subramo) en un solo recorrido, así
+    ambos conteos comparten exactamente el mismo universo de "pólizas
+    reales" y no pueden divergir.
+    """
+    visibles = _polizas_visibles_por_subramo(db)
+    lote_subramo = {sid: len(lst) for sid, lst in visibles.items()}
+    entrenadas_subramo = {sid: sum(1 for p in lst if p.entrenado) for sid, lst in visibles.items()}
+    lote_ramo, lote_compania = _rollup_ramo_y_compania(db, lote_subramo)
+    entrenadas_ramo, entrenadas_compania = _rollup_ramo_y_compania(db, entrenadas_subramo)
+    return ConteosLoteEntrenadas(
+        lote_subramo, lote_ramo, lote_compania,
+        entrenadas_subramo, entrenadas_ramo, entrenadas_compania,
+    )
 
 
 # ── Compañías ────────────────────────────────────────────────────────────────
@@ -205,9 +195,8 @@ def listar_companias(db: Session = Depends(get_db)):
         .all()
     )
     conteos = _conteo_extraidas(db, Extraccion.compania_id)
-    conteos_entrenadas = _conteo_entrenadas_por_compania(db)
-    conteos_lote = _conteo_lote_por_compania(db)
-    return [_comp_dict(c, conteos.get(c.id, 0), conteos_entrenadas.get(c.id, 0), conteos_lote.get(c.id, 0)) for c in rows]
+    cl = _conteos_lote_y_entrenadas(db)
+    return [_comp_dict(c, conteos.get(c.id, 0), cl.entrenadas_compania.get(c.id, 0), cl.lote_compania.get(c.id, 0)) for c in rows]
 
 @router.post("/companias")
 def crear_compania(data: CompaniaIn, db: Session = Depends(get_db)):
@@ -263,9 +252,8 @@ def listar_ramos(compania_id: int | None = None, db: Session = Depends(get_db)):
     if compania_id:
         q = q.filter(Ramo.compania_id == compania_id)
     conteos = _conteo_extraidas(db, Extraccion.ramo_id)
-    conteos_entrenadas = _conteo_entrenadas_por_ramo(db)
-    conteos_lote = _conteo_lote_por_ramo(db)
-    return [_ramo_dict(r, conteos.get(r.id, 0), conteos_entrenadas.get(r.id, 0), conteos_lote.get(r.id, 0)) for r in q.order_by(Ramo.nombre).all()]
+    cl = _conteos_lote_y_entrenadas(db)
+    return [_ramo_dict(r, conteos.get(r.id, 0), cl.entrenadas_ramo.get(r.id, 0), cl.lote_ramo.get(r.id, 0)) for r in q.order_by(Ramo.nombre).all()]
 
 @router.post("/ramos")
 def crear_ramo(data: RamoIn, db: Session = Depends(get_db)):
@@ -313,9 +301,8 @@ def listar_subramos(ramo_id: int | None = None, db: Session = Depends(get_db)):
         q = q.filter(Subramo.ramo_id == ramo_id)
     items = q.order_by(Subramo.prioridad.asc().nulls_last(), Subramo.nombre).all()
     conteos = _conteo_extraidas(db, Extraccion.subramo_id)
-    conteos_entrenadas = _conteo_entrenadas_por_subramo(db)
-    conteos_lote = _conteo_lote_por_subramo(db)
-    return [_subramo_dict(s, db, conteos.get(s.id, 0), conteos_entrenadas.get(s.id, 0), conteos_lote.get(s.id, 0)) for s in items]
+    cl = _conteos_lote_y_entrenadas(db)
+    return [_subramo_dict(s, db, conteos.get(s.id, 0), cl.entrenadas_subramo.get(s.id, 0), cl.lote_subramo.get(s.id, 0)) for s in items]
 
 @router.post("/subramos")
 def crear_subramo(data: SubramoIn, db: Session = Depends(get_db)):
