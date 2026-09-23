@@ -276,6 +276,20 @@ export async function vaciarLoteEntrenamiento(subramoId: number) {
   return res.json();
 }
 
+// terminarPoliza no usa el patrón throw-si-no-ok de las demás funciones de
+// este archivo: el 400 "faltan campos requeridos" es una respuesta
+// esperada del flujo normal (no un error de red/servidor), y el frontend
+// necesita la lista de campos faltantes del body para mostrarla — un throw
+// genérico la habría descartado.
+export async function terminarPoliza(
+  polizaId: number,
+): Promise<{ ok: true; poliza: PolizaEntrenamiento } | { ok: false; camposFaltantes: string[] }> {
+  const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}/terminar`, { method: 'PATCH' });
+  const data = await res.json().catch(() => ({}));
+  if (res.ok) return { ok: true, poliza: data };
+  return { ok: false, camposFaltantes: data?.detail?.campos_faltantes ?? [] };
+}
+
 export async function guardarSeleccion(data: {
   poliza_id: number; nombre_campo: string; texto_seleccionado: string;
   contexto?: string; bbox?: object | null; es_auto?: boolean;
@@ -386,7 +400,7 @@ export async function generarYGuardarPatrones(subramo_id: number, texto_pdf: str
 
 // ── Clasificador ──────────────────────────────────────────────────────────────
 
-import type { ItemCola, ResultadoUpload, InfoClasificador, TicketExterno, TicketExternoDetalle } from './types';
+import type { ItemCola, ResultadoUpload, InfoClasificador, TicketExterno, TicketExternoDetalle, PolizaEntrenamiento } from './types';
 
 export async function clasificadorInfo(): Promise<InfoClasificador> {
   const res = await fetch(`${BASE}/clasificador/info`);

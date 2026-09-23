@@ -9,7 +9,7 @@ import PdfVisor, { PdfVisorErrorBoundary } from '../components/reglas/PdfVisor';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
-  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento,
+  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza,
   urlPdfEntrenamiento, urlImagenPagina, getTextoPdf,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
@@ -43,6 +43,14 @@ function badgeMetodo(metodo: string | null): { label: string; cls: string } {
   return { label: 'NO ENC.', cls: 'bg-gray-100 text-gray-500' };
 }
 
+// Texto de los <option> de Compañía/Ramo/Subramo: solo se muestra el
+// conteo de entrenadas (entrenado=true en el lote, ver botón "Terminar").
+// total_extraidas sigue viajando en la respuesta del backend (Historial la
+// puede necesitar), solo se dejó de renderizar aquí.
+function formatConteos(nombre: string, totalEntrenadas: number): string {
+  return `${nombre} (${totalEntrenadas} entrenadas)`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Reglas() {
@@ -60,6 +68,11 @@ export default function Reglas() {
   const [polizas, setPolizas] = useState<PolizaEntrenamiento[]>([]);
   const [polizaIdx, setPolizaIdx] = useState(0);
   const [subiendo, setSubiendo] = useState(false);
+  // "PDFs Entrenados" es una sección colapsable aparte del lote pendiente,
+  // no un tab ni un fetch nuevo — mismo array `polizas`, particionado por
+  // `entrenado`. Colapsada por default para no ganar protagonismo sobre el
+  // lote de trabajo activo.
+  const [mostrarEntrenados, setMostrarEntrenados] = useState(false);
 
   // ── Selecciones y reglas ───────────────────────────────────────────────────
   const [selecciones, setSelecciones] = useState<MapaSelecciones>({});
@@ -471,6 +484,45 @@ export default function Reglas() {
     }
   }
 
+  // ── "Terminar" (marcar póliza como entrenada) ──────────────────────────────
+  const [terminando, setTerminando] = useState(false);
+  const [terminarError, setTerminarError] = useState<string[] | null>(null);
+
+  async function handleTerminarPoliza() {
+    if (!polizaActiva) return;
+    setTerminando(true);
+    setTerminarError(null);
+    try {
+      const yaEstabaEntrenada = polizaActiva.entrenado;
+      const res = await terminarPoliza(polizaActiva.id);
+      if (res.ok) {
+        setPolizas((prev) => prev.map((p) => (p.id === polizaActiva.id ? res.poliza : p)));
+        // Sincroniza el contador "(N entrenadas)" de los 3 selects sin
+        // refetch: companias/ramos/subramos ya están cargados en estado
+        // local (companias una sola vez al montar; ramos/subramos al
+        // elegir cada nivel — ver los useEffect de arriba), y sabemos
+        // exactamente cuál compañía/ramo/subramo subió +1, porque
+        // polizaActiva siempre pertenece al que está seleccionado ahora
+        // mismo. Solo suma si esta póliza pasó de no-entrenada a
+        // entrenada — si ya estaba entrenada (re-clic de "Terminar" tras
+        // corregir algo), el conteo real en BD no cambia, así que tampoco
+        // debe subir aquí.
+        if (!yaEstabaEntrenada) {
+          const compId = Number(selCompania);
+          const ramoId = Number(selRamo);
+          const subramoId = Number(selSubramo);
+          setCompanias((prev) => prev.map((c) => (c.id === compId ? { ...c, total_entrenadas: c.total_entrenadas + 1 } : c)));
+          setRamos((prev) => prev.map((r) => (r.id === ramoId ? { ...r, total_entrenadas: r.total_entrenadas + 1 } : r)));
+          setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, total_entrenadas: s.total_entrenadas + 1 } : s)));
+        }
+      } else {
+        setTerminarError(res.camposFaltantes);
+      }
+    } finally {
+      setTerminando(false);
+    }
+  }
+
   // ── Captura de selección desde el visor PDF ────────────────────────────────
   const handleSeleccion = useCallback(() => {
     if (!campoActivo || !polizaActiva) return;
@@ -751,6 +803,64 @@ export default function Reglas() {
     !!selecciones[campo.nombre]?.[polizaActiva.id]?.texto_seleccionado
   );
 
+  // Cálculo del lado del cliente de qué campos requeridos le faltan a la
+  // póliza activa — mismo criterio que el backend en
+  // PATCH /entrenamiento/polizas/{id}/terminar (excluye 'entidad' por la
+  // misma razón que camposVisibles: se deriva sola, no se edita aquí).
+  // Sirve para deshabilitar el botón "Terminar" con un tooltip ANTES de
+  // que el usuario haga clic, en vez de hacerlo esperar a un 400.
+  const camposFaltantesActivo = !polizaActiva ? [] : camposVisibles.filter((c) =>
+    c.requerido && !selecciones[c.nombre]?.[polizaActiva.id]?.texto_seleccionado
+  );
+
+  // Partición del lote para la sección "PDFs Entrenados": mismo array
+  // `polizas`, mismo orden — se conserva el índice original de cada una
+  // (idx) porque polizaIdx/setPolizaIdx navegan sobre `polizas` completo,
+  // no sobre estos subconjuntos.
+  const polizasConIdx = polizas.map((p, idx) => ({ p, idx }));
+  const polizasPendientes = polizasConIdx.filter(({ p }) => !p.entrenado);
+  const polizasEntrenadas = polizasConIdx.filter(({ p }) => p.entrenado);
+
+  function renderFilaPoliza(p: PolizaEntrenamiento, idx: number) {
+    const selCount = Object.values(selecciones).filter((m) => m[p.id]).length;
+    const totalCampos = camposVisibles.filter((c) => !valorSistemaCampo(c)).length;
+    return (
+      <div
+        key={p.id}
+        onClick={() => setPolizaIdx(idx)}
+        className={`px-3 py-2.5 cursor-pointer transition-colors flex items-start gap-2 ${
+          idx === polizaIdx ? 'bg-[var(--color-nav-active-bg)] border-l-2 border-[var(--color-brand-blue)]' : 'hover:bg-[var(--color-bg-secondary)]'
+        }`}
+      >
+        {p.entrenado
+          ? <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-success-text)]" />
+          : <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-text-secondary)]" />}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-[var(--color-text-primary)] truncate leading-tight">
+            {p.nombre_archivo}
+          </p>
+          <div className="flex items-center justify-between mt-0.5">
+            <span className="text-[10px] text-[var(--color-text-secondary)]">
+              {p.paginas ? `${p.paginas} págs.` : '–'}
+            </span>
+            <span className={`text-[10px] font-medium ${
+              selCount === totalCampos && totalCampos > 0
+                ? 'text-[var(--color-success-text)]' : 'text-[var(--color-text-secondary)]'
+            }`}>
+              {selCount}/{totalCampos} campos
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); handleEliminarPoliza(p.id); }}
+          className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-red-500 transition-colors mt-0.5"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-secondary)]">
@@ -852,17 +962,17 @@ export default function Reglas() {
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Compañía…</option>
-          {companias.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({c.total_extraidas})</option>)}
+          {companias.map((c) => <option key={c.id} value={c.id}>{formatConteos(c.nombre, c.total_entrenadas)}</option>)}
         </select>
         <select value={selRamo} onChange={(e) => setSelRamo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Ramo…</option>
-          {ramos.map((r) => <option key={r.id} value={r.id}>{r.nombre} ({r.total_extraidas})</option>)}
+          {ramos.map((r) => <option key={r.id} value={r.id}>{formatConteos(r.nombre, r.total_entrenadas)}</option>)}
         </select>
         <select value={selSubramo} onChange={(e) => setSelSubramo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Subramo…</option>
-          {subramos.map((s) => <option key={s.id} value={s.id}>{s.nombre} ({s.total_extraidas})</option>)}
+          {subramos.map((s) => <option key={s.id} value={s.id}>{formatConteos(s.nombre, s.total_entrenadas)}</option>)}
         </select>
       </div>
 
@@ -907,8 +1017,11 @@ export default function Reglas() {
                 Lote de pólizas
               </span>
               <div className="flex items-center gap-1.5">
+                {/* El tope de 5 aplica solo al lote pendiente de entrenar —
+                    las ya entrenadas (sección de abajo) no compiten por ese
+                    cupo, viven aparte una vez que se les dio "Terminar". */}
                 <span className="text-[10px] text-[var(--color-text-secondary)] font-medium bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded-full">
-                  {polizas.length} / 5
+                  {polizasPendientes.length} / 5
                 </span>
                 {polizas.length > 0 && (
                   <button
@@ -939,49 +1052,44 @@ export default function Reglas() {
             </div>
 
             {/* Lista de pólizas */}
-            <div className="flex-1 overflow-y-auto divide-y divide-[var(--color-border)]">
-              {polizas.length === 0 && (
-                <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
-                  Sin pólizas. Agrega al menos una para empezar.
+            <div className="flex-1 overflow-y-auto">
+              <div className="divide-y divide-[var(--color-border)]">
+                {polizasPendientes.length === 0 && (
+                  <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
+                    Sin pólizas. Agrega al menos una para empezar.
+                  </div>
+                )}
+                {polizasPendientes.map(({ p, idx }) => renderFilaPoliza(p, idx))}
+              </div>
+
+              {/* "PDFs Entrenados" — mismo array `polizas`, particionado por
+                  `entrenado`. Colapsable, debajo del lote pendiente; las
+                  filas son las mismas (mismo componente, mismo panel
+                  derecho al seleccionarlas) — no es una vista de solo
+                  lectura. */}
+              <button
+                onClick={() => setMostrarEntrenados((v) => !v)}
+                className="w-full px-3 py-2 border-t border-[var(--color-border)] flex items-center justify-between text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide hover:bg-[var(--color-bg-secondary)] transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  PDFs Entrenados
+                  <span className="text-[10px] font-medium bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded-full normal-case">
+                    {polizasEntrenadas.length}
+                  </span>
+                </span>
+                {mostrarEntrenados ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+              {mostrarEntrenados && (
+                <div className="divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
+                  {polizasEntrenadas.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
+                      Aún no hay pólizas entrenadas en este subramo.
+                    </div>
+                  ) : (
+                    polizasEntrenadas.map(({ p, idx }) => renderFilaPoliza(p, idx))
+                  )}
                 </div>
               )}
-              {polizas.map((p, idx) => {
-                const selCount = Object.values(selecciones).filter((m) => m[p.id]).length;
-                const totalCampos = camposVisibles.filter((c) => !valorSistemaCampo(c)).length;
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setPolizaIdx(idx)}
-                    className={`px-3 py-2.5 cursor-pointer transition-colors flex items-start gap-2 ${
-                      idx === polizaIdx ? 'bg-[var(--color-nav-active-bg)] border-l-2 border-[var(--color-brand-blue)]' : 'hover:bg-[var(--color-bg-secondary)]'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-text-secondary)]" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-[var(--color-text-primary)] truncate leading-tight">
-                        {p.nombre_archivo}
-                      </p>
-                      <div className="flex items-center justify-between mt-0.5">
-                        <span className="text-[10px] text-[var(--color-text-secondary)]">
-                          {p.paginas ? `${p.paginas} págs.` : '–'}
-                        </span>
-                        <span className={`text-[10px] font-medium ${
-                          selCount === totalCampos && totalCampos > 0
-                            ? 'text-[var(--color-success-text)]' : 'text-[var(--color-text-secondary)]'
-                        }`}>
-                          {selCount}/{totalCampos} campos
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleEliminarPoliza(p.id); }}
-                      className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-red-500 transition-colors mt-0.5"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
             </div>
           </div>
 
@@ -1463,6 +1571,39 @@ export default function Reglas() {
               })}
               </div>
               ))}
+
+              {/* Botón "Terminar" — al fondo del panel scrollable, tras
+                  todos los grupos de campos. Deshabilitado con tooltip si
+                  aún faltan campos requeridos (ver camposFaltantesActivo),
+                  para no hacer esperar al usuario a un 400 con la misma
+                  info. Si el 400 igual ocurre (ej. otra pestaña cambió
+                  algo), se muestra la lista debajo del botón. */}
+              {polizaActiva && (
+                <div className="p-4 border-t border-[var(--color-border)]">
+                  {terminarError && terminarError.length > 0 && (
+                    <div className="mb-2 flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800">
+                      <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                      <span>Faltan campos requeridos: {terminarError.join(', ')}</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleTerminarPoliza}
+                    disabled={terminando || camposFaltantesActivo.length > 0}
+                    title={
+                      camposFaltantesActivo.length > 0
+                        ? `Faltan: ${camposFaltantesActivo.map((c) => c.label).join(', ')}`
+                        : undefined
+                    }
+                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      polizaActiva.entrenado
+                        ? 'bg-[var(--color-success-text)]/10 text-[var(--color-success-text)] border border-[var(--color-success-text)]'
+                        : 'bg-[var(--color-brand-blue)] text-white hover:opacity-90'
+                    }`}
+                  >
+                    {terminando ? 'Guardando…' : polizaActiva.entrenado ? '✓ Entrenada' : 'Terminar'}
+                  </button>
+                </div>
+              )}
             </div>
             )}
           </div>

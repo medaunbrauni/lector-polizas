@@ -63,6 +63,7 @@ def _migrate_add_columns():
         ("selecciones_campo", "metodo",                 "VARCHAR(30)"),
         ("clasificacion_cola", "origen",                "VARCHAR(20) DEFAULT 'manual'"),
         ("clasificacion_cola", "ticket_externo_id",     "INTEGER"),
+        ("polizas_entrenamiento", "entrenado",          "BOOLEAN DEFAULT 0"),
     ]
     with engine.connect() as conn:
         for table, col, col_type in migrations:

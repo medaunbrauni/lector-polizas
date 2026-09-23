@@ -56,6 +56,8 @@ export interface Compania {
   porcentaje_docs: number | null;
   /** Pólizas en el historial de extracciones (tabla `extracciones`) para esta compañía. */
   total_extraidas: number;
+  /** Pólizas del lote de entrenamiento marcadas entrenado=true para esta compañía. */
+  total_entrenadas: number;
 }
 
 export interface Ramo {
@@ -68,6 +70,8 @@ export interface Ramo {
   activo: boolean;
   /** Pólizas en el historial de extracciones (tabla `extracciones`) para este ramo. */
   total_extraidas: number;
+  /** Pólizas del lote de entrenamiento marcadas entrenado=true para este ramo. */
+  total_entrenadas: number;
 }
 
 export interface Subramo {
@@ -88,6 +92,8 @@ export interface Subramo {
   };
   /** Pólizas en el historial de extracciones (tabla `extracciones`) para este subramo. */
   total_extraidas: number;
+  /** Pólizas del lote de entrenamiento marcadas entrenado=true para este subramo. */
+  total_entrenadas: number;
 }
 
 export interface Campo {
@@ -148,6 +154,7 @@ export interface PolizaEntrenamiento {
   nombre_archivo: string;
   paginas: number | null;
   num_selecciones: number;
+  entrenado: boolean;
   created_at: string | null;
 }
 
