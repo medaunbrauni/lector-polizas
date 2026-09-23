@@ -27,6 +27,7 @@ from ..services.batch_trainer import (
 )
 from ..services.rule_engine import _aplicar_patron, aplicar_reglas
 from ..services.extractor import sembrar_selecciones_auto
+from .catalogos import listar_campos
 
 router = APIRouter(prefix="/entrenamiento", tags=["Entrenamiento por lotes"])
 
@@ -84,8 +85,40 @@ def _poliza_dict(p: PolizaEntrenamiento, db: Session) -> dict:
         "nombre_archivo": p.nombre_archivo,
         "paginas": p.paginas,
         "num_selecciones": num_sel,
+        "entrenado": p.entrenado,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
+
+
+def _campos_faltantes(poliza: PolizaEntrenamiento, db: Session) -> list[dict]:
+    """
+    Campos requerido=True del subramo de `poliza` que todavía no tienen una
+    SeleccionCampo con valor no vacío. Reutiliza la misma fuente de campos
+    que el panel "Campos" (CampoGlobal + CampoDefinido vía listar_campos),
+    para no duplicar ni desincronizar esa lógica.
+
+    'entidad' se excluye a propósito, igual que ya lo hace el frontend
+    (camposVisibles en Reglas.tsx): es requerido=True en el catálogo pero
+    se deriva automáticamente del RFC en el pipeline de extracción, no se
+    edita nunca desde este panel — bloquear "Terminar" por un campo
+    invisible e inalcanzable en esta misma pantalla sería un callejón sin
+    salida para el usuario.
+    """
+    campos = listar_campos(poliza.subramo_id, db)
+    requeridos = [c for c in campos if c["requerido"] and c["nombre"] != "entidad"]
+    if not requeridos:
+        return []
+
+    con_valor = {
+        s.nombre_campo
+        for s in db.query(SeleccionCampo).filter(
+            SeleccionCampo.poliza_id == poliza.id,
+            SeleccionCampo.nombre_campo.in_([c["nombre"] for c in requeridos]),
+            SeleccionCampo.texto_seleccionado.isnot(None),
+            SeleccionCampo.texto_seleccionado != "",
+        )
+    }
+    return [c for c in requeridos if c["nombre"] not in con_valor]
 
 
 def _polizas_visibles_multi(subramo_ids: list[int], db: Session) -> list[PolizaEntrenamiento]:
@@ -232,6 +265,35 @@ def eliminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
     db.delete(p)
     db.commit()
     return {"ok": True}
+
+
+@router.patch("/polizas/{poliza_id}/terminar")
+def terminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
+    """
+    Marca una póliza del lote como entrenada ("Terminar" en el panel
+    Entrenar/Corregir): exige que todos los campos requerido=True del
+    subramo ya tengan un valor seleccionado (SeleccionCampo no vacía). Si
+    falta alguno, 400 con la lista de labels faltantes para que el
+    frontend se los muestre al usuario sin que tenga que adivinar.
+
+    No hay reversión automática: si luego se borra el valor de un campo ya
+    entrenado, `entrenado` se queda en True hasta que alguien vuelva a
+    pedir "Terminar" explícitamente.
+    """
+    p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == poliza_id).first()
+    if not p:
+        raise HTTPException(404, "Póliza no encontrada")
+
+    faltantes = _campos_faltantes(p, db)
+    if faltantes:
+        raise HTTPException(400, detail={
+            "error": "Faltan campos requeridos",
+            "campos_faltantes": [c["label"] for c in faltantes],
+        })
+
+    p.entrenado = True
+    db.commit()
+    return _poliza_dict(p, db)
 
 
 @router.delete("/subramos/{subramo_id}/polizas")
