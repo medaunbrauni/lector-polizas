@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
-from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion
+from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion, PolizaEntrenamiento
 from ..services.rule_engine import cobertura_subramo, _es_vehiculo, _ramo_de_subramo
 
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
@@ -44,7 +44,7 @@ class CampoIn(BaseModel):
     orden: int = 0
 
 
-def _comp_dict(c: Compania, total_extraidas: int = 0) -> dict:
+def _comp_dict(c: Compania, total_extraidas: int = 0, total_entrenadas: int = 0) -> dict:
     return {
         "id": c.id, "nombre": c.nombre,
         "nombre_exportacion": c.nombre_exportacion,
@@ -54,10 +54,11 @@ def _comp_dict(c: Compania, total_extraidas: int = 0) -> dict:
         "prioridad": c.prioridad,
         "porcentaje_docs": c.porcentaje_docs,
         "total_extraidas": total_extraidas,
+        "total_entrenadas": total_entrenadas,
     }
 
 
-def _ramo_dict(r: Ramo, total_extraidas: int = 0) -> dict:
+def _ramo_dict(r: Ramo, total_extraidas: int = 0, total_entrenadas: int = 0) -> dict:
     return {
         "id": r.id, "nombre": r.nombre,
         "nombre_exportacion": r.nombre_exportacion,
@@ -66,10 +67,11 @@ def _ramo_dict(r: Ramo, total_extraidas: int = 0) -> dict:
         "patrones_deteccion": r.patrones_deteccion or [],
         "activo": r.activo,
         "total_extraidas": total_extraidas,
+        "total_entrenadas": total_entrenadas,
     }
 
 
-def _subramo_dict(s: Subramo, db: Session, total_extraidas: int = 0) -> dict:
+def _subramo_dict(s: Subramo, db: Session, total_extraidas: int = 0, total_entrenadas: int = 0) -> dict:
     cob = cobertura_subramo(s.id, db)
     return {
         "id": s.id, "nombre": s.nombre,
@@ -82,6 +84,7 @@ def _subramo_dict(s: Subramo, db: Session, total_extraidas: int = 0) -> dict:
         "porcentaje_docs": s.porcentaje_docs,
         "cobertura": cob,
         "total_extraidas": total_extraidas,
+        "total_entrenadas": total_entrenadas,
     }
 
 
@@ -101,6 +104,42 @@ def _conteo_extraidas(db: Session, columna) -> dict[int, int]:
     return dict(filas)
 
 
+def _conteo_entrenadas_por_subramo(db: Session) -> dict[int, int]:
+    """GROUP BY + COUNT de PolizaEntrenamiento.entrenado=True, por subramo_id directo."""
+    filas = (
+        db.query(PolizaEntrenamiento.subramo_id, func.count(PolizaEntrenamiento.id))
+        .filter(PolizaEntrenamiento.entrenado == True)
+        .group_by(PolizaEntrenamiento.subramo_id)
+        .all()
+    )
+    return dict(filas)
+
+
+def _conteo_entrenadas_por_ramo(db: Session) -> dict[int, int]:
+    """Igual que arriba, pero subiendo un nivel vía JOIN subramos.ramo_id."""
+    filas = (
+        db.query(Subramo.ramo_id, func.count(PolizaEntrenamiento.id))
+        .join(PolizaEntrenamiento, PolizaEntrenamiento.subramo_id == Subramo.id)
+        .filter(PolizaEntrenamiento.entrenado == True)
+        .group_by(Subramo.ramo_id)
+        .all()
+    )
+    return dict(filas)
+
+
+def _conteo_entrenadas_por_compania(db: Session) -> dict[int, int]:
+    """Igual que arriba, subiendo dos niveles vía JOIN subramos -> ramos.compania_id."""
+    filas = (
+        db.query(Ramo.compania_id, func.count(PolizaEntrenamiento.id))
+        .join(Subramo, Subramo.ramo_id == Ramo.id)
+        .join(PolizaEntrenamiento, PolizaEntrenamiento.subramo_id == Subramo.id)
+        .filter(PolizaEntrenamiento.entrenado == True)
+        .group_by(Ramo.compania_id)
+        .all()
+    )
+    return dict(filas)
+
+
 # ── Compañías ────────────────────────────────────────────────────────────────
 
 @router.get("/companias")
@@ -112,7 +151,8 @@ def listar_companias(db: Session = Depends(get_db)):
         .all()
     )
     conteos = _conteo_extraidas(db, Extraccion.compania_id)
-    return [_comp_dict(c, conteos.get(c.id, 0)) for c in rows]
+    conteos_entrenadas = _conteo_entrenadas_por_compania(db)
+    return [_comp_dict(c, conteos.get(c.id, 0), conteos_entrenadas.get(c.id, 0)) for c in rows]
 
 @router.post("/companias")
 def crear_compania(data: CompaniaIn, db: Session = Depends(get_db)):
@@ -168,7 +208,8 @@ def listar_ramos(compania_id: int | None = None, db: Session = Depends(get_db)):
     if compania_id:
         q = q.filter(Ramo.compania_id == compania_id)
     conteos = _conteo_extraidas(db, Extraccion.ramo_id)
-    return [_ramo_dict(r, conteos.get(r.id, 0)) for r in q.order_by(Ramo.nombre).all()]
+    conteos_entrenadas = _conteo_entrenadas_por_ramo(db)
+    return [_ramo_dict(r, conteos.get(r.id, 0), conteos_entrenadas.get(r.id, 0)) for r in q.order_by(Ramo.nombre).all()]
 
 @router.post("/ramos")
 def crear_ramo(data: RamoIn, db: Session = Depends(get_db)):
@@ -216,7 +257,8 @@ def listar_subramos(ramo_id: int | None = None, db: Session = Depends(get_db)):
         q = q.filter(Subramo.ramo_id == ramo_id)
     items = q.order_by(Subramo.prioridad.asc().nulls_last(), Subramo.nombre).all()
     conteos = _conteo_extraidas(db, Extraccion.subramo_id)
-    return [_subramo_dict(s, db, conteos.get(s.id, 0)) for s in items]
+    conteos_entrenadas = _conteo_entrenadas_por_subramo(db)
+    return [_subramo_dict(s, db, conteos.get(s.id, 0), conteos_entrenadas.get(s.id, 0)) for s in items]
 
 @router.post("/subramos")
 def crear_subramo(data: SubramoIn, db: Session = Depends(get_db)):

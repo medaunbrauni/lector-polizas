@@ -43,6 +43,14 @@ function badgeMetodo(metodo: string | null): { label: string; cls: string } {
   return { label: 'NO ENC.', cls: 'bg-gray-100 text-gray-500' };
 }
 
+// Texto de los <option> de Compañía/Ramo/Subramo: solo se muestra el
+// conteo de entrenadas (entrenado=true en el lote, ver botón "Terminar").
+// total_extraidas sigue viajando en la respuesta del backend (Historial la
+// puede necesitar), solo se dejó de renderizar aquí.
+function formatConteos(nombre: string, totalEntrenadas: number): string {
+  return `${nombre} (${totalEntrenadas} entrenadas)`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Reglas() {
@@ -935,17 +943,17 @@ export default function Reglas() {
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Compañía…</option>
-          {companias.map((c) => <option key={c.id} value={c.id}>{c.nombre} ({c.total_extraidas})</option>)}
+          {companias.map((c) => <option key={c.id} value={c.id}>{formatConteos(c.nombre, c.total_entrenadas)}</option>)}
         </select>
         <select value={selRamo} onChange={(e) => setSelRamo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Ramo…</option>
-          {ramos.map((r) => <option key={r.id} value={r.id}>{r.nombre} ({r.total_extraidas})</option>)}
+          {ramos.map((r) => <option key={r.id} value={r.id}>{formatConteos(r.nombre, r.total_entrenadas)}</option>)}
         </select>
         <select value={selSubramo} onChange={(e) => setSelSubramo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Subramo…</option>
-          {subramos.map((s) => <option key={s.id} value={s.id}>{s.nombre} ({s.total_extraidas})</option>)}
+          {subramos.map((s) => <option key={s.id} value={s.id}>{formatConteos(s.nombre, s.total_entrenadas)}</option>)}
         </select>
       </div>
 
