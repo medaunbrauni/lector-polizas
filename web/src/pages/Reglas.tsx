@@ -9,7 +9,7 @@ import PdfVisor, { PdfVisorErrorBoundary } from '../components/reglas/PdfVisor';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
-  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento,
+  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza,
   urlPdfEntrenamiento, urlImagenPagina, getTextoPdf,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
@@ -471,6 +471,26 @@ export default function Reglas() {
     }
   }
 
+  // ── "Terminar" (marcar póliza como entrenada) ──────────────────────────────
+  const [terminando, setTerminando] = useState(false);
+  const [terminarError, setTerminarError] = useState<string[] | null>(null);
+
+  async function handleTerminarPoliza() {
+    if (!polizaActiva) return;
+    setTerminando(true);
+    setTerminarError(null);
+    try {
+      const res = await terminarPoliza(polizaActiva.id);
+      if (res.ok) {
+        setPolizas((prev) => prev.map((p) => (p.id === polizaActiva.id ? res.poliza : p)));
+      } else {
+        setTerminarError(res.camposFaltantes);
+      }
+    } finally {
+      setTerminando(false);
+    }
+  }
+
   // ── Captura de selección desde el visor PDF ────────────────────────────────
   const handleSeleccion = useCallback(() => {
     if (!campoActivo || !polizaActiva) return;
@@ -749,6 +769,16 @@ export default function Reglas() {
   const hayReglaDeContenido = !!polizaActiva && camposOrdenados.some((campo) =>
     !camposValorFijo.has(campo.nombre) &&
     !!selecciones[campo.nombre]?.[polizaActiva.id]?.texto_seleccionado
+  );
+
+  // Cálculo del lado del cliente de qué campos requeridos le faltan a la
+  // póliza activa — mismo criterio que el backend en
+  // PATCH /entrenamiento/polizas/{id}/terminar (excluye 'entidad' por la
+  // misma razón que camposVisibles: se deriva sola, no se edita aquí).
+  // Sirve para deshabilitar el botón "Terminar" con un tooltip ANTES de
+  // que el usuario haga clic, en vez de hacerlo esperar a un 400.
+  const camposFaltantesActivo = !polizaActiva ? [] : camposVisibles.filter((c) =>
+    c.requerido && !selecciones[c.nombre]?.[polizaActiva.id]?.texto_seleccionado
   );
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1463,6 +1493,39 @@ export default function Reglas() {
               })}
               </div>
               ))}
+
+              {/* Botón "Terminar" — al fondo del panel scrollable, tras
+                  todos los grupos de campos. Deshabilitado con tooltip si
+                  aún faltan campos requeridos (ver camposFaltantesActivo),
+                  para no hacer esperar al usuario a un 400 con la misma
+                  info. Si el 400 igual ocurre (ej. otra pestaña cambió
+                  algo), se muestra la lista debajo del botón. */}
+              {polizaActiva && (
+                <div className="p-4 border-t border-[var(--color-border)]">
+                  {terminarError && terminarError.length > 0 && (
+                    <div className="mb-2 flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800">
+                      <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                      <span>Faltan campos requeridos: {terminarError.join(', ')}</span>
+                    </div>
+                  )}
+                  <button
+                    onClick={handleTerminarPoliza}
+                    disabled={terminando || camposFaltantesActivo.length > 0}
+                    title={
+                      camposFaltantesActivo.length > 0
+                        ? `Faltan: ${camposFaltantesActivo.map((c) => c.label).join(', ')}`
+                        : undefined
+                    }
+                    className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      polizaActiva.entrenado
+                        ? 'bg-[var(--color-success-text)]/10 text-[var(--color-success-text)] border border-[var(--color-success-text)]'
+                        : 'bg-[var(--color-brand-blue)] text-white hover:opacity-90'
+                    }`}
+                  >
+                    {terminando ? 'Guardando…' : polizaActiva.entrenado ? '✓ Entrenada' : 'Terminar'}
+                  </button>
+                </div>
+              )}
             </div>
             )}
           </div>

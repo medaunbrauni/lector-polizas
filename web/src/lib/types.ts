@@ -148,6 +148,7 @@ export interface PolizaEntrenamiento {
   nombre_archivo: string;
   paginas: number | null;
   num_selecciones: number;
+  entrenado: boolean;
   created_at: string | null;
 }
 
