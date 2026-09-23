@@ -60,6 +60,11 @@ export default function Reglas() {
   const [polizas, setPolizas] = useState<PolizaEntrenamiento[]>([]);
   const [polizaIdx, setPolizaIdx] = useState(0);
   const [subiendo, setSubiendo] = useState(false);
+  // "PDFs Entrenados" es una sección colapsable aparte del lote pendiente,
+  // no un tab ni un fetch nuevo — mismo array `polizas`, particionado por
+  // `entrenado`. Colapsada por default para no ganar protagonismo sobre el
+  // lote de trabajo activo.
+  const [mostrarEntrenados, setMostrarEntrenados] = useState(false);
 
   // ── Selecciones y reglas ───────────────────────────────────────────────────
   const [selecciones, setSelecciones] = useState<MapaSelecciones>({});
@@ -781,6 +786,54 @@ export default function Reglas() {
     c.requerido && !selecciones[c.nombre]?.[polizaActiva.id]?.texto_seleccionado
   );
 
+  // Partición del lote para la sección "PDFs Entrenados": mismo array
+  // `polizas`, mismo orden — se conserva el índice original de cada una
+  // (idx) porque polizaIdx/setPolizaIdx navegan sobre `polizas` completo,
+  // no sobre estos subconjuntos.
+  const polizasConIdx = polizas.map((p, idx) => ({ p, idx }));
+  const polizasPendientes = polizasConIdx.filter(({ p }) => !p.entrenado);
+  const polizasEntrenadas = polizasConIdx.filter(({ p }) => p.entrenado);
+
+  function renderFilaPoliza(p: PolizaEntrenamiento, idx: number) {
+    const selCount = Object.values(selecciones).filter((m) => m[p.id]).length;
+    const totalCampos = camposVisibles.filter((c) => !valorSistemaCampo(c)).length;
+    return (
+      <div
+        key={p.id}
+        onClick={() => setPolizaIdx(idx)}
+        className={`px-3 py-2.5 cursor-pointer transition-colors flex items-start gap-2 ${
+          idx === polizaIdx ? 'bg-[var(--color-nav-active-bg)] border-l-2 border-[var(--color-brand-blue)]' : 'hover:bg-[var(--color-bg-secondary)]'
+        }`}
+      >
+        {p.entrenado
+          ? <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-success-text)]" />
+          : <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-text-secondary)]" />}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium text-[var(--color-text-primary)] truncate leading-tight">
+            {p.nombre_archivo}
+          </p>
+          <div className="flex items-center justify-between mt-0.5">
+            <span className="text-[10px] text-[var(--color-text-secondary)]">
+              {p.paginas ? `${p.paginas} págs.` : '–'}
+            </span>
+            <span className={`text-[10px] font-medium ${
+              selCount === totalCampos && totalCampos > 0
+                ? 'text-[var(--color-success-text)]' : 'text-[var(--color-text-secondary)]'
+            }`}>
+              {selCount}/{totalCampos} campos
+            </span>
+          </div>
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); handleEliminarPoliza(p.id); }}
+          className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-red-500 transition-colors mt-0.5"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    );
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-secondary)]">
@@ -937,8 +990,11 @@ export default function Reglas() {
                 Lote de pólizas
               </span>
               <div className="flex items-center gap-1.5">
+                {/* El tope de 5 aplica solo al lote pendiente de entrenar —
+                    las ya entrenadas (sección de abajo) no compiten por ese
+                    cupo, viven aparte una vez que se les dio "Terminar". */}
                 <span className="text-[10px] text-[var(--color-text-secondary)] font-medium bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded-full">
-                  {polizas.length} / 5
+                  {polizasPendientes.length} / 5
                 </span>
                 {polizas.length > 0 && (
                   <button
@@ -969,49 +1025,44 @@ export default function Reglas() {
             </div>
 
             {/* Lista de pólizas */}
-            <div className="flex-1 overflow-y-auto divide-y divide-[var(--color-border)]">
-              {polizas.length === 0 && (
-                <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
-                  Sin pólizas. Agrega al menos una para empezar.
+            <div className="flex-1 overflow-y-auto">
+              <div className="divide-y divide-[var(--color-border)]">
+                {polizasPendientes.length === 0 && (
+                  <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
+                    Sin pólizas. Agrega al menos una para empezar.
+                  </div>
+                )}
+                {polizasPendientes.map(({ p, idx }) => renderFilaPoliza(p, idx))}
+              </div>
+
+              {/* "PDFs Entrenados" — mismo array `polizas`, particionado por
+                  `entrenado`. Colapsable, debajo del lote pendiente; las
+                  filas son las mismas (mismo componente, mismo panel
+                  derecho al seleccionarlas) — no es una vista de solo
+                  lectura. */}
+              <button
+                onClick={() => setMostrarEntrenados((v) => !v)}
+                className="w-full px-3 py-2 border-t border-[var(--color-border)] flex items-center justify-between text-xs font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide hover:bg-[var(--color-bg-secondary)] transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  PDFs Entrenados
+                  <span className="text-[10px] font-medium bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded-full normal-case">
+                    {polizasEntrenadas.length}
+                  </span>
+                </span>
+                {mostrarEntrenados ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              </button>
+              {mostrarEntrenados && (
+                <div className="divide-y divide-[var(--color-border)] border-t border-[var(--color-border)]">
+                  {polizasEntrenadas.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
+                      Aún no hay pólizas entrenadas en este subramo.
+                    </div>
+                  ) : (
+                    polizasEntrenadas.map(({ p, idx }) => renderFilaPoliza(p, idx))
+                  )}
                 </div>
               )}
-              {polizas.map((p, idx) => {
-                const selCount = Object.values(selecciones).filter((m) => m[p.id]).length;
-                const totalCampos = camposVisibles.filter((c) => !valorSistemaCampo(c)).length;
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => setPolizaIdx(idx)}
-                    className={`px-3 py-2.5 cursor-pointer transition-colors flex items-start gap-2 ${
-                      idx === polizaIdx ? 'bg-[var(--color-nav-active-bg)] border-l-2 border-[var(--color-brand-blue)]' : 'hover:bg-[var(--color-bg-secondary)]'
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-[var(--color-text-secondary)]" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-[var(--color-text-primary)] truncate leading-tight">
-                        {p.nombre_archivo}
-                      </p>
-                      <div className="flex items-center justify-between mt-0.5">
-                        <span className="text-[10px] text-[var(--color-text-secondary)]">
-                          {p.paginas ? `${p.paginas} págs.` : '–'}
-                        </span>
-                        <span className={`text-[10px] font-medium ${
-                          selCount === totalCampos && totalCampos > 0
-                            ? 'text-[var(--color-success-text)]' : 'text-[var(--color-text-secondary)]'
-                        }`}>
-                          {selCount}/{totalCampos} campos
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleEliminarPoliza(p.id); }}
-                      className="flex-shrink-0 text-[var(--color-text-secondary)] hover:text-red-500 transition-colors mt-0.5"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                );
-              })}
             </div>
           </div>
 
