@@ -43,13 +43,13 @@ function badgeMetodo(metodo: string | null): { label: string; cls: string } {
   return { label: 'NO ENC.', cls: 'bg-gray-100 text-gray-500' };
 }
 
-// Texto de los <option> de Compañía/Ramo/Subramo: dos métricas distintas,
-// no una sola — "extraídas" es el universo de Historial (tabla
-// extracciones), "entrenadas" es cuántas de esas quedaron marcadas
-// entrenado=true en el lote (ver botón "Terminar"). Se listan explícitas
-// con su propia palabra para no dejar ambigüedad de cuál es cuál.
-function formatConteos(nombre: string, totalExtraidas: number, totalEntrenadas: number): string {
-  return `${nombre} (${totalExtraidas} procesadas · ${totalEntrenadas} entrenadas)`;
+// Texto de los <option> de Compañía/Ramo/Subramo: entrenadas / universo
+// total de PolizaEntrenamiento (Lote de Pólizas + PDFs Entrenados
+// combinados) para ese nivel — ya no el histórico de extracciones
+// (total_extraidas sigue viajando en la respuesta del backend por si se
+// necesita más adelante, pero se dejó de usar aquí).
+function formatConteos(nombre: string, totalEntrenadas: number, totalLote: number): string {
+  return `${nombre} (${totalEntrenadas}/${totalLote} entrenadas)`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -381,13 +381,18 @@ export default function Reglas() {
     setSubiendo(true);
     try {
       const nuevas = await subirPolizasEntrenamiento(Number(selSubramo), files);
+      let agregadas = 0;
       setPolizas((prev) => {
         const merged = [...prev];
         for (const n of nuevas) {
-          if (!merged.find((p) => p.id === n.id)) merged.push(n);
+          if (!merged.find((p) => p.id === n.id)) { merged.push(n); agregadas++; }
         }
         return merged;
       });
+      // total_lote sube por cada PDF nuevo (no cuenta si por algún motivo
+      // ya estaba en el array) — a diferencia de Terminar/Reentrenar, subir
+      // un PDF sí cambia el universo total de pólizas del subramo.
+      if (agregadas > 0) ajustarContador('total_lote', agregadas);
       if (polizas.length === 0) setPolizaIdx(0);
     } finally {
       setSubiendo(false);
@@ -460,6 +465,7 @@ export default function Reglas() {
       if (polizaIdx >= next.length) setPolizaIdx(Math.max(0, next.length - 1));
       return next;
     });
+    ajustarContador('total_lote', -1);
   }
 
   // ── Vaciar lote completo ────────────────────────────────────────────────────
@@ -496,17 +502,21 @@ export default function Reglas() {
   // bloqueada se recalcula sola en cuanto `polizas` se actualiza.
   const bloqueada = !!polizaActiva?.entrenado;
 
-  // Ajusta +1/-1 el contador "(N entrenadas)" de los 3 selects ya cargados
-  // en memoria (compañía/ramo/subramo actualmente seleccionados — la
-  // póliza afectada siempre pertenece a esa jerarquía), sin refetch.
-  // Math.max(0, ...) por robustez ante una doble-llamada accidental.
-  function ajustarContadoresEntrenadas(delta: number) {
+  // Ajusta +1/-1 un contador (`total_entrenadas` o `total_lote`) de los 3
+  // selects ya cargados en memoria (compañía/ramo/subramo actualmente
+  // seleccionados — la póliza afectada siempre pertenece a esa jerarquía),
+  // sin refetch. Math.max(0, ...) por robustez ante una doble-llamada
+  // accidental. Terminar/Reentrenar solo tocan total_entrenadas (la póliza
+  // sigue existiendo, solo cambia su estado); subir/eliminar un PDF del
+  // lote solo toca total_lote (el universo de pólizas no cambia su estado
+  // entrenado por eso).
+  function ajustarContador(campo: 'total_entrenadas' | 'total_lote', delta: number) {
     const compId = Number(selCompania);
     const ramoId = Number(selRamo);
     const subramoId = Number(selSubramo);
-    setCompanias((prev) => prev.map((c) => (c.id === compId ? { ...c, total_entrenadas: Math.max(0, c.total_entrenadas + delta) } : c)));
-    setRamos((prev) => prev.map((r) => (r.id === ramoId ? { ...r, total_entrenadas: Math.max(0, r.total_entrenadas + delta) } : r)));
-    setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, total_entrenadas: Math.max(0, s.total_entrenadas + delta) } : s)));
+    setCompanias((prev) => prev.map((c) => (c.id === compId ? { ...c, [campo]: Math.max(0, c[campo] + delta) } : c)));
+    setRamos((prev) => prev.map((r) => (r.id === ramoId ? { ...r, [campo]: Math.max(0, r[campo] + delta) } : r)));
+    setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, [campo]: Math.max(0, s[campo] + delta) } : s)));
   }
 
   // ── "Terminar" (marcar póliza como entrenada) ──────────────────────────────
@@ -524,7 +534,7 @@ export default function Reglas() {
         setPolizas((prev) => prev.map((p) => (p.id === polizaActiva.id ? res.poliza : p)));
         // Solo suma si esta póliza pasó de no-entrenada a entrenada — un
         // re-clic sobre una ya entrenada no debe volver a sumar.
-        if (!yaEstabaEntrenada) ajustarContadoresEntrenadas(1);
+        if (!yaEstabaEntrenada) ajustarContador('total_entrenadas', 1);
       } else {
         setTerminarError(res.camposFaltantes);
       }
@@ -546,7 +556,7 @@ export default function Reglas() {
       // Guard simétrico al de "Terminar": solo resta si de verdad estaba
       // entrenada antes de esta llamada (evita descontar dos veces si por
       // algún motivo se dispara repetido).
-      if (yaEstabaEntrenada) ajustarContadoresEntrenadas(-1);
+      if (yaEstabaEntrenada) ajustarContador('total_entrenadas', -1);
     } finally {
       setReentrenando(false);
     }
@@ -1016,17 +1026,17 @@ export default function Reglas() {
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Compañía…</option>
-          {companias.map((c) => <option key={c.id} value={c.id}>{formatConteos(c.nombre, c.total_extraidas, c.total_entrenadas)}</option>)}
+          {companias.map((c) => <option key={c.id} value={c.id}>{formatConteos(c.nombre, c.total_entrenadas, c.total_lote)}</option>)}
         </select>
         <select value={selRamo} onChange={(e) => setSelRamo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Ramo…</option>
-          {ramos.map((r) => <option key={r.id} value={r.id}>{formatConteos(r.nombre, r.total_extraidas, r.total_entrenadas)}</option>)}
+          {ramos.map((r) => <option key={r.id} value={r.id}>{formatConteos(r.nombre, r.total_entrenadas, r.total_lote)}</option>)}
         </select>
         <select value={selSubramo} onChange={(e) => setSelSubramo(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
           <option value="">Subramo…</option>
-          {subramos.map((s) => <option key={s.id} value={s.id}>{formatConteos(s.nombre, s.total_extraidas, s.total_entrenadas)}</option>)}
+          {subramos.map((s) => <option key={s.id} value={s.id}>{formatConteos(s.nombre, s.total_entrenadas, s.total_lote)}</option>)}
         </select>
       </div>
 

@@ -58,6 +58,8 @@ export interface Compania {
   total_extraidas: number;
   /** Pólizas del lote de entrenamiento marcadas entrenado=true para esta compañía. */
   total_entrenadas: number;
+  /** Universo completo de PolizaEntrenamiento (entrenadas + pendientes) para esta compañía. */
+  total_lote: number;
 }
 
 export interface Ramo {
@@ -72,6 +74,8 @@ export interface Ramo {
   total_extraidas: number;
   /** Pólizas del lote de entrenamiento marcadas entrenado=true para este ramo. */
   total_entrenadas: number;
+  /** Universo completo de PolizaEntrenamiento (entrenadas + pendientes) para este ramo. */
+  total_lote: number;
 }
 
 export interface Subramo {
@@ -94,6 +98,8 @@ export interface Subramo {
   total_extraidas: number;
   /** Pólizas del lote de entrenamiento marcadas entrenado=true para este subramo. */
   total_entrenadas: number;
+  /** Universo completo de PolizaEntrenamiento (entrenadas + pendientes) para este subramo. */
+  total_lote: number;
 }
 
 export interface Campo {

@@ -44,7 +44,7 @@ class CampoIn(BaseModel):
     orden: int = 0
 
 
-def _comp_dict(c: Compania, total_extraidas: int = 0, total_entrenadas: int = 0) -> dict:
+def _comp_dict(c: Compania, total_extraidas: int = 0, total_entrenadas: int = 0, total_lote: int = 0) -> dict:
     return {
         "id": c.id, "nombre": c.nombre,
         "nombre_exportacion": c.nombre_exportacion,
@@ -55,10 +55,11 @@ def _comp_dict(c: Compania, total_extraidas: int = 0, total_entrenadas: int = 0)
         "porcentaje_docs": c.porcentaje_docs,
         "total_extraidas": total_extraidas,
         "total_entrenadas": total_entrenadas,
+        "total_lote": total_lote,
     }
 
 
-def _ramo_dict(r: Ramo, total_extraidas: int = 0, total_entrenadas: int = 0) -> dict:
+def _ramo_dict(r: Ramo, total_extraidas: int = 0, total_entrenadas: int = 0, total_lote: int = 0) -> dict:
     return {
         "id": r.id, "nombre": r.nombre,
         "nombre_exportacion": r.nombre_exportacion,
@@ -68,10 +69,11 @@ def _ramo_dict(r: Ramo, total_extraidas: int = 0, total_entrenadas: int = 0) -> 
         "activo": r.activo,
         "total_extraidas": total_extraidas,
         "total_entrenadas": total_entrenadas,
+        "total_lote": total_lote,
     }
 
 
-def _subramo_dict(s: Subramo, db: Session, total_extraidas: int = 0, total_entrenadas: int = 0) -> dict:
+def _subramo_dict(s: Subramo, db: Session, total_extraidas: int = 0, total_entrenadas: int = 0, total_lote: int = 0) -> dict:
     cob = cobertura_subramo(s.id, db)
     return {
         "id": s.id, "nombre": s.nombre,
@@ -85,6 +87,7 @@ def _subramo_dict(s: Subramo, db: Session, total_extraidas: int = 0, total_entre
         "cobertura": cob,
         "total_extraidas": total_extraidas,
         "total_entrenadas": total_entrenadas,
+        "total_lote": total_lote,
     }
 
 
@@ -140,6 +143,57 @@ def _conteo_entrenadas_por_compania(db: Session) -> dict[int, int]:
     return dict(filas)
 
 
+def _conteo_lote_por_subramo(db: Session) -> dict[int, int]:
+    """
+    Universo completo de PolizaEntrenamiento por subramo (Lote de Pólizas +
+    PDFs Entrenados combinados, sin filtrar por `entrenado`) — pero con el
+    MISMO criterio de "visible" que ya usa el listado del lote
+    (_polizas_visibles en entrenamiento.py): se excluyen filas sin archivo
+    físico en disco y se dedupea por nombre_archivo, quedándose con la más
+    reciente. No se reutiliza esa función directamente para evitar un
+    import circular (entrenamiento.py ya importa de este módulo) — es la
+    misma lógica, reimplementada aquí.
+
+    Un COUNT(*) crudo sin este criterio queda muy inflado: se encontraron
+    27 grupos de filas duplicadas en producción (mismo subramo+archivo),
+    con hasta 6 copias de un mismo PDF — 127 filas totales en la tabla vs.
+    38 realmente visibles en la UI al momento de escribir esto.
+    """
+    filas = (
+        db.query(PolizaEntrenamiento)
+        .order_by(PolizaEntrenamiento.subramo_id, PolizaEntrenamiento.created_at)
+        .all()
+    )
+    por_subramo: dict[int, dict[str, PolizaEntrenamiento]] = {}
+    for p in filas:
+        if not os.path.exists(p.ruta_archivo):
+            continue
+        por_subramo.setdefault(p.subramo_id, {})[p.nombre_archivo] = p
+    return {sid: len(nombres) for sid, nombres in por_subramo.items()}
+
+
+def _conteo_lote_por_ramo(db: Session) -> dict[int, int]:
+    por_subramo = _conteo_lote_por_subramo(db)
+    subramo_a_ramo = dict(db.query(Subramo.id, Subramo.ramo_id).all())
+    resultado: dict[int, int] = {}
+    for sid, cnt in por_subramo.items():
+        rid = subramo_a_ramo.get(sid)
+        if rid is not None:
+            resultado[rid] = resultado.get(rid, 0) + cnt
+    return resultado
+
+
+def _conteo_lote_por_compania(db: Session) -> dict[int, int]:
+    por_ramo = _conteo_lote_por_ramo(db)
+    ramo_a_compania = dict(db.query(Ramo.id, Ramo.compania_id).all())
+    resultado: dict[int, int] = {}
+    for rid, cnt in por_ramo.items():
+        cid = ramo_a_compania.get(rid)
+        if cid is not None:
+            resultado[cid] = resultado.get(cid, 0) + cnt
+    return resultado
+
+
 # ── Compañías ────────────────────────────────────────────────────────────────
 
 @router.get("/companias")
@@ -152,7 +206,8 @@ def listar_companias(db: Session = Depends(get_db)):
     )
     conteos = _conteo_extraidas(db, Extraccion.compania_id)
     conteos_entrenadas = _conteo_entrenadas_por_compania(db)
-    return [_comp_dict(c, conteos.get(c.id, 0), conteos_entrenadas.get(c.id, 0)) for c in rows]
+    conteos_lote = _conteo_lote_por_compania(db)
+    return [_comp_dict(c, conteos.get(c.id, 0), conteos_entrenadas.get(c.id, 0), conteos_lote.get(c.id, 0)) for c in rows]
 
 @router.post("/companias")
 def crear_compania(data: CompaniaIn, db: Session = Depends(get_db)):
@@ -209,7 +264,8 @@ def listar_ramos(compania_id: int | None = None, db: Session = Depends(get_db)):
         q = q.filter(Ramo.compania_id == compania_id)
     conteos = _conteo_extraidas(db, Extraccion.ramo_id)
     conteos_entrenadas = _conteo_entrenadas_por_ramo(db)
-    return [_ramo_dict(r, conteos.get(r.id, 0), conteos_entrenadas.get(r.id, 0)) for r in q.order_by(Ramo.nombre).all()]
+    conteos_lote = _conteo_lote_por_ramo(db)
+    return [_ramo_dict(r, conteos.get(r.id, 0), conteos_entrenadas.get(r.id, 0), conteos_lote.get(r.id, 0)) for r in q.order_by(Ramo.nombre).all()]
 
 @router.post("/ramos")
 def crear_ramo(data: RamoIn, db: Session = Depends(get_db)):
@@ -258,7 +314,8 @@ def listar_subramos(ramo_id: int | None = None, db: Session = Depends(get_db)):
     items = q.order_by(Subramo.prioridad.asc().nulls_last(), Subramo.nombre).all()
     conteos = _conteo_extraidas(db, Extraccion.subramo_id)
     conteos_entrenadas = _conteo_entrenadas_por_subramo(db)
-    return [_subramo_dict(s, db, conteos.get(s.id, 0), conteos_entrenadas.get(s.id, 0)) for s in items]
+    conteos_lote = _conteo_lote_por_subramo(db)
+    return [_subramo_dict(s, db, conteos.get(s.id, 0), conteos_entrenadas.get(s.id, 0), conteos_lote.get(s.id, 0)) for s in items]
 
 @router.post("/subramos")
 def crear_subramo(data: SubramoIn, db: Session = Depends(get_db)):
