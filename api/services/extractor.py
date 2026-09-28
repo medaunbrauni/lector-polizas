@@ -20,6 +20,7 @@ from .ai_utils import parse_claude_json, make_anthropic_client
 from ..extractores_especializados.registry import obtener_extractor
 from ..extractores_especializados.qualitas import mapear_tipo_a_subramo
 from ..extractores_especializados.gnp import detectar_subramo_por_encabezado
+from ..extractores_especializados.el_potosi import detectar_subramo_por_titulo_el_potosi
 from ..extractores_especializados.figuras_juridicas import es_persona_moral_por_nombre, clasificar_persona_por_rfc
 from ..config import MODEL_EXTRACTOR, PDF_ENTRENAMIENTO_DIR
 from ..models.db_models import (
@@ -388,6 +389,23 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     # como "Automóviles" por defecto.
     if compania and compania.nombre == "GNP Seguros" and ramo:
         subramo_mapeado = detectar_subramo_por_encabezado(texto)
+        if subramo_mapeado:
+            subramo_correcto = (
+                db.query(Subramo)
+                .filter(Subramo.ramo_id == ramo.id, Subramo.nombre == subramo_mapeado, Subramo.activo == True)
+                .first()
+            )
+            if subramo_correcto and subramo_correcto.id != det.get("subramo_id"):
+                subramo = subramo_correcto
+                det["subramo_id"] = subramo_correcto.id
+                det["subramo_nombre"] = subramo_correcto.nombre
+
+    # 4d. Seguros El Potosí: el título de la carátula ("SEGURO DE
+    # AUTOBUSES...", "... FLOTILLA...", etc.) corrige el Subramo cuando el
+    # puntaje por keywords lo clasificó como "Automóviles" por defecto —
+    # mismo criterio que 4b/4c.
+    if compania and compania.nombre == "Seguros El Potosí" and ramo:
+        subramo_mapeado = detectar_subramo_por_titulo_el_potosi(texto)
         if subramo_mapeado:
             subramo_correcto = (
                 db.query(Subramo)
