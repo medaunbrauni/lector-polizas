@@ -49,7 +49,6 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
     campos_cubiertos = {k for k, v in datos_reglas.items() if v["metodo"] == "regla"}
     campos_faltantes = campos_sin_regla(subramo.id, campos_cubiertos, db)
 
-    # Consolidar sin doble conteo
     datos_finales: dict = {**datos_reglas}
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
@@ -59,7 +58,6 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
     por_ia         = conteo_metodos["ia"]
     no_encontrados = conteo_metodos["no_encontrado"]
 
-    # Actualizar registro de extracción
     extraccion.subramo_id         = subramo.id
     extraccion.ramo_id            = ramo.id
     extraccion.compania_id        = compania.id
@@ -72,7 +70,6 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
     extraccion.campos_por_ia      = por_ia
     extraccion.campos_no_encontrados = no_encontrados
 
-    # Reemplazar campos extraídos
     db.query(CampoExtraido).filter(CampoExtraido.extraccion_id == extraccion.id).delete()
     for nombre, info in datos_finales.items():
         db.add(CampoExtraido(
@@ -114,7 +111,6 @@ async def extraer_polizas(
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
 ):
-    # Validar cantidad
     if len(files) > MAX_FILES_PER_REQUEST:
         raise HTTPException(400, f"Máximo {MAX_FILES_PER_REQUEST} archivos por solicitud")
     if not files:
@@ -122,7 +118,6 @@ async def extraer_polizas(
 
     resultados = []
     for archivo in files:
-        # Validar extensión
         if not archivo.filename or not archivo.filename.lower().endswith(".pdf"):
             resultados.append({
                 "archivo": archivo.filename or "desconocido",
@@ -130,7 +125,6 @@ async def extraer_polizas(
             })
             continue
 
-        # Validar tamaño antes de leer completo
         if archivo.size and archivo.size > MAX_FILE_BYTES:
             resultados.append({
                 "archivo": archivo.filename,

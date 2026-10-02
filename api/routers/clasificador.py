@@ -56,21 +56,18 @@ def _item_schema(item: ClasificacionCola, db: Session) -> dict:
         "compania_nombre_ia": item.compania_nombre_ia,
         "ramo_nombre_ia":   item.ramo_nombre_ia,
         "subramo_nombre_ia": item.subramo_nombre_ia,
-        # Propuesta
         "compania_id_prop":  item.compania_id_prop,
         "compania_prop":     _nombre(Compania, item.compania_id_prop),
         "ramo_id_prop":      item.ramo_id_prop,
         "ramo_prop":         _nombre(Ramo, item.ramo_id_prop),
         "subramo_id_prop":   item.subramo_id_prop,
         "subramo_prop":      _nombre(Subramo, item.subramo_id_prop),
-        # Final
         "compania_id_final": item.compania_id_final,
         "compania_final":    _nombre(Compania, item.compania_id_final),
         "ramo_id_final":     item.ramo_id_final,
         "ramo_final":        _nombre(Ramo, item.ramo_id_final),
         "subramo_id_final":  item.subramo_id_final,
         "subramo_final":     _nombre(Subramo, item.subramo_id_final),
-        # Patrones
         "patrones_generados": item.patrones_generados,
         "patrones_guardados": item.patrones_guardados,
         "poliza_entrenamiento_id": item.poliza_entrenamiento_id,
@@ -352,7 +349,6 @@ def confirmar_item(id: int, data: ConfirmarIn, db: Session = Depends(get_db)):
     if item.estado in ("enviado",):
         raise HTTPException(400, "El item ya fue enviado a entrenamiento")
 
-    # Aplicar override o conservar propuesta
     item.compania_id_final = data.compania_id or item.compania_id_prop
     item.ramo_id_final     = data.ramo_id     or item.ramo_id_prop
     item.subramo_id_final  = data.subramo_id  or item.subramo_id_prop

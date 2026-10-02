@@ -107,7 +107,6 @@ export default function Historial() {
             </tbody>
           </table>
 
-          {/* Paginación */}
           <div className="flex items-center justify-between px-3 py-2.5 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <span className="text-xs text-[var(--color-text-secondary)]">
               {desde}–{hasta} de {total}

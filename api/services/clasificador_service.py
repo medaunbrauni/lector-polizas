@@ -41,7 +41,6 @@ def dedup_carpeta(carpeta: str) -> list[str]:
     if not folder.exists():
         return []
 
-    # Agrupa rutas por hash
     grupos: dict[str, list[Path]] = {}
     for pdf in folder.glob("*.pdf"):
         if not pdf.is_file():
@@ -58,7 +57,6 @@ def dedup_carpeta(carpeta: str) -> list[str]:
             continue
         # Ordenar: más antiguo primero (menor mtime = original)
         archivos.sort(key=lambda p: p.stat().st_mtime)
-        # Conservar el primero, borrar el resto
         for duplicado in archivos[1:]:
             try:
                 duplicado.unlink()
@@ -109,7 +107,6 @@ def clasificar_con_ia(texto: str, db: Session) -> dict:
       confianza (str), razon, es_nueva,
       compania_nombre_ia, ramo_nombre_ia, subramo_nombre_ia
     """
-    # Construir catálogo completo para el prompt
     companias = db.query(Compania).filter(Compania.activo == True).all()
     catalogo: list[dict] = []
     for c in companias:
@@ -216,7 +213,6 @@ Responde SOLO con JSON válido:
     )
     result = parse_claude_json(msg.content[0].text)
 
-    # Validar que los patrones compileen
     for nivel in ("compania", "ramo", "subramo"):
         validos = []
         for p in result.get(nivel, []):

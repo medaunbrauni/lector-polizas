@@ -61,7 +61,6 @@ def run_migration():
             print(f"\n  {viejo!r} → {nuevo!r}")
             for tabla in TABLAS_CON_NOMBRE_CAMPO:
                 col = COLUMNA[tabla]
-                # Contar registros a renombrar
                 count_q = text(f"SELECT COUNT(*) FROM {tabla} WHERE {col} = :viejo")
                 count = conn.execute(count_q, {"viejo": viejo}).scalar() or 0
 

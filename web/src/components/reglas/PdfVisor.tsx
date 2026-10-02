@@ -82,7 +82,6 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
       {/* ── Barra de navegación + zoom ── */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0 select-none">
 
-        {/* Páginas */}
         <button
           onClick={() => setPagina((p) => Math.max(1, p - 1))}
           disabled={pagina <= 1 || numPages === 0}
@@ -97,10 +96,8 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
           className="px-2 py-0.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
         >›</button>
 
-        {/* Separador */}
         <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
 
-        {/* Zoom */}
         <button
           onClick={zoomOut}
           disabled={zoom <= 0.5}

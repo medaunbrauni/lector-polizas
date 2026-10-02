@@ -25,7 +25,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[var(--color-bg-secondary)]">
-      {/* Sidebar */}
       <aside
         className={`sticky top-0 h-screen relative bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col transition-all duration-200 ${
           colapsado ? 'w-16' : 'w-56'
@@ -76,7 +75,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
 
-        {/* Theme toggle + logout */}
         <div className={`px-3 py-3 border-t border-[var(--color-border)] flex items-center gap-1 ${colapsado ? 'flex-col' : ''}`}>
           <ThemeToggle />
           {isAuthenticated && (
@@ -98,7 +96,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      {/* Main */}
       <main className="flex-1 overflow-auto">
         {children}
       </main>

@@ -269,21 +269,18 @@ export interface ItemCola {
   compania_nombre_ia: string | null;
   ramo_nombre_ia: string | null;
   subramo_nombre_ia: string | null;
-  // Propuesta
   compania_id_prop: number | null;
   compania_prop: string | null;
   ramo_id_prop: number | null;
   ramo_prop: string | null;
   subramo_id_prop: number | null;
   subramo_prop: string | null;
-  // Final
   compania_id_final: number | null;
   compania_final: string | null;
   ramo_id_final: number | null;
   ramo_final: string | null;
   subramo_id_final: number | null;
   subramo_final: string | null;
-  // Patrones
   patrones_generados: {
     compania: string[];
     ramo: string[];

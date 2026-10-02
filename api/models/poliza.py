@@ -45,7 +45,6 @@ class PolizaExtraida(BaseModel):
     direccion: Optional[DireccionData] = None
     primas: Optional[PrimasData] = None
     vigencia: Optional[VigenciaData] = None
-    # Si hubo error al procesar
     error: Optional[str] = None
     # Método usado para extraer
     metodo_extraccion: Optional[str] = None

@@ -218,7 +218,6 @@ Responde ÚNICAMENTE JSON válido:
     except Exception:
         return {}
 
-    # Validar regex
     def _validos(patrones):
         out = []
         for p in (patrones or []):
@@ -233,7 +232,6 @@ Responde ÚNICAMENTE JSON válido:
     nuevos_ramo = _validos(resultado.get("ramo", []))
     nuevos_sub  = _validos(resultado.get("subramo", []))
 
-    # Merge — no duplicar
     def _merge(existentes, nuevos):
         return list(set(existentes or []) | set(nuevos))
 
@@ -319,7 +317,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     Pipeline completo. Retorna dict con todos los datos, metadata y detección.
     Si la detección no tiene patrones regex, los genera automáticamente.
     """
-    # 1. Extraer texto
     try:
         texto = extraer_texto_pdf(contenido)
     except Exception as e:
@@ -328,10 +325,8 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     if not texto.strip():
         return _resultado_error(nombre_archivo, "PDF sin texto extraíble (posiblemente escaneado). Se requiere OCR.")
 
-    # 2. Detectar jerarquía con score
     det = detectar_con_score(texto, db)
 
-    # Obtener objetos ORM
     compania = db.query(Compania).filter(Compania.id == det["compania_id"]).first() if det["compania_id"] else None
     ramo     = db.query(Ramo).filter(Ramo.id == det["ramo_id"]).first()             if det["ramo_id"]     else None
     subramo  = db.query(Subramo).filter(Subramo.id == det["subramo_id"]).first()    if det["subramo_id"]  else None
@@ -431,7 +426,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         }
         campos_faltantes = campos_sin_regla(subramo.id, campos_cubiertos, db)
 
-    # 6. Consolidar resultados
     datos_finales: dict = {**datos_reglas}
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
@@ -463,7 +457,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         if subramo else None
     )
 
-    # 7. Guardar en historial
     metodo_det = "patrones" if (det["score_compania"] >= 3) else "keywords"
     extraccion = Extraccion(
         nombre_archivo=nombre_archivo,

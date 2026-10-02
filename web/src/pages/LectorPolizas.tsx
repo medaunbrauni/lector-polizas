@@ -136,7 +136,6 @@ export default function LectorPolizas() {
     });
   }
 
-  /* Correction state */
   const [companias, setCompanias] = useState<Compania[]>([]);
   const [corrMode, setCorrMode] = useState<Set<string>>(new Set());
   const [corrState, setCorrState] = useState<Record<string, CorrRowState>>({});
@@ -318,34 +317,28 @@ export default function LectorPolizas() {
   /* ── Correction helpers (por tanda + índice local) ── */
   async function entrarCorreccion(tandaId: string, i: number, r: ResultadoPDF) {
     const key = corrKey(tandaId, i);
-    // Toggle off
     if (corrMode.has(key)) {
       setCorrMode((prev) => { const s = new Set(prev); s.delete(key); return s; });
       return;
     }
 
-    // Ensure companias are loaded
     let comps = companias;
     if (!comps.length) {
       comps = await getCompanias();
       setCompanias(comps);
     }
 
-    // Pre-fill compañía from detected name
     const comp = comps.find(
       (c) => c.nombre.toLowerCase() === (r.compania ?? '').toLowerCase()
     ) ?? null;
 
-    // Fetch ramos for pre-filled compañía
     let ramos: Ramo[] = [];
     if (comp) ramos = await getRamos(comp.id);
 
-    // Pre-fill ramo from detected name
     const ramo = ramos.find(
       (ra) => ra.nombre.toLowerCase() === (r.ramo ?? '').toLowerCase()
     ) ?? null;
 
-    // Fetch subramos for pre-filled ramo
     let subramos: Subramo[] = [];
     if (ramo) subramos = await getSubramos(ramo.id);
 
@@ -456,11 +449,9 @@ export default function LectorPolizas() {
     const headers      = [...metaHeaders, ...campoHeaders, ...extraHeaders];
 
     const filas = todosResultados.map((r) => [
-      // Metadatos
       r.archivo, r.compania, r.ramo, r.subramo,
       // Campos dinámicos (usa fieldConfig para el orden y nombres)
       ...EXCEL_COLS.map(({ campo }) => c(r, campo)),
-      // Extra
       r.deteccion?.confianza ?? '—',
       r.error ?? '',
       r.stats.por_ia > 0
@@ -928,7 +919,6 @@ function TandaSeccion({
                   <>
                     {/* ── Main row ── */}
                     <tr key={`row-${i}`} className={`hover:bg-[var(--color-bg-secondary)] transition-colors ${enCorr ? 'bg-blue-50/40' : ''}`}>
-                      {/* Checkbox de selección para borrado individual */}
                       <td className="px-3 py-2.5">
                         <input
                           type="checkbox"
@@ -937,7 +927,6 @@ function TandaSeccion({
                           className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-400"
                         />
                       </td>
-                      {/* Archivo */}
                       <td className="px-3 py-2.5 text-xs font-medium text-[var(--color-text-primary)] max-w-[140px]">
                         <p className="truncate">{r.archivo}</p>
                       </td>
@@ -997,7 +986,6 @@ function TandaSeccion({
                           ? <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-medium"><AlertCircle className="w-3 h-3" />Error</span>
                           : <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-medium"><CheckCircle2 className="w-3 h-3" />OK</span>}
                       </td>
-                      {/* Acciones */}
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           <button onClick={() => onVerDetalle(i)} className="text-[var(--color-brand-blue)] hover:opacity-80 text-xs font-medium inline-flex items-center gap-1">
@@ -1029,7 +1017,6 @@ function TandaSeccion({
                             </p>
 
                             <div className="flex flex-wrap items-end gap-3">
-                              {/* Compañía selector */}
                               <label className="flex flex-col gap-1 text-[11px] text-gray-600 font-medium">
                                 Compañía
                                 <select
@@ -1044,7 +1031,6 @@ function TandaSeccion({
                                 </select>
                               </label>
 
-                              {/* Ramo selector */}
                               <label className="flex flex-col gap-1 text-[11px] text-gray-600 font-medium">
                                 Ramo
                                 <select
@@ -1060,7 +1046,6 @@ function TandaSeccion({
                                 </select>
                               </label>
 
-                              {/* Subramo selector */}
                               <label className="flex flex-col gap-1 text-[11px] text-gray-600 font-medium">
                                 Subramo
                                 <select
@@ -1081,7 +1066,6 @@ function TandaSeccion({
                                 </select>
                               </label>
 
-                              {/* Buttons */}
                               <div className="flex items-center gap-2 pb-0.5">
                                 <button
                                   onClick={() => onAplicarCorreccion(i, r)}

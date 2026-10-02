@@ -176,7 +176,6 @@ async def subir_polizas(
     if not subramo:
         raise HTTPException(404, "Subramo no encontrado")
 
-    # Directorio destino por subramo
     dest_dir = Path(PDF_ENTRENAMIENTO_DIR) / str(subramo_id)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -186,13 +185,11 @@ async def subir_polizas(
         if not contenido:
             continue
 
-        # Nombre único en disco
         ext = Path(upload.filename or "poliza.pdf").suffix or ".pdf"
         nombre_disco = f"{uuid.uuid4().hex}{ext}"
         ruta = dest_dir / nombre_disco
         ruta.write_bytes(contenido)
 
-        # Extraer texto
         try:
             texto, paginas = _extraer_texto_pdf(contenido)
         except Exception:
@@ -256,7 +253,6 @@ def eliminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
     p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == poliza_id).first()
     if not p:
         raise HTTPException(404)
-    # Borrar archivo del disco
     try:
         if os.path.exists(p.ruta_archivo):
             os.remove(p.ruta_archivo)
@@ -388,7 +384,6 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
             # No se encontró literal: dar el texto seleccionado como mínimo contexto
             contexto = data.texto_seleccionado
 
-    # Upsert
     existente = (
         db.query(SeleccionCampo)
         .filter(
@@ -554,7 +549,6 @@ def guardar_regla(subramo_id: int, data: GuardarReglaIn, db: Session = Depends(g
     Guarda (o reemplaza) la regla activa para el campo.
     Registra cobertura del lote en la regla.
     """
-    # Desactivar regla activa anterior
     db.query(ReglaExtraccion).filter(
         ReglaExtraccion.subramo_id == subramo_id,
         ReglaExtraccion.nombre_campo == data.nombre_campo,
