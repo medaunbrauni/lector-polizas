@@ -444,6 +444,12 @@ export async function getTickets(origen?: string): Promise<TicketExterno[]> {
   return res.json();
 }
 
+export async function eliminarTicket(id: number): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/clasificador/tickets/${id}`, { method: 'DELETE' });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
 export async function getTicketDetalle(id: number): Promise<TicketExternoDetalle> {
   const res = await fetch(`${BASE}/clasificador/tickets/${id}`);
   if (!res.ok) throw new Error(`Error ${res.status}`);

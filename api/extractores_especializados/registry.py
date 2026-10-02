@@ -8,11 +8,12 @@ que el pipeline salte directo al motor de reglas de BD (nivel 2).
 """
 from __future__ import annotations
 from .base import ExtractorEspecializado
-from . import qualitas, gnp
+from . import qualitas, gnp, el_potosi
 
 REGISTRY: dict[str, ExtractorEspecializado] = {
-    "Quálitas":    qualitas.extraer,
-    "GNP Seguros": gnp.extraer,
+    "Quálitas":          qualitas.extraer,
+    "GNP Seguros":       gnp.extraer,
+    "Seguros El Potosí": el_potosi.extraer,
 }
 
 

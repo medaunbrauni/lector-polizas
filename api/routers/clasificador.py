@@ -308,6 +308,29 @@ def get_ticket_detalle(id: int, db: Session = Depends(get_db)):
     }
 
 
+ESTADOS_RESUELTOS = ("enviado", "confirmado")
+
+
+@router.delete("/tickets/{id}")
+def eliminar_ticket(id: int, db: Session = Depends(get_db)):
+    """
+    Elimina el ticket y sus ClasificacionCola hijos. Rechaza (409) si algún
+    hijo sigue sin resolver (cualquier estado fuera de enviado/confirmado).
+    Igual que descartar_item, no borra el PDF físico del disco.
+    """
+    ticket = db.get(TicketExterno, id)
+    if not ticket:
+        raise HTTPException(404, "Ticket no encontrado")
+    hijos = db.query(ClasificacionCola).filter(ClasificacionCola.ticket_externo_id == id).all()
+    if any(h.estado not in ESTADOS_RESUELTOS for h in hijos):
+        raise HTTPException(409, "Primero confirma o elimina los tickets")
+    for h in hijos:
+        db.delete(h)
+    db.delete(ticket)
+    db.commit()
+    return {"ok": True}
+
+
 # ── Confirmar ─────────────────────────────────────────────────────────────────
 
 class ConfirmarIn(BaseModel):

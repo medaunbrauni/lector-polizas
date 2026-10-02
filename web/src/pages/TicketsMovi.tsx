@@ -4,13 +4,19 @@
  * PDF nunca se sube suelto, siempre pertenece a un ticket con folio.
  */
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Inbox, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Inbox, RefreshCw, Trash2 } from 'lucide-react';
 import type { Compania, TicketExterno, TicketExternoDetalle } from '../lib/types';
-import { getTickets, getTicketDetalle, getCompanias } from '../lib/api';
+import { getTickets, getTicketDetalle, getCompanias, eliminarTicket } from '../lib/api';
+import ConfirmDialog from '../components/ui/ConfirmDialog';
+import DismissibleAlert from '../components/ui/DismissibleAlert';
 import ColaItemRow from '../components/reglas/ColaItemRow';
 import { useColaAcciones } from '../components/reglas/useColaAcciones';
 
-function TicketCard({ ticket, companias }: { ticket: TicketExterno; companias: Compania[] }) {
+const RESUELTOS = ['enviado', 'confirmado'];
+
+function TicketCard({ ticket, companias, onEliminar }: {
+  ticket: TicketExterno; companias: Compania[]; onEliminar: (hayPendientes: boolean) => void;
+}) {
   const [abierto, setAbierto] = useState(false);
   const [detalle, setDetalle] = useState<TicketExternoDetalle | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -38,6 +44,12 @@ function TicketCard({ ticket, companias }: { ticket: TicketExterno; companias: C
     }
   };
 
+  // Con el detalle abierto manda lo que el usuario ya confirmó/eliminó en pantalla;
+  // si no, los conteos de la lista. El backend revalida de todos modos (409).
+  const hayPendientes = detalle
+    ? detalle.items.some((i) => !RESUELTOS.includes(i.estado))
+    : Object.entries(ticket.conteos).some(([e, n]) => n > 0 && !RESUELTOS.includes(e));
+
   const fecha = ticket.recibido_en
     ? new Date(ticket.recibido_en).toLocaleString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '—';
@@ -46,9 +58,10 @@ function TicketCard({ ticket, companias }: { ticket: TicketExterno; companias: C
 
   return (
     <div className="border border-[var(--color-border)] rounded-2xl bg-[var(--color-bg-primary)] shadow-sm overflow-hidden">
+      <div className="flex items-center hover:bg-[var(--color-bg-secondary)] transition-colors">
       <button
         onClick={toggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-[var(--color-bg-secondary)] transition-colors"
+        className="flex-1 min-w-0 flex items-center gap-3 pl-4 py-3 text-left"
       >
         {abierto ? <ChevronDown className="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" />}
         <div className="flex-1 min-w-0">
@@ -65,6 +78,15 @@ function TicketCard({ ticket, companias }: { ticket: TicketExterno; companias: C
           </div>
         </div>
       </button>
+      <button
+        onClick={() => onEliminar(hayPendientes)}
+        title="Eliminar ticket"
+        aria-label="Eliminar ticket"
+        className="mx-3 p-1.5 rounded-lg text-[var(--color-text-secondary)] hover:text-[var(--color-error-text)] hover:bg-[var(--color-bg-primary)] transition-colors flex-shrink-0"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+      </div>
 
       {abierto && (
         <div className="px-4 pb-4 space-y-3 border-t border-[var(--color-border)] pt-3">
@@ -106,6 +128,26 @@ export default function TicketsMovi() {
   const [tickets, setTickets] = useState<TicketExterno[]>([]);
   const [companias, setCompanias] = useState<Compania[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [aviso, setAviso] = useState(false);
+  const [porEliminar, setPorEliminar] = useState<TicketExterno | null>(null);
+  const [eliminando, setEliminando] = useState(false);
+
+  const confirmarEliminar = async () => {
+    if (!porEliminar) return;
+    setEliminando(true);
+    try {
+      await eliminarTicket(porEliminar.id);
+      setTickets((prev) => prev.filter((t) => t.id !== porEliminar.id));
+      setPorEliminar(null);
+    } catch {
+      // 409: el backend vio pendientes que la UI no — recarga y avisa.
+      setPorEliminar(null);
+      setAviso(true);
+      cargar();
+    } finally {
+      setEliminando(false);
+    }
+  };
 
   const cargar = async () => {
     setCargando(true);
@@ -139,6 +181,28 @@ export default function TicketsMovi() {
         </button>
       </div>
 
+      <DismissibleAlert
+        show={aviso}
+        duracionMs={5000}
+        onClose={() => setAviso(false)}
+        className="px-4 py-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-secondary)] flex items-center justify-between gap-3"
+        cerrarClassName="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] font-medium flex-shrink-0"
+      >
+        <p className="text-sm text-[var(--color-warning-text)]">Primero confirma o elimina los tickets</p>
+      </DismissibleAlert>
+
+      <ConfirmDialog
+        open={!!porEliminar}
+        variant="info"
+        title="Eliminar ticket"
+        message="¿Estás seguro que quieres eliminar el ticket y darlo por terminado?"
+        confirmLabel="Eliminar"
+        destructivo
+        procesando={eliminando}
+        onConfirm={confirmarEliminar}
+        onCancel={() => setPorEliminar(null)}
+      />
+
       {!cargando && tickets.length === 0 && (
         <div className="text-center py-12 text-[var(--color-text-secondary)]">
           <Inbox className="w-10 h-10 mx-auto mb-3 opacity-30" />
@@ -148,7 +212,12 @@ export default function TicketsMovi() {
 
       <div className="space-y-3">
         {tickets.map((t) => (
-          <TicketCard key={t.id} ticket={t} companias={companias} />
+          <TicketCard
+            key={t.id}
+            ticket={t}
+            companias={companias}
+            onEliminar={(pend) => (pend ? setAviso(true) : setPorEliminar(t))}
+          />
         ))}
       </div>
     </div>
