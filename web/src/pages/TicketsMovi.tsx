@@ -26,9 +26,9 @@ function TicketCard({ ticket, companias, onEliminar }: {
   };
 
   const {
-    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando,
+    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion,
     abrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
-    confirmarItem, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
+    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
   } = useColaAcciones(setItems);
 
   const toggle = async () => {
@@ -61,17 +61,17 @@ function TicketCard({ ticket, companias, onEliminar }: {
       <div className="flex items-center hover:bg-[var(--color-bg-secondary)] transition-colors">
       <button
         onClick={toggle}
-        className="flex-1 min-w-0 flex items-center gap-3 pl-4 py-3 text-left"
+        className="flex-1 min-w-0 flex flex-wrap items-center gap-x-3 gap-y-2 pl-4 py-3 text-left"
       >
         {abierto ? <ChevronDown className="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" /> : <ChevronRight className="w-4 h-4 text-[var(--color-text-secondary)] flex-shrink-0" />}
-        <div className="flex-1 min-w-0">
+        <div className="flex-[1_1_12rem] min-w-0">
           <p className="text-sm font-semibold text-[var(--color-text-primary)]">Ticket #{ticket.folio}</p>
           <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">{fecha}</p>
         </div>
         <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 flex-shrink-0">
           {ticket.origen}
         </span>
-        <div className="w-40 flex-shrink-0">
+        <div className="w-full sm:w-64 flex-shrink-0">
           <p className="text-xs text-[var(--color-text-secondary)] text-right mb-1">{ticket.resumen}</p>
           <div className="h-1.5 bg-[var(--color-bg-secondary)] rounded-full overflow-hidden">
             <div className="h-full bg-[var(--color-brand-blue)] rounded-full" style={{ width: `${pct}%` }} />
@@ -116,6 +116,8 @@ function TicketCard({ ticket, companias, onEliminar }: {
               onGuardarPatrones={() => guardarPatrones(item)}
               onReenviar={() => reenviar(item)}
               reenviando={reenviando === item.id}
+              onGuardarCorreccion={() => guardarCorreccion(item)}
+              guardandoCorreccion={guardandoCorreccion === item.id}
             />
           ))}
         </div>
@@ -163,7 +165,7 @@ export default function TicketsMovi() {
   useEffect(() => { cargar(); }, []);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-[1600px] mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Tickets MOVI</h1>

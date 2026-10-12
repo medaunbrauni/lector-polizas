@@ -349,9 +349,10 @@ def confirmar_item(id: int, data: ConfirmarIn, db: Session = Depends(get_db)):
     if item.estado in ("enviado",):
         raise HTTPException(400, "El item ya fue enviado a entrenamiento")
 
-    item.compania_id_final = data.compania_id or item.compania_id_prop
-    item.ramo_id_final     = data.ramo_id     or item.ramo_id_prop
-    item.subramo_id_final  = data.subramo_id  or item.subramo_id_prop
+    # Prioridad: override del request > corrección ya guardada > propuesta.
+    item.compania_id_final = data.compania_id or item.compania_id_final or item.compania_id_prop
+    item.ramo_id_final     = data.ramo_id     or item.ramo_id_final     or item.ramo_id_prop
+    item.subramo_id_final  = data.subramo_id  or item.subramo_id_final  or item.subramo_id_prop
 
     if not item.subramo_id_final:
         raise HTTPException(400, "Se requiere subramo para confirmar")
@@ -366,6 +367,41 @@ def confirmar_item(id: int, data: ConfirmarIn, db: Session = Depends(get_db)):
         except Exception as exc:
             raise HTTPException(500, f"Error al enviar a entrenamiento: {exc}")
 
+    db.commit()
+    db.refresh(item)
+    return _item_schema(item, db)
+
+
+class CorregirIn(BaseModel):
+    compania_id: int
+    ramo_id:     int
+    subramo_id:  int
+
+
+@router.patch("/cola/{id}/clasificacion")
+def corregir_clasificacion(id: int, data: CorregirIn, db: Session = Depends(get_db)):
+    """
+    Guarda una corrección manual de Compañía/Ramo/Subramo en los campos
+    *_final (sin confirmar ni enviar). Confirmar y Reenviar usan estos valores.
+    metodo="manual" marca que la clasificación ya no es la del detector/IA.
+    """
+    item = db.get(ClasificacionCola, id)
+    if not item:
+        raise HTTPException(404, "No encontrado")
+    ramo = db.get(Ramo, data.ramo_id)
+    sub = db.get(Subramo, data.subramo_id)
+    if not ramo or ramo.compania_id != data.compania_id:
+        raise HTTPException(400, "El ramo no pertenece a la compañía")
+    if not sub or sub.ramo_id != ramo.id:
+        raise HTTPException(400, "El subramo no pertenece al ramo")
+
+    item.compania_id_final = data.compania_id
+    item.ramo_id_final = data.ramo_id
+    item.subramo_id_final = data.subramo_id
+    item.metodo = "manual"
+    item.es_compania_nueva = False
+    if item.estado == "requiere_manual":
+        item.estado = "clasificado"
     db.commit()
     db.refresh(item)
     return _item_schema(item, db)
@@ -388,6 +424,8 @@ def reenviar_item(id: int, db: Session = Depends(get_db)):
     try:
         pol = reenviar_a_entrenamiento(item, db)
         item.poliza_entrenamiento_id = pol.id
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
     except Exception as exc:
         raise HTTPException(500, f"Error al reenviar a entrenamiento: {exc}")
 

@@ -263,7 +263,7 @@ export interface ItemCola {
   estado: EstadoCola;
   error_msg: string | null;
   confianza: NivelConfianza | null;
-  metodo: 'detector' | 'ia' | null;
+  metodo: 'detector' | 'ia' | 'manual' | 'sistema' | null;
   razon_ia: string | null;
   es_compania_nueva: boolean;
   compania_nombre_ia: string | null;
