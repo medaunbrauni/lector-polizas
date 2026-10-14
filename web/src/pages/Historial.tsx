@@ -33,7 +33,7 @@ export default function Historial() {
     if (item.poliza_entrenamiento_id && item.archivo_disponible) {
       params.set('polizaId', String(item.poliza_entrenamiento_id));
     }
-    return `/reglas?${params.toString()}`;
+    return `/entrenador?${params.toString()}`;
   }
 
   return (

@@ -471,14 +471,14 @@ export default function LectorPolizas() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-secondary)]">
       {/* ── Header ── */}
-      <header className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-600 rounded-xl">
-            <Car className="w-5 h-5 text-white" />
+      <header className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-6 h-[88px] flex items-center justify-between">
+        <div className="flex items-center gap-3.5">
+          <div className="p-2.5 bg-[var(--color-brand-blue)] rounded-xl">
+            <Car className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Lector de Pólizas</h1>
-            <p className="text-xs text-[var(--color-text-secondary)]">GNP · Quálitas · ANA · HDI · Banorte · El Potosí y más</p>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Lector de Pólizas</h1>
+            <p className="text-sm text-[var(--color-text-secondary)]">GNP · Quálitas · ANA · HDI · Banorte · El Potosí y más</p>
           </div>
         </div>
         {totalAcumulado > 0 && (
@@ -812,7 +812,7 @@ function TandaSeccion({
               })}
             </div>
           </div>
-          <Link to="/reglas"
+          <Link to="/entrenador"
             className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold text-purple-700 border border-purple-300 hover:bg-purple-100 rounded-lg transition-colors">
             Ver entrenamiento →
           </Link>
@@ -853,7 +853,7 @@ function TandaSeccion({
               ))}
             </div>
           </div>
-          <Link to="/reglas"
+          <Link to="/entrenador"
             className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors">
             Entrenar →
           </Link>
@@ -873,7 +873,7 @@ function TandaSeccion({
               Agrega más pólizas al lote de entrenamiento para mejorar los patrones.
             </p>
           </div>
-          <Link to="/reglas"
+          <Link to="/entrenador"
             className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold border border-orange-300 text-orange-700 hover:bg-orange-100 rounded-lg transition-colors">
             Mejorar →
           </Link>

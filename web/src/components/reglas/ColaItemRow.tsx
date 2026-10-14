@@ -41,7 +41,7 @@ function linkVer(item: ItemCola): string | null {
   if (item.poliza_entrenamiento_id) {
     params.set('polizaId', String(item.poliza_entrenamiento_id));
   }
-  return `/reglas?${params.toString()}`;
+  return `/entrenador?${params.toString()}`;
 }
 
 // ── Badges ────────────────────────────────────────────────────────────────────

@@ -8,7 +8,7 @@ const NAV = [
   { to: '/',                  icon: FileSearch, label: 'Extractor',      exact: true  },
   { to: '/historial',         icon: History,    label: 'Historial',      exact: false },
   { to: '/catalogos',         icon: BookOpen,   label: 'Catálogos',      exact: false },
-  { to: '/reglas',            icon: Zap,        label: 'Entrenador PDFs', exact: true  },
+  { to: '/entrenador',        icon: Zap,        label: 'Entrenador PDFs', exact: true  },
   { to: '/reglas/codigo',     icon: Code2,      label: 'Código Reglas',  exact: false },
   { to: '/clasificador/tickets', icon: Inbox,   label: 'Tickets MOVI',   exact: false },
 ];
@@ -57,8 +57,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {colapsado ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
 
-        <Link to="/" className="px-5 py-5 border-b border-[var(--color-border)] cursor-pointer hover:opacity-80 transition-opacity">
-          <div className={`flex items-center gap-2.5 ${colapsado ? 'justify-center' : ''}`}>
+        <Link to="/" className="px-5 h-[88px] flex items-center border-b border-[var(--color-border)] cursor-pointer hover:opacity-80 transition-opacity">
+          <div className={`flex w-full items-center gap-2.5 ${colapsado ? 'justify-center' : ''}`}>
             <div className={`${colapsado ? 'w-9 h-9' : 'w-10 h-10'} bg-[var(--color-brand-blue)] rounded-lg flex items-center justify-center flex-shrink-0`}>
               <FileSearch className={`${colapsado ? 'w-[18px] h-[18px]' : 'w-5 h-5'} text-white`} />
             </div>
@@ -75,14 +75,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               end={exact}
               title={colapsado ? label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   isActive
                     ? 'bg-[var(--color-nav-active-bg)] text-[var(--color-nav-active-text)]'
                     : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]'
                 }`
               }
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
+              <Icon className="w-5 h-5 flex-shrink-0" />
               {textosMontados && <span className={fade}>{label}</span>}
             </NavLink>
           ))}

@@ -253,7 +253,7 @@ function PanelTextosGuardados({ compania, companiaId, onElegir, onClose }: {
             <p className="text-xs">No hay pólizas guardadas para esta aseguradora.</p>
             {companiaId != null && (
               <a
-                href={`/reglas?companiaId=${companiaId}`}
+                href={`/entrenador?companiaId=${companiaId}`}
                 className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[var(--color-brand-blue)] hover:opacity-90 text-white rounded-lg text-xs font-medium transition-opacity"
               >
                 Subir un PDF en Entrenador PDFs
