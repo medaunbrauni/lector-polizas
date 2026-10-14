@@ -296,6 +296,20 @@ export async function reentrenarPoliza(polizaId: number): Promise<PolizaEntrenam
   return res.json();
 }
 
+/** Texto del PDF dentro de un recuadro normalizado 0-1 (modo Imagen, sin OCR). */
+export async function getTextoZona(
+  polizaId: number,
+  zona: { page: number; x0: number; y0: number; x1: number; y1: number },
+): Promise<{ texto: string; pagina_sin_texto: boolean }> {
+  const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}/texto-zona`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(zona),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
 export async function guardarSeleccion(data: {
   poliza_id: number; nombre_campo: string; texto_seleccionado: string;
   contexto?: string; bbox?: object | null; es_auto?: boolean;

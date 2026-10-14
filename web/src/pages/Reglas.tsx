@@ -10,7 +10,7 @@ import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
   subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza, reentrenarPoliza,
-  urlPdfEntrenamiento, urlImagenPagina, getTextoPdf,
+  urlPdfEntrenamiento, urlImagenPagina, getTextoPdf, getTextoZona,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
   probarDeteccion, generarYGuardarPatrones,
@@ -103,6 +103,9 @@ export default function Reglas() {
   // por defecto todas marcadas, pero agregarlas sigue siendo una acción
   // explícita del usuario, nunca automática (ver handleAgregarAutoDeteccion).
   const [autoDeteccionSel, setAutoDeteccionSel] = useState<Set<number>>(new Set());
+  // Campo al que pertenece la lista (campoActivo ya avanzó al siguiente al guardar).
+  const [autoDeteccionCampo, setAutoDeteccionCampo] = useState('');
+  const [autoDeteccionAbierta, setAutoDeteccionAbierta] = useState(true);
   const [agregandoAutoDeteccion, setAgregandoAutoDeteccion] = useState(false);
 
   // ── Detección por PDF (identificar módulo) ─────────────────────────────────
@@ -341,7 +344,8 @@ export default function Reglas() {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+    // El contenedor del visor solo existe una vez elegido el subramo.
+  }, [selSubramo]);
 
   // ── Auto-scroll al highlight del texto extraído ────────────────────────────
   useEffect(() => {
@@ -502,6 +506,9 @@ export default function Reglas() {
   // bloqueada se recalcula sola en cuanto `polizas` se actualiza.
   const bloqueada = !!polizaActiva?.entrenado;
 
+  // La lista de coincidencias es de la póliza recién guardada: al cambiar de póliza ya no aplica.
+  useEffect(() => { setAutoDeteccion([]); }, [polizaActiva?.id]);
+
   // Ajusta +1/-1 un contador (`total_entrenadas` o `total_lote`) de los 3
   // selects ya cargados en memoria (compañía/ramo/subramo actualmente
   // seleccionados — la póliza afectada siempre pertenece a esa jerarquía),
@@ -626,6 +633,8 @@ export default function Reglas() {
     );
     const autoDet: AutoDeteccion[] = res.auto_deteccion ?? [];
     setAutoDeteccion(autoDet);
+    setAutoDeteccionCampo(campos.find((c) => c.nombre === campoActivo)?.label ?? campoActivo);
+    setAutoDeteccionAbierta(true);
     // Por defecto todas las coincidencias encontradas quedan marcadas, pero
     // solo se guardan de verdad si el usuario da clic en "Agregar
     // seleccionadas" — ver handleAgregarAutoDeteccion.
@@ -1223,7 +1232,7 @@ export default function Reglas() {
             {/* Visor principal — flex-1 para ocupar espacio restante */}
             <div
               ref={containerRef}
-              className="flex-1 min-h-0 relative overflow-hidden"
+              className="flex-1 min-h-[240px] relative overflow-hidden"
               onMouseUp={(!modoImagen && polizaActiva) ? handleSeleccion : undefined}
             >
               {!polizaActiva ? (
@@ -1240,6 +1249,13 @@ export default function Reglas() {
                     ocrBbox={ocrBbox}
                     onBboxChange={setOcrBbox}
                     campoActivo={campoActivo}
+                    textoSeleccionado={textoSeleccionado}
+                    onTextoZona={(texto, b) => {
+                      // Mismo camino que el modo PDF: queda "Capturado" y se guarda con el botón.
+                      setTextoSeleccionado(texto);
+                      setBboxCapturado({ page: b.page, x0: b.x0, top: b.y0, x1: b.x1, bottom: b.y1 });
+                      setAutoDeteccion([]);
+                    }}
                   />
                 </div>
               ) : (
@@ -1280,7 +1296,7 @@ export default function Reglas() {
 
             {/* Botón guardar selección — SIEMPRE visible cuando hay campo activo */}
             {polizaActiva && campoActivo && (
-              <div className="bg-[var(--color-bg-primary)] border-t border-[var(--color-border)] px-4 py-3 space-y-2">
+              <div className="flex-shrink-0 bg-[var(--color-bg-primary)] border-t border-[var(--color-border)] px-4 py-3 space-y-2">
                 {textoSeleccionado ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -1317,17 +1333,41 @@ export default function Reglas() {
                     aparecer aquí (punto 4). */}
                 {autoDeteccion.length > 0 && (
                   <div className="mt-1 space-y-1.5">
-                    <p className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide">
-                      Búsqueda automática en las demás pólizas — elige cuáles agregar
-                    </p>
-                    <div className="space-y-1">
-                      {autoDeteccion.map((ad) => (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAutoDeteccionAbierta((v) => !v)}
+                        aria-expanded={autoDeteccionAbierta}
+                        className="flex-1 min-w-0 flex items-center gap-1 text-left text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide hover:text-[var(--color-text-primary)]"
+                      >
+                        {autoDeteccionAbierta ? <ChevronDown className="w-3 h-3 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 flex-shrink-0" />}
+                        <span className="flex-1 truncate">Coincidencias para «{autoDeteccionCampo}»</span>
+                        <span className="flex-shrink-0 normal-case">
+                          {autoDeteccion.filter((ad) => ad.encontrado).length} de {autoDeteccion.length} encontradas
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setAutoDeteccion([]); setAutoDeteccionSel(new Set()); }}
+                        className="flex-shrink-0 px-2 py-0.5 text-[10px] font-semibold rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+                      >
+                        Ignorar
+                      </button>
+                    </div>
+                    {autoDeteccionAbierta && !autoDeteccion.some((ad) => ad.encontrado) && (
+                      <p className="text-[10px] text-[var(--color-text-secondary)]">
+                        Ninguna otra póliza contiene ese texto exacto, así que no hay nada que agregar (las filas con ? no tienen casilla).
+                      </p>
+                    )}
+                    {autoDeteccionAbierta && (
+                    <div className="space-y-1 max-h-[28vh] overflow-y-auto pr-1">
+                      {[...autoDeteccion].sort((x, y) => Number(y.encontrado) - Number(x.encontrado)).map((ad) => (
                         <label
                           key={ad.poliza_id}
-                          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium ${
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[10px] font-medium border border-[var(--color-border)] bg-[var(--color-bg-secondary)] ${
                             ad.encontrado
-                              ? 'bg-emerald-50 text-emerald-700 cursor-pointer'
-                              : 'bg-amber-50 text-amber-700'
+                              ? 'text-[var(--color-success-text)] cursor-pointer'
+                              : 'text-[var(--color-text-secondary)]'
                           }`}
                         >
                           {ad.encontrado ? (
@@ -1335,18 +1375,19 @@ export default function Reglas() {
                               type="checkbox"
                               checked={autoDeteccionSel.has(ad.poliza_id)}
                               onChange={() => toggleAutoDeteccionSel(ad.poliza_id)}
-                              className="w-3 h-3 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-400"
+                              className="w-3 h-3 rounded"
                             />
                           ) : (
                             <span>?</span>
                           )}
-                          <span className="truncate flex-1">{ad.nombre_archivo.substring(0, 20)}</span>
+                          <span className="truncate flex-1" title={ad.nombre_archivo}>{ad.nombre_archivo.substring(0, 20)}</span>
                           {ad.texto_encontrado && (
                             <code className="truncate max-w-[90px]">"{ad.texto_encontrado.substring(0, 15)}"</code>
                           )}
                         </label>
                       ))}
                     </div>
+                    )}
                     {autoDeteccionSel.size > 0 && (
                       <button
                         onClick={handleAgregarAutoDeteccion}
@@ -1711,26 +1752,57 @@ export default function Reglas() {
 // ── Visor de imagen (modo OCR) ─────────────────────────────────────────────────
 
 function VisorImagen({
-  polizaId, page, totalPages, onPageChange, ocrBbox, onBboxChange, campoActivo,
+  polizaId, page, totalPages, onPageChange, ocrBbox, onBboxChange, campoActivo, textoSeleccionado, onTextoZona,
 }: {
   polizaId: number; page: number; totalPages: number;
   onPageChange: (p: number) => void;
   ocrBbox: { x0: number; y0: number; x1: number; y1: number; page: number } | null;
   onBboxChange: (b: { x0: number; y0: number; x1: number; y1: number; page: number } | null) => void;
   campoActivo: string;
+  textoSeleccionado: string;
+  onTextoZona: (texto: string, b: { x0: number; y0: number; x1: number; y1: number; page: number }) => void;
 }) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [imgLoaded, setImgLoaded] = useState(false);
+  // Cargada = la URL que ya disparó onLoad es la actual. Antes se reseteaba un
+  // booleano en un efecto: con la imagen en caché (o al volver al modo Imagen)
+  // onLoad ya había corrido y el reset lo dejaba en "Cargando…" para siempre.
+  const [loadedUrl, setLoadedUrl] = useState('');
   const [dragging, setDragging] = useState(false);
   const [startPt, setStartPt] = useState<{x: number; y: number} | null>(null);
   const [rect, setRect] = useState<{x: number; y: number; w: number; h: number} | null>(null);
+  const [leyendo, setLeyendo] = useState(false);
+  const [aviso, setAviso] = useState('');
+  const peticionRef = useRef(0);   // descarta respuestas de recuadros ya reemplazados
   const imgUrl = urlImagenPagina(polizaId, page);
+  const imgLoaded = loadedUrl === imgUrl;
+
+  function limpiarRecuadro() {
+    peticionRef.current++;
+    setRect(null);
+    setAviso('');
+    setLeyendo(false);
+    onBboxChange(null);
+  }
 
   useEffect(() => {
-    setImgLoaded(false);
-    setRect(null);
-  }, [polizaId, page]);
+    limpiarRecuadro();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polizaId, page, campoActivo]);
+
+  // Imagen ya completa antes de que React enganchara onLoad (caché).
+  useEffect(() => {
+    const img = imgRef.current;
+    if (img?.complete && img.naturalWidth) setLoadedUrl(imgUrl);
+  }, [imgUrl]);
+
+  // Al guardar o descartar el valor capturado, el recuadro ya no aplica.
+  const habiaTexto = useRef(false);
+  useEffect(() => {
+    if (habiaTexto.current && !textoSeleccionado) limpiarRecuadro();
+    habiaTexto.current = !!textoSeleccionado;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textoSeleccionado]);
 
   function syncCanvas() {
     const canvas = canvasRef.current;
@@ -1742,7 +1814,7 @@ function VisorImagen({
 
   function handleImgLoad() {
     syncCanvas();
-    setImgLoaded(true);
+    setLoadedUrl(imgUrl);
   }
 
   // Redibujar rect cuando cambia o imagen carga
@@ -1773,8 +1845,7 @@ function VisorImagen({
     const pt = getPt(e);
     setStartPt(pt);
     setDragging(true);
-    setRect(null);
-    onBboxChange(null);
+    limpiarRecuadro();
   }
 
   function handleMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
@@ -1783,19 +1854,36 @@ function VisorImagen({
     setRect({ x: Math.min(startPt.x, pt.x), y: Math.min(startPt.y, pt.y), w: Math.abs(pt.x - startPt.x), h: Math.abs(pt.y - startPt.y) });
   }
 
-  function handleMouseUp(e: React.MouseEvent<HTMLCanvasElement>) {
+  async function handleMouseUp(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!dragging || !startPt || !imgRef.current) return;
     setDragging(false);
     const pt = getPt(e);
     const iw = imgRef.current.offsetWidth;
     const ih = imgRef.current.offsetHeight;
     if (!iw || !ih) return;
-    const x0 = Math.min(startPt.x, pt.x) / iw;
-    const y0 = Math.min(startPt.y, pt.y) / ih;
-    const x1 = Math.max(startPt.x, pt.x) / iw;
-    const y1 = Math.max(startPt.y, pt.y) / ih;
-    if (x1 - x0 > 0.01 && y1 - y0 > 0.01) {
-      onBboxChange({ x0, y0, x1, y1, page });
+    const norm = (v: number) => Math.min(1, Math.max(0, v));
+    const x0 = norm(Math.min(startPt.x, pt.x) / iw);
+    const y0 = norm(Math.min(startPt.y, pt.y) / ih);
+    const x1 = norm(Math.max(startPt.x, pt.x) / iw);
+    const y1 = norm(Math.max(startPt.y, pt.y) / ih);
+    if (x1 - x0 <= 0.01 || y1 - y0 <= 0.01) { setRect(null); return; }
+
+    const zona = { x0, y0, x1, y1, page };
+    onBboxChange(zona);
+    const mia = ++peticionRef.current;
+    setLeyendo(true);
+    setAviso('');
+    try {
+      const r = await getTextoZona(polizaId, zona);
+      if (mia !== peticionRef.current) return;
+      if (r.texto.trim()) onTextoZona(r.texto.trim(), zona);
+      else setAviso(r.pagina_sin_texto
+        ? 'Esta página no tiene texto seleccionable; parece un escaneo y se requiere OCR.'
+        : 'No se encontró texto en esa zona. Si el PDF es un escaneo se requiere OCR.');
+    } catch {
+      if (mia === peticionRef.current) setAviso('No se pudo leer el texto de esa zona. Intenta de nuevo.');
+    } finally {
+      if (mia === peticionRef.current) setLeyendo(false);
     }
   }
 
@@ -1815,7 +1903,18 @@ function VisorImagen({
       {campoActivo && (
         <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1">
           Arrastra para marcar el área donde aparece el valor
-          {ocrBbox && <span className="ml-2 font-semibold text-emerald-600">✓ Área capturada</span>}
+          {leyendo && <span className="ml-2 font-semibold">Leyendo zona…</span>}
+          {!leyendo && ocrBbox && textoSeleccionado && <span className="ml-2 font-semibold text-emerald-600">✓ Área capturada</span>}
+          {rect && (
+            <button type="button" onClick={limpiarRecuadro} className="ml-3 underline hover:opacity-80">
+              Limpiar recuadro
+            </button>
+          )}
+        </div>
+      )}
+      {aviso && (
+        <div role="alert" className="text-xs font-medium text-[var(--color-warning-text)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1 max-w-xl text-center">
+          {aviso}
         </div>
       )}
 
@@ -1838,6 +1937,7 @@ function VisorImagen({
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
         />
       </div>
     </div>

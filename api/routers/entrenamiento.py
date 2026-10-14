@@ -629,6 +629,50 @@ def imagen_pagina(poliza_id: int, page_num: int, escala: float = 2.0, db: Sessio
         raise HTTPException(500, f"Error al renderizar: {e}")
 
 
+class TextoZonaIn(BaseModel):
+    page: int                 # 1-based
+    x0: float                 # recuadro normalizado 0-1 sobre la página renderizada
+    y0: float
+    x1: float
+    y1: float
+
+
+@router.post("/polizas/{poliza_id}/texto-zona")
+def texto_de_zona(poliza_id: int, data: TextoZonaIn, db: Session = Depends(get_db)):
+    """
+    Texto del PDF dentro de un recuadro dibujado en el modo "Imagen". Solo PDFs
+    con capa de texto (sin OCR): toma los caracteres cuyo centro cae dentro del
+    recuadro. pdfplumber entrega coordenadas ya rotadas, igual que la imagen
+    de /imagen (pypdfium2), así que fracción x tamaño de página = coordenada.
+    `pagina_sin_texto` distingue una zona vacía de un PDF escaneado.
+    """
+    p = db.get(PolizaEntrenamiento, poliza_id)
+    if not p:
+        raise HTTPException(404)
+    if not os.path.exists(p.ruta_archivo):
+        raise HTTPException(404, "Archivo no encontrado en disco")
+    if not (0 <= data.x0 < data.x1 <= 1 and 0 <= data.y0 < data.y1 <= 1):
+        raise HTTPException(400, "Recuadro fuera de rango")
+
+    try:
+        with pdfplumber.open(p.ruta_archivo) as pdf:
+            if data.page < 1 or data.page > len(pdf.pages):
+                raise HTTPException(400, f"Página {data.page} fuera de rango")
+            page = pdf.pages[data.page - 1]
+            w, h = float(page.width), float(page.height)
+            zx0, zx1, zy0, zy1 = data.x0 * w, data.x1 * w, data.y0 * h, data.y1 * h
+            chars = [
+                c for c in page.chars
+                if zx0 <= (c["x0"] + c["x1"]) / 2 <= zx1 and zy0 <= (c["top"] + c["bottom"]) / 2 <= zy1
+            ]
+            texto = pdfplumber.utils.extract_text(chars).strip() if chars else ""
+            return {"texto": texto, "pagina_sin_texto": not page.chars}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"No se pudo leer la zona: {e}")
+
+
 # ── Pólizas guardadas por aseguradora (todos sus subramos) ────────────────────
 
 @router.get("/companias/{nombre}/polizas")
