@@ -170,7 +170,6 @@ export default function PolizaDetalle({
         onClick={(e) => e.stopPropagation()}
         className="bg-[var(--color-bg-primary)] rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col overflow-hidden"
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-blue-100 rounded-xl">
@@ -224,7 +223,6 @@ export default function PolizaDetalle({
           </div>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-5">
 
           {data.error && (
@@ -233,7 +231,6 @@ export default function PolizaDetalle({
             </div>
           )}
 
-          {/* Stats */}
           {data.stats && (
             <div ref={statsRef} className="flex gap-2 flex-wrap">
               <Stat
@@ -278,7 +275,6 @@ export default function PolizaDetalle({
           ))}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-[var(--color-border)]">
           <button
             onClick={onClose}

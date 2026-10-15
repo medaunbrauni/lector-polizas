@@ -33,7 +33,7 @@ export default function Historial() {
     if (item.poliza_entrenamiento_id && item.archivo_disponible) {
       params.set('polizaId', String(item.poliza_entrenamiento_id));
     }
-    return `/reglas?${params.toString()}`;
+    return `/entrenador?${params.toString()}`;
   }
 
   return (
@@ -51,7 +51,8 @@ export default function Historial() {
         </div>
       ) : (
         <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
             <thead>
               <tr className="bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
                 {['Archivo', 'Compañía', 'Ramo', 'Subramo', 'Regla', 'IA', 'No enc.', 'Estado', 'Fecha', ''].map(h => (
@@ -106,8 +107,8 @@ export default function Historial() {
               ))}
             </tbody>
           </table>
+          </div>
 
-          {/* Paginación */}
           <div className="flex items-center justify-between px-3 py-2.5 border-t border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <span className="text-xs text-[var(--color-text-secondary)]">
               {desde}–{hasta} de {total}

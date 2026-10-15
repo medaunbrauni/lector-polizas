@@ -10,7 +10,7 @@ import { useState } from 'react';
 import type { ItemCola } from '../../lib/types';
 import {
   confirmarItemCola, aprobarPatronesCola, descartarItemCola,
-  getRamos, getSubramos, reenviarItemCola,
+  getRamos, getSubramos, reenviarItemCola, corregirClasificacionCola,
 } from '../../lib/api';
 import type { OverrideState, PatronesSeleccion } from './ColaItemRow';
 
@@ -21,25 +21,30 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
   const [patronesSeleccionados, setPatronesSeleccionados] = useState<Record<number, PatronesSeleccion>>({});
   const [guardandoPatrones, setGuardandoPatrones] = useState<number | null>(null);
   const [reenviando, setReenviando] = useState<number | null>(null);
+  const [guardandoCorreccion, setGuardandoCorreccion] = useState<number | null>(null);
 
   const abrirOverride = async (item: ItemCola) => {
     if (overrideActivo === item.id) { setOverrideActivo(null); return; }
     setOverrideActivo(item.id);
     if (overrides[item.id]) return;
 
-    const compId = String(item.compania_id_prop ?? '');
+    // Parte de la corrección ya guardada, si existe; si no, de la propuesta.
+    const cId = item.compania_id_final ?? item.compania_id_prop;
+    const rId = item.ramo_id_final ?? item.ramo_id_prop;
+    const sId = item.subramo_id_final ?? item.subramo_id_prop;
+    const compId = String(cId ?? '');
     let ramos: { id: number; nombre: string }[] = [];
     let subramos: { id: number; nombre: string }[] = [];
-    if (item.compania_id_prop) {
-      ramos = await getRamos(item.compania_id_prop);
-      if (item.ramo_id_prop) subramos = await getSubramos(item.ramo_id_prop);
+    if (cId) {
+      ramos = await getRamos(cId);
+      if (rId) subramos = await getSubramos(rId);
     }
     setOverrides((prev) => ({
       ...prev,
       [item.id]: {
         companiaId: compId,
-        ramoId: String(item.ramo_id_prop ?? ''),
-        subramoId: String(item.subramo_id_prop ?? ''),
+        ramoId: String(rId ?? ''),
+        subramoId: String(sId ?? ''),
         ramos,
         subramos,
       },
@@ -62,6 +67,24 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
 
   const onSubramoChange = (itemId: number, sid: string) => {
     setOverrides((prev) => ({ ...prev, [itemId]: { ...prev[itemId], subramoId: sid } }));
+  };
+
+  const guardarCorreccion = async (item: ItemCola) => {
+    const ov = overrides[item.id];
+    if (!ov?.companiaId || !ov.ramoId || !ov.subramoId) return;
+    setGuardandoCorreccion(item.id);
+    try {
+      const updated = await corregirClasificacionCola(item.id, {
+        compania_id: Number(ov.companiaId), ramo_id: Number(ov.ramoId), subramo_id: Number(ov.subramoId),
+      });
+      setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
+      setOverrides((prev) => { const { [item.id]: _, ...rest } = prev; return rest; });
+      setOverrideActivo(null);
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Error al guardar la corrección');
+    } finally {
+      setGuardandoCorreccion(null);
+    }
   };
 
   const confirmarItem = async (item: ItemCola) => {
@@ -143,8 +166,8 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
   };
 
   return {
-    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando,
+    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion,
     abrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
-    confirmarItem, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
+    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
   };
 }

@@ -9,7 +9,7 @@ import {
 import { Link } from 'react-router-dom';
 import type { ResultadoPDF, ExtractionResponse, NivelConfianza, Compania, Ramo, Subramo } from '../lib/types';
 import PolizaDetalle from '../components/lector/PolizaDetalle';
-import { getCompanias, getRamos, getSubramos, reaplicarExtraccion } from '../lib/api';
+import { getCompanias, getRamos, getSubramos, reaplicarExtraccion, enviarRechazadoAEntrenador } from '../lib/api';
 import { EXCEL_COLS, formatEntidad } from '../lib/fieldConfig';
 import {
   type Tanda, TTL_MS,
@@ -136,7 +136,6 @@ export default function LectorPolizas() {
     });
   }
 
-  /* Correction state */
   const [companias, setCompanias] = useState<Compania[]>([]);
   const [corrMode, setCorrMode] = useState<Set<string>>(new Set());
   const [corrState, setCorrState] = useState<Record<string, CorrRowState>>({});
@@ -318,34 +317,28 @@ export default function LectorPolizas() {
   /* ── Correction helpers (por tanda + índice local) ── */
   async function entrarCorreccion(tandaId: string, i: number, r: ResultadoPDF) {
     const key = corrKey(tandaId, i);
-    // Toggle off
     if (corrMode.has(key)) {
       setCorrMode((prev) => { const s = new Set(prev); s.delete(key); return s; });
       return;
     }
 
-    // Ensure companias are loaded
     let comps = companias;
     if (!comps.length) {
       comps = await getCompanias();
       setCompanias(comps);
     }
 
-    // Pre-fill compañía from detected name
     const comp = comps.find(
       (c) => c.nombre.toLowerCase() === (r.compania ?? '').toLowerCase()
     ) ?? null;
 
-    // Fetch ramos for pre-filled compañía
     let ramos: Ramo[] = [];
     if (comp) ramos = await getRamos(comp.id);
 
-    // Pre-fill ramo from detected name
     const ramo = ramos.find(
       (ra) => ra.nombre.toLowerCase() === (r.ramo ?? '').toLowerCase()
     ) ?? null;
 
-    // Fetch subramos for pre-filled ramo
     let subramos: Subramo[] = [];
     if (ramo) subramos = await getSubramos(ramo.id);
 
@@ -391,14 +384,30 @@ export default function LectorPolizas() {
     const key = corrKey(tandaId, i);
     const cs = corrState[key];
     if (!cs?.subramoId) return;
-    if (r.id == null) {
+    if (r.id == null && !r.rechazo) {
       setCorrState((prev) => ({ ...prev, [key]: { ...prev[key], errorMsg: 'Esta póliza no tiene ID guardado' } }));
       return;
     }
 
     setCorrState((prev) => ({ ...prev, [key]: { ...prev[key], cargando: true, errorMsg: null } }));
     try {
-      const resultado = await reaplicarExtraccion(r.id, cs.subramoId);
+      let resultado: ResultadoPDF;
+      if (r.rechazo) {
+        // PDF sin procesar: no hay extracción que re-aplicar; se manda al
+        // Entrenador en el subramo elegido y la fila refleja la elección.
+        const env = await enviarRechazadoAEntrenador(r.rechazo.ref, {
+          compania_id: cs.companiaId!, ramo_id: cs.ramoId!, subramo_id: cs.subramoId, nombre_archivo: r.archivo,
+        });
+        resultado = {
+          ...r,
+          compania: companias.find((c) => c.id === cs.companiaId)?.nombre ?? r.compania,
+          ramo: cs.ramos.find((x) => x.id === cs.ramoId)?.nombre ?? r.ramo,
+          subramo: cs.subramos.find((x) => x.id === cs.subramoId)?.nombre ?? r.subramo,
+          rechazo: { ...r.rechazo, ...env },
+        };
+      } else {
+        resultado = await reaplicarExtraccion(r.id!, cs.subramoId);
+      }
       // Corregir una póliza cuenta como actividad relevante sobre esa
       // tanda: renueva su propio timestamp de vencimiento (no el de las
       // demás tandas).
@@ -456,13 +465,11 @@ export default function LectorPolizas() {
     const headers      = [...metaHeaders, ...campoHeaders, ...extraHeaders];
 
     const filas = todosResultados.map((r) => [
-      // Metadatos
       r.archivo, r.compania, r.ramo, r.subramo,
       // Campos dinámicos (usa fieldConfig para el orden y nombres)
       ...EXCEL_COLS.map(({ campo }) => c(r, campo)),
-      // Extra
       r.deteccion?.confianza ?? '—',
-      r.error ?? '',
+      r.error ?? r.rechazo?.mensaje ?? '',
       r.stats.por_ia > 0
         ? `IA(${r.stats.por_ia}) + Regla(${r.stats.por_regla})`
         : `Regla(${r.stats.por_regla})`,
@@ -480,14 +487,14 @@ export default function LectorPolizas() {
   return (
     <div className="min-h-screen bg-[var(--color-bg-secondary)]">
       {/* ── Header ── */}
-      <header className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-600 rounded-xl">
-            <Car className="w-5 h-5 text-white" />
+      <header className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-6 h-[88px] flex items-center justify-between">
+        <div className="flex items-center gap-3.5">
+          <div className="p-2.5 bg-[var(--color-brand-blue)] rounded-xl">
+            <Car className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Lector de Pólizas</h1>
-            <p className="text-xs text-[var(--color-text-secondary)]">GNP · Quálitas · ANA · HDI · Banorte · El Potosí y más</p>
+            <h1 className="text-xl font-bold text-[var(--color-text-primary)]">Lector de Pólizas</h1>
+            <p className="text-sm text-[var(--color-text-secondary)]">GNP · Quálitas · ANA · HDI · Banorte · El Potosí y más</p>
           </div>
         </div>
         {totalAcumulado > 0 && (
@@ -757,12 +764,13 @@ function TandaSeccion({
   onEliminarTanda: () => void;
 }) {
   const resultados = tanda.resultados;
-  const exitosos      = resultados.filter((r) => !r.error);
+  const exitosos      = resultados.filter((r) => !r.error && !r.rechazo);
+  const rechazados    = resultados.filter((r) => r.rechazo);
   const conError      = resultados.filter((r) => r.error);
-  const noReconocidas = resultados.filter((r) => !r.compania && !r.error);
+  const noReconocidas = resultados.filter((r) => !r.compania && !r.error && !r.rechazo);
   const conPatrones   = resultados.filter((r) => r.deteccion?.patrones_generados);
   const confianzaBaja = resultados.filter((r) => r.compania && (r.deteccion?.confianza === 'baja' || r.deteccion?.confianza === 'sin_datos'));
-  const sinSubramo    = resultados.filter((r) => r.compania && !r.subramo && !r.error);
+  const sinSubramo    = resultados.filter((r) => r.compania && !r.subramo && !r.error && !r.rechazo);
 
   return (
     <div className="space-y-3 pt-2 border-t border-[var(--color-border)] first:border-t-0 first:pt-0">
@@ -777,6 +785,10 @@ function TandaSeccion({
           {exitosos.length > 0 && (
             <Chip icon={<CheckCircle2 className="w-4 h-4" />}
               label={`${exitosos.length} procesado${exitosos.length !== 1 ? 's' : ''}`} color="green" />
+          )}
+          {rechazados.length > 0 && (
+            <Chip icon={<AlertCircle className="w-4 h-4" />}
+              label={`${rechazados.length} sin procesar`} color="amber" />
           )}
           {conError.length > 0 && (
             <Chip icon={<AlertCircle className="w-4 h-4" />}
@@ -821,7 +833,7 @@ function TandaSeccion({
               })}
             </div>
           </div>
-          <Link to="/reglas"
+          <Link to="/entrenador"
             className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold text-purple-700 border border-purple-300 hover:bg-purple-100 rounded-lg transition-colors">
             Ver entrenamiento →
           </Link>
@@ -862,7 +874,7 @@ function TandaSeccion({
               ))}
             </div>
           </div>
-          <Link to="/reglas"
+          <Link to="/entrenador"
             className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition-colors">
             Entrenar →
           </Link>
@@ -882,7 +894,7 @@ function TandaSeccion({
               Agrega más pólizas al lote de entrenamiento para mejorar los patrones.
             </p>
           </div>
-          <Link to="/reglas"
+          <Link to="/entrenador"
             className="flex-shrink-0 px-3 py-1.5 text-xs font-semibold border border-orange-300 text-orange-700 hover:bg-orange-100 rounded-lg transition-colors">
             Mejorar →
           </Link>
@@ -928,7 +940,6 @@ function TandaSeccion({
                   <>
                     {/* ── Main row ── */}
                     <tr key={`row-${i}`} className={`hover:bg-[var(--color-bg-secondary)] transition-colors ${enCorr ? 'bg-blue-50/40' : ''}`}>
-                      {/* Checkbox de selección para borrado individual */}
                       <td className="px-3 py-2.5">
                         <input
                           type="checkbox"
@@ -937,7 +948,6 @@ function TandaSeccion({
                           className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-400"
                         />
                       </td>
-                      {/* Archivo */}
                       <td className="px-3 py-2.5 text-xs font-medium text-[var(--color-text-primary)] max-w-[140px]">
                         <p className="truncate">{r.archivo}</p>
                       </td>
@@ -995,15 +1005,16 @@ function TandaSeccion({
                       <td className="px-3 py-2.5">
                         {r.error
                           ? <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-medium"><AlertCircle className="w-3 h-3" />Error</span>
+                          : r.rechazo
+                          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-warning-text)] rounded-full text-[10px] font-medium"><AlertCircle className="w-3 h-3" />{r.rechazo.motivo === 'incompleta' ? 'Incompleta' : 'Sin extractor'}</span>
                           : <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-medium"><CheckCircle2 className="w-3 h-3" />OK</span>}
                       </td>
-                      {/* Acciones */}
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           <button onClick={() => onVerDetalle(i)} className="text-[var(--color-brand-blue)] hover:opacity-80 text-xs font-medium inline-flex items-center gap-1">
                             <Eye className="w-3.5 h-3.5" />Ver
                           </button>
-                          {!r.error && r.id != null && (
+                          {((!r.error && r.id != null) || (r.rechazo && r.rechazo.poliza_entrenamiento_id == null)) && (
                             <button
                               onClick={() => onEntrarCorreccion(i, r)}
                               className={`text-xs font-medium inline-flex items-center gap-1 transition-colors ${enCorr ? 'text-[var(--color-brand-blue)] font-semibold' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
@@ -1017,6 +1028,24 @@ function TandaSeccion({
                       </td>
                     </tr>
 
+                    {/* ── Leyenda: PDF no procesado ── */}
+                    {r.rechazo && (
+                      <tr key={`rech-${i}`} className="bg-[var(--color-bg-secondary)]">
+                        <td colSpan={11} className="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                          <span className="font-semibold text-[var(--color-warning-text)]">{r.rechazo.mensaje}</span>
+                          {r.rechazo.poliza_entrenamiento_id != null && ' Se envió al Entrenador de PDFs.'}
+                          {r.rechazo.subramo_id != null && (
+                            <Link
+                              to={`/entrenador?companiaId=${r.rechazo.compania_id}&ramoId=${r.rechazo.ramo_id}&subramoId=${r.rechazo.subramo_id}${r.rechazo.poliza_entrenamiento_id != null ? `&polizaId=${r.rechazo.poliza_entrenamiento_id}` : ''}`}
+                              className="ml-2 font-medium text-[var(--color-brand-blue)] hover:underline"
+                            >
+                              Ir al Entrenador →
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+
                     {/* ── Inline correction panel ── */}
                     {enCorr && cs && (
                       <tr key={`corr-${i}`} className="bg-blue-50/60 border-b border-blue-100">
@@ -1025,11 +1054,12 @@ function TandaSeccion({
                             <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
                               <PenLine className="w-3.5 h-3.5" />
                               Selecciona el módulo correcto para <span className="font-bold">{r.archivo}</span>
-                              {' '}— se re-extraerán los campos con las reglas del subramo elegido
+                              {r.rechazo
+                                ? ' — el PDF se enviará al Entrenador en el subramo elegido'
+                                : ' — se re-extraerán los campos con las reglas del subramo elegido'}
                             </p>
 
                             <div className="flex flex-wrap items-end gap-3">
-                              {/* Compañía selector */}
                               <label className="flex flex-col gap-1 text-[11px] text-gray-600 font-medium">
                                 Compañía
                                 <select
@@ -1044,7 +1074,6 @@ function TandaSeccion({
                                 </select>
                               </label>
 
-                              {/* Ramo selector */}
                               <label className="flex flex-col gap-1 text-[11px] text-gray-600 font-medium">
                                 Ramo
                                 <select
@@ -1060,7 +1089,6 @@ function TandaSeccion({
                                 </select>
                               </label>
 
-                              {/* Subramo selector */}
                               <label className="flex flex-col gap-1 text-[11px] text-gray-600 font-medium">
                                 Subramo
                                 <select
@@ -1081,7 +1109,6 @@ function TandaSeccion({
                                 </select>
                               </label>
 
-                              {/* Buttons */}
                               <div className="flex items-center gap-2 pb-0.5">
                                 <button
                                   onClick={() => onAplicarCorreccion(i, r)}
@@ -1090,7 +1117,7 @@ function TandaSeccion({
                                 >
                                   {cs.cargando
                                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Aplicando…</>
-                                    : <><CheckCircle2 className="w-3.5 h-3.5" />Aplicar reglas</>}
+                                    : <><CheckCircle2 className="w-3.5 h-3.5" />{r.rechazo ? 'Enviar al Entrenador' : 'Aplicar reglas'}</>}
                                 </button>
                               </div>
                             </div>
@@ -1115,12 +1142,13 @@ function TandaSeccion({
   );
 }
 
-function Chip({ icon, label, color }: { icon: React.ReactNode; label: string; color: 'gray' | 'green' | 'red' | 'purple' }) {
+function Chip({ icon, label, color }: { icon: React.ReactNode; label: string; color: 'gray' | 'green' | 'red' | 'purple' | 'amber' }) {
   const cls = {
     gray:   'bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]',
     green:  'bg-emerald-50 text-emerald-700',
     red:    'bg-red-50 text-red-700',
     purple: 'bg-purple-50 text-purple-700',
+    amber:  'bg-[var(--color-bg-secondary)] text-[var(--color-warning-text)]',
   }[color];
   return (
     <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${cls}`}>

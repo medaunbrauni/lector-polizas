@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom';
 import Layout from './components/ui/Layout';
 import ProtectedRoute from './components/ui/ProtectedRoute';
 import LoginPage from './pages/LoginPage';
@@ -8,6 +8,11 @@ import Catalogos from './pages/Catalogos';
 import Reglas from './pages/Reglas';
 import ReglasCodigo from './pages/ReglasCodigo';
 import TicketsMovi from './pages/TicketsMovi';
+
+function RedirigirEntrenador() {
+  const { search } = useLocation();
+  return <Navigate to={`/entrenador${search}`} replace />;
+}
 
 export default function App() {
   return (
@@ -23,8 +28,10 @@ export default function App() {
                   <Route path="/"             element={<LectorPolizas />} />
                   <Route path="/historial"    element={<Historial />} />
                   <Route path="/catalogos"    element={<Catalogos />} />
-                  <Route path="/reglas"       element={<Reglas />} />
-                  <Route path="/trainer"      element={<Reglas />} />
+                  <Route path="/entrenador"   element={<Reglas />} />
+                  {/* URLs anteriores: se conservan (con su query) por enlaces guardados */}
+                  <Route path="/reglas"       element={<RedirigirEntrenador />} />
+                  <Route path="/trainer"      element={<RedirigirEntrenador />} />
                   <Route path="/reglas/codigo" element={<ReglasCodigo />} />
                   <Route path="/clasificador/tickets" element={<TicketsMovi />} />
                 </Routes>

@@ -5,6 +5,7 @@ Si la detección carece de patrones regex, los genera automáticamente con IA.
 """
 from __future__ import annotations
 import os
+import hashlib
 import io
 import re
 import os
@@ -17,12 +18,12 @@ from sqlalchemy.orm import Session
 from .detector import detectar_con_score
 from .rule_engine import aplicar_reglas, campos_sin_regla
 from .ai_utils import parse_claude_json, make_anthropic_client
-from ..extractores_especializados.registry import obtener_extractor
+from ..extractores_especializados.registry import esta_soportado, obtener_extractor
 from ..extractores_especializados.qualitas import mapear_tipo_a_subramo
-from ..extractores_especializados.gnp import detectar_subramo_por_encabezado
+from ..extractores_especializados.gnp import detectar_subramo_por_encabezado, titulo_no_soportado_gnp
 from ..extractores_especializados.el_potosi import detectar_subramo_por_titulo_el_potosi
 from ..extractores_especializados.figuras_juridicas import es_persona_moral_por_nombre, clasificar_persona_por_rfc
-from ..config import MODEL_EXTRACTOR, PDF_ENTRENAMIENTO_DIR
+from ..config import MODEL_EXTRACTOR, PDF_ENTRENAMIENTO_DIR, RECHAZADOS_DIR
 from ..models.db_models import (
     Extraccion, CampoExtraido, CampoDefinido,
     Compania, Ramo, Subramo, PolizaEntrenamiento, SeleccionCampo,
@@ -109,6 +110,7 @@ def sembrar_selecciones_auto(poliza_id: int, datos_finales: dict[str, dict] | No
 def _guardar_pdf_como_entrenamiento(
     subramo_id: int, nombre_archivo: str, contenido: bytes, texto: str, db: Session,
     datos_finales: dict[str, dict] | None = None,
+    sha256: str | None = None,
 ) -> PolizaEntrenamiento | None:
     """
     Persiste el PDF de una extracción normal en el mismo almacenamiento que
@@ -142,6 +144,7 @@ def _guardar_pdf_como_entrenamiento(
             ruta_archivo=str(ruta),
             texto_pdf=texto[:80_000],
             paginas=paginas,
+            sha256=sha256,
         )
         db.add(poliza)
         db.flush()
@@ -218,7 +221,6 @@ Responde ÚNICAMENTE JSON válido:
     except Exception:
         return {}
 
-    # Validar regex
     def _validos(patrones):
         out = []
         for p in (patrones or []):
@@ -233,7 +235,6 @@ Responde ÚNICAMENTE JSON válido:
     nuevos_ramo = _validos(resultado.get("ramo", []))
     nuevos_sub  = _validos(resultado.get("subramo", []))
 
-    # Merge — no duplicar
     def _merge(existentes, nuevos):
         return list(set(existentes or []) | set(nuevos))
 
@@ -314,12 +315,87 @@ def _derivar_campos(datos: dict) -> dict:
 
 # ── Pipeline principal ────────────────────────────────────────────────────────
 
+# Campos mínimos para dar una extracción por buena. Medido contra las 926
+# extracciones históricas: los pasa ~96% (GNP 334/351, Quálitas 501/519,
+# El Potosí 54/54); los que no, son pólizas que sí necesitan entrenamiento.
+CAMPOS_BASICOS = ("documento", "desde", "hasta", "prima_total")
+
+MSG_SIN_EXTRACTOR = "No se extrajeron datos aún: no existe extractor para esta coincidencia todavía."
+MSG_NO_RECONOCIDA = "No se extrajeron datos: no se reconoció la aseguradora del documento."
+MSG_INCOMPLETA = "No se pudieron extraer todos los campos básicos (faltan: {faltantes})."
+
+
+def _rechazar(
+    motivo: str, mensaje: str, det: dict, compania, ramo, subramo,
+    contenido: bytes, nombre_archivo: str, texto: str, datos_finales: dict | None, db: Session,
+    faltantes: list[str] | None = None,
+) -> dict:
+    """
+    Resultado de un PDF que no se procesa. Si se pudo ubicar el subramo, el PDF
+    se manda a su lote del Entrenador (una sola vez por archivo: se deduplica
+    por hash, así los reintentos automáticos de MOVI no lo repiten). No guarda
+    Extraccion ni genera patrones.
+    """
+    poliza_id = None
+    sha = hashlib.sha256(contenido).hexdigest()
+    # Envío automático solo si el subramo es confiable: la clasificación de un
+    # producto sin extractor (ej. Daños) se equivoca con facilidad y llenaría el
+    # lote equivocado. Si no, el PDF espera en RECHAZADOS_DIR y el usuario elige.
+    automatico = subramo is not None and (
+        motivo == "incompleta" or (det["confianza"] == "alta" and det["score_subramo"] >= 3)
+    )
+    if not automatico:
+        ruta = os.path.join(RECHAZADOS_DIR, f"{sha}.pdf")
+        if not os.path.exists(ruta):
+            with open(ruta, "wb") as f:
+                f.write(contenido)
+    if automatico:
+        existente = db.query(PolizaEntrenamiento).filter(
+            PolizaEntrenamiento.subramo_id == subramo.id, PolizaEntrenamiento.sha256 == sha,
+        ).first()
+        if existente:
+            poliza_id = existente.id
+        else:
+            nueva = _guardar_pdf_como_entrenamiento(
+                subramo.id, nombre_archivo, contenido, texto, db, datos_finales, sha256=sha,
+            )
+            poliza_id = nueva.id if nueva else None
+            db.commit()
+    return {
+        "id": None,
+        "archivo": nombre_archivo,
+        "compania": compania.nombre if compania else None,
+        "ramo": ramo.nombre if ramo else None,
+        # Un subramo poco confiable no se informa: se elige a mano.
+        "subramo": subramo.nombre if automatico else None,
+        "campos": {},
+        "stats": {"por_regla": 0, "por_ia": 0, "no_encontrados": 0},
+        "deteccion": {
+            "confianza": det["confianza"],
+            "score_compania": det["score_compania"],
+            "score_ramo": det["score_ramo"],
+            "score_subramo": det["score_subramo"],
+            "patrones_generados": False, "patrones_nuevos": {},
+        },
+        "error": None,
+        "rechazo": {
+            "motivo": motivo,
+            "mensaje": mensaje,
+            "faltantes": faltantes or [],
+            "ref": sha,
+            "compania_id": compania.id if compania else None,
+            "ramo_id": ramo.id if ramo else None,
+            "subramo_id": subramo.id if automatico else None,
+            "poliza_entrenamiento_id": poliza_id,
+        },
+    }
+
+
 def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     """
     Pipeline completo. Retorna dict con todos los datos, metadata y detección.
     Si la detección no tiene patrones regex, los genera automáticamente.
     """
-    # 1. Extraer texto
     try:
         texto = extraer_texto_pdf(contenido)
     except Exception as e:
@@ -328,21 +404,11 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     if not texto.strip():
         return _resultado_error(nombre_archivo, "PDF sin texto extraíble (posiblemente escaneado). Se requiere OCR.")
 
-    # 2. Detectar jerarquía con score
     det = detectar_con_score(texto, db)
 
-    # Obtener objetos ORM
     compania = db.query(Compania).filter(Compania.id == det["compania_id"]).first() if det["compania_id"] else None
     ramo     = db.query(Ramo).filter(Ramo.id == det["ramo_id"]).first()             if det["ramo_id"]     else None
     subramo  = db.query(Subramo).filter(Subramo.id == det["subramo_id"]).first()    if det["subramo_id"]  else None
-
-    # 3. Auto-generar patrones si algún nivel detectado no los tiene
-    patrones_generados: dict = {}
-    if compania and ramo and _necesita_patrones(compania, ramo, subramo):
-        patrones_generados = _generar_y_guardar_patrones(compania, ramo, subramo, texto, db)
-        # Re-calcular score con los nuevos patrones
-        if patrones_generados:
-            det = detectar_con_score(texto, db)
 
     # 4. Nivel 1 — extractor especializado por compañía (si existe)
     datos_reglas: dict[str, dict] = {}
@@ -417,6 +483,33 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
                 det["subramo_id"] = subramo_correcto.id
                 det["subramo_nombre"] = subramo_correcto.nombre
 
+    # 4e. Validación de soporte: solo se procesan las combinaciones compañía/
+    # ramo/subramo con extractor (registry.SOPORTE). Se decide ANTES de generar
+    # patrones con IA o guardar nada, para que un PDF ajeno no contamine los
+    # patrones de detección ni el historial.
+    # Un título de producto ajeno (ej. GNP "Daños Negocio Protegido") se rechaza
+    # aunque el detector lo haya clasificado como autos; como ese subramo no es
+    # confiable, el PDF no se manda a ningún lote del Entrenador.
+    producto_ajeno = bool(compania and compania.nombre == "GNP Seguros" and titulo_no_soportado_gnp(texto))
+    if producto_ajeno or not esta_soportado(
+        compania.nombre if compania else None,
+        ramo.nombre if ramo else None,
+        subramo.nombre if subramo else None,
+    ):
+        if not compania:
+            return _rechazar("no_reconocida", MSG_NO_RECONOCIDA, det, None, None, None,
+                             contenido, nombre_archivo, texto, None, db)
+        return _rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo,
+                         None if producto_ajeno else subramo,
+                         contenido, nombre_archivo, texto, None, db)
+
+    # 3. Auto-generar patrones si algún nivel detectado no los tiene
+    patrones_generados: dict = {}
+    if compania and ramo and _necesita_patrones(compania, ramo, subramo):
+        patrones_generados = _generar_y_guardar_patrones(compania, ramo, subramo, texto, db)
+        if patrones_generados:
+            det = detectar_con_score(texto, db)
+
     # 5. Nivel 2 — motor de reglas de BD, solo para lo que el nivel 1 no resolvió
     if subramo:
         datos_reglas.update(
@@ -431,7 +524,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         }
         campos_faltantes = campos_sin_regla(subramo.id, campos_cubiertos, db)
 
-    # 6. Consolidar resultados
     datos_finales: dict = {**datos_reglas}
     for campo in campos_faltantes:
         datos_finales[campo.nombre] = {"valor": None, "metodo": "no_encontrado", "regla_id": None}
@@ -456,6 +548,17 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     por_ia         = conteo_metodos["ia"]
     no_encontrados = conteo_metodos["no_encontrado"]
 
+    # 6b2. Completitud: si no salieron los campos básicos, no es una extracción
+    # confiable → se rechaza y se manda al Entrenador (con lo poco que sí salió
+    # sembrado como selecciones) en vez de devolver datos a medias.
+    faltantes = [c for c in CAMPOS_BASICOS if not (datos_finales.get(c) or {}).get("valor")]
+    if faltantes:
+        return _rechazar(
+            "incompleta", MSG_INCOMPLETA.format(faltantes=", ".join(faltantes)), det,
+            compania, ramo, subramo, contenido, nombre_archivo, texto, datos_finales, db,
+            faltantes=faltantes,
+        )
+
     # 6c. Guardar el PDF físico (para poder verlo/reentrenarlo después desde
     # Historial) — solo si hay subramo resuelto, igual que el Entrenador.
     poliza_guardada = (
@@ -463,7 +566,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         if subramo else None
     )
 
-    # 7. Guardar en historial
     metodo_det = "patrones" if (det["score_compania"] >= 3) else "keywords"
     extraccion = Extraccion(
         nombre_archivo=nombre_archivo,
@@ -518,6 +620,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
             "patrones_nuevos":    patrones_generados,
         },
         "error": None,
+        "rechazo": None,
     }
 
 
@@ -536,4 +639,5 @@ def _resultado_error(nombre_archivo: str, mensaje: str) -> dict:
             "patrones_generados": False, "patrones_nuevos": {},
         },
         "error": mensaje,
+        "rechazo": None,
     }

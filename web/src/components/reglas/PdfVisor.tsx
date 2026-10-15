@@ -56,18 +56,41 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
   const [zoom, setZoom] = useState(1.0);
   const [bytes, setBytes] = useState<ArrayBuffer | null>(null);
   const [noDisponible, setNoDisponible] = useState(false);
+  // Render de la página: si pdf.js carga el documento pero nunca pinta el
+  // canvas (se vio una página en blanco tras alternar PDF/Imagen), se
+  // reintenta una vez solo y, si persiste, se ofrece "Reintentar".
+  const [renderListo, setRenderListo] = useState(false);
+  const [falloRender, setFalloRender] = useState(false);
+  const [intento, setIntento] = useState(0);
 
   // Al cambiar de póliza, volver a página 1, resetear zoom, y traer el PDF
   // (de la caché en memoria si ya se vio antes en esta sesión, o del
   // servidor si no) — nunca se precargan los PDFs de las demás pólizas.
   useEffect(() => {
-    setPagina(1); setZoom(1.0); setCargando(true); setBytes(null); setNoDisponible(false);
+    setPagina(1); setZoom(1.0); setRenderListo(false); setFalloRender(false); setIntento(0);
+  }, [polizaId, url]);
+
+  // También al reintentar (`intento`): pdf.js vacía el ArrayBuffer que recibe,
+  // así que un reintento necesita una copia nueva (obtenerPdf devuelve slice).
+  useEffect(() => {
+    setCargando(true); setBytes(null); setNoDisponible(false); setNumPages(0);
     let cancelado = false;
     obtenerPdf(polizaId, url)
       .then((data) => { if (!cancelado) setBytes(data); })
       .catch(() => { if (!cancelado) { setNoDisponible(true); setCargando(false); } });
     return () => { cancelado = true; };
-  }, [polizaId, url]);
+  }, [polizaId, url, intento]);
+
+  useEffect(() => { setRenderListo(false); }, [pagina, zoom, width]);
+
+  useEffect(() => {
+    if (numPages === 0 || renderListo || falloRender) return;
+    const t = setTimeout(() => {
+      if (intento < 1) setIntento((i) => i + 1);
+      else setFalloRender(true);
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [numPages, renderListo, falloRender, intento, pagina, zoom, width]);
 
   // Memoizado: react-pdf recarga el documento si la referencia de `file`
   // cambia, así que no se debe reconstruir este objeto en cada render.
@@ -82,7 +105,6 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
       {/* ── Barra de navegación + zoom ── */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0 select-none">
 
-        {/* Páginas */}
         <button
           onClick={() => setPagina((p) => Math.max(1, p - 1))}
           disabled={pagina <= 1 || numPages === 0}
@@ -97,10 +119,8 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
           className="px-2 py-0.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
         >›</button>
 
-        {/* Separador */}
         <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
 
-        {/* Zoom */}
         <button
           onClick={zoomOut}
           disabled={zoom <= 0.5}
@@ -135,6 +155,17 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
                 <span className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
               </div>
             )}
+            {falloRender && (
+              <div className="absolute inset-0 flex items-center justify-center p-6 z-10">
+                <div className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm text-center max-w-sm space-y-2">
+                  <p>No se pudo dibujar la página del PDF.</p>
+                  <button
+                    onClick={() => { setFalloRender(false); setIntento((i) => i + 1); }}
+                    className="px-3 py-1 text-xs font-semibold text-white bg-[var(--color-brand-blue)] rounded-lg hover:opacity-90"
+                  >Reintentar</button>
+                </div>
+              </div>
+            )}
             {fileProp && (
               // key={polizaId}: fuerza a React a desmontar por completo el
               // <Document> anterior (y con él, la instancia de pdf.js/worker
@@ -146,7 +177,7 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
               // transfirió/vació a su worker — eso es lo que tumbaba toda la
               // pantalla al volver a una póliza ya vista (Bug 2).
               <Document
-                key={polizaId}
+                key={`${polizaId}-${intento}`}
                 file={fileProp}
                 onLoadSuccess={({ numPages }) => { setNumPages(numPages); setCargando(false); }}
                 onLoadError={() => { setCargando(false); setNoDisponible(true); }}
@@ -157,6 +188,8 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
                   width={Math.round((width || 700) * zoom)}
                   renderTextLayer
                   renderAnnotationLayer={false}
+                  onRenderSuccess={() => setRenderListo(true)}
+                  onRenderError={() => setFalloRender(true)}
                 />
               </Document>
             )}

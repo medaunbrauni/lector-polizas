@@ -296,6 +296,20 @@ export async function reentrenarPoliza(polizaId: number): Promise<PolizaEntrenam
   return res.json();
 }
 
+/** Texto del PDF dentro de un recuadro normalizado 0-1 (modo Imagen, sin OCR). */
+export async function getTextoZona(
+  polizaId: number,
+  zona: { page: number; x0: number; y0: number; x1: number; y1: number },
+): Promise<{ texto: string; pagina_sin_texto: boolean }> {
+  const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}/texto-zona`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(zona),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
 export async function guardarSeleccion(data: {
   poliza_id: number; nombre_campo: string; texto_seleccionado: string;
   contexto?: string; bbox?: object | null; es_auto?: boolean;
@@ -378,6 +392,23 @@ export async function probarDeteccion(texto_pdf: string) {
   return res.json() as Promise<import('./types').ResultadoDeteccion>;
 }
 
+/** Manda al lote del Entrenador un PDF rechazado cuyo subramo se eligió a mano. */
+export async function enviarRechazadoAEntrenador(
+  ref: string,
+  data: { compania_id: number; ramo_id: number; subramo_id: number; nombre_archivo: string },
+): Promise<{ poliza_entrenamiento_id: number; compania_id: number; ramo_id: number; subramo_id: number }> {
+  const res = await fetch(`${BASE}/extraer/rechazados/${ref}/enviar-entrenador`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function reaplicarExtraccion(extraccion_id: number, subramo_id: number) {
   const res = await fetch(`${BASE}/extraer/reaplicar`, {
     method: 'POST',
@@ -458,6 +489,22 @@ export async function getTicketDetalle(id: number): Promise<TicketExternoDetalle
 
 export function urlPdfCola(id: number) {
   return `${BASE}/clasificador/cola/${id}/pdf`;
+}
+
+export async function corregirClasificacionCola(
+  id: number,
+  data: { compania_id: number; ramo_id: number; subramo_id: number },
+): Promise<ItemCola> {
+  const res = await fetch(`${BASE}/clasificador/cola/${id}/clasificacion`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json();
 }
 
 export async function reenviarItemCola(id: number): Promise<ItemCola> {

@@ -5,7 +5,7 @@
  * de un ticket de MOVI (pages/TicketsMovi.tsx) sin duplicar la lógica de
  * override/confirmar/patrones.
  */
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   RefreshCw, CheckCircle2, AlertCircle, XCircle,
@@ -41,7 +41,7 @@ function linkVer(item: ItemCola): string | null {
   if (item.poliza_entrenamiento_id) {
     params.set('polizaId', String(item.poliza_entrenamiento_id));
   }
-  return `/reglas?${params.toString()}`;
+  return `/entrenador?${params.toString()}`;
 }
 
 // ── Badges ────────────────────────────────────────────────────────────────────
@@ -81,6 +81,66 @@ export function ConfianzaBadge({ confianza }: { confianza: NivelConfianza | null
   );
 }
 
+// ── Leyenda de IA ─────────────────────────────────────────────────────────────
+
+/**
+ * Leyenda de ancho completo: 2 líneas por defecto; si no cabe, clic/Enter/Espacio la expande.
+ * `motivo` = explicación generada por el sistema (estado error), no por la IA.
+ */
+function Leyenda({ texto, motivo = false }: { texto: string; motivo?: boolean }) {
+  const [abierta, setAbierta] = useState(false);
+  const [desborda, setDesborda] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const medir = () => { if (!abierta) setDesborda(el.scrollHeight > el.clientHeight + 1); };
+    medir();
+    const ro = new ResizeObserver(medir);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [texto, abierta]);
+
+  const interactiva = desborda || abierta;
+  const alternar = () => setAbierta((v) => !v);
+
+  return (
+    <div className="flex items-start gap-1.5 text-xs text-[var(--color-text-secondary)]">
+      {motivo ? (
+        <span className="flex items-center gap-1 flex-shrink-0 font-semibold text-[var(--color-warning-text)]">
+          <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />Motivo:
+        </span>
+      ) : (
+        <Cpu className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-purple-400" aria-label="IA" />
+      )}
+      <p
+        ref={ref}
+        {...(interactiva && {
+          role: 'button', tabIndex: 0, 'aria-expanded': abierta,
+          onClick: alternar,
+          onKeyDown: (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); alternar(); }
+          },
+        })}
+        className={`min-w-0 flex-1 leading-snug ${abierta ? '' : 'line-clamp-2'} ${interactiva ? 'cursor-pointer hover:text-[var(--color-text-primary)] rounded' : ''}`}
+      >
+        {texto}
+      </p>
+      {interactiva && (
+        <span
+          aria-hidden="true"
+          onClick={alternar}
+          className="flex items-center gap-0.5 flex-shrink-0 cursor-pointer text-[var(--color-nav-active-text)] hover:underline"
+        >
+          {abierta ? 'Ver menos' : 'Ver más'}
+          <ChevronDown className={`w-3 h-3 ${abierta ? 'rotate-180' : ''}`} />
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── Fila ──────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -102,6 +162,8 @@ interface Props {
   onGuardarPatrones: () => void;
   onReenviar: () => void;
   reenviando: boolean;
+  onGuardarCorreccion: () => void;
+  guardandoCorreccion: boolean;
 }
 
 export default function ColaItemRow({
@@ -109,7 +171,7 @@ export default function ColaItemRow({
   patronesSeleccionados: selPat, guardandoPatrones,
   onAbrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
   onConfirmar, onDescartar, onTogglePatrones, onTogglePatron, onGuardarPatrones,
-  onReenviar, reenviando,
+  onReenviar, reenviando, onGuardarCorreccion, guardandoCorreccion,
 }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const finalComp = ov?.companiaId ? companias.find((c) => c.id === Number(ov.companiaId))?.nombre : null;
@@ -130,25 +192,22 @@ export default function ColaItemRow({
     <div className="border border-[var(--color-border)] rounded-2xl overflow-hidden bg-[var(--color-bg-primary)] shadow-sm">
 
       {/* ── Fila principal ─────────────────────────────────────── */}
-      <div className="flex items-start gap-3 px-4 py-3">
-        {/* Nombre archivo */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-[var(--color-text-primary)] truncate">{item.nombre_archivo}</p>
+      <div className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
+        <div className="flex-[1_1_18rem] min-w-0">
+          <p className="text-sm font-medium text-[var(--color-text-primary)] truncate" title={item.nombre_archivo}>{item.nombre_archivo}</p>
           <p className="text-xs text-[var(--color-text-secondary)] mt-0.5">
             {item.paginas ? `${item.paginas} p.` : '?'}
             {item.metodo === 'ia' && <span className="ml-1.5 inline-flex items-center gap-0.5 text-purple-400"><Cpu className="w-3 h-3" />IA</span>}
-            {item.razon_ia && <span className="ml-1.5 text-[var(--color-text-secondary)]" title={item.razon_ia}>· {item.razon_ia.slice(0, 60)}…</span>}
+            {item.metodo === 'manual' && <span className="ml-1.5 text-[var(--color-nav-active-text)]">· Corregido manualmente</span>}
           </p>
         </div>
 
-        {/* Estado + confianza */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <EstadoBadge estado={item.estado} />
           <ConfianzaBadge confianza={item.confianza} />
         </div>
 
-        {/* Clasificación propuesta o final */}
-        <div className="text-xs text-[var(--color-text-secondary)] text-right flex-shrink-0 min-w-[160px]">
+        <div className="text-xs text-[var(--color-text-secondary)] text-right flex-shrink-0 min-w-[160px] max-w-[18rem]">
           {item.estado === 'enviado' || item.estado === 'confirmado' ? (
             <div className="text-[var(--color-success-text)]">
               <div className="font-medium">{item.compania_final ?? item.compania_prop}</div>
@@ -161,36 +220,29 @@ export default function ColaItemRow({
             </div>
           ) : (
             <div>
-              <div className="font-medium">{item.compania_prop ?? '—'}</div>
-              <div>{item.ramo_prop} {item.subramo_prop ? `· ${item.subramo_prop}` : ''}</div>
+              <div className="font-medium">{item.compania_final ?? item.compania_prop ?? '—'}</div>
+              <div>{item.ramo_final ?? item.ramo_prop} {(item.subramo_final ?? item.subramo_prop) ? `· ${item.subramo_final ?? item.subramo_prop}` : ''}</div>
             </div>
           )}
         </div>
 
-        {/* Acciones */}
         <div className="flex items-center gap-1 flex-shrink-0">
-          {!terminado && (
-            <>
-              {/* Botón Corregir */}
-              <button
-                onClick={onAbrirOverride}
-                title="Corregir clasificación"
-                className={`p-1.5 rounded-lg text-xs transition-colors ${overrideOpen ? 'bg-[var(--color-nav-active-bg)] text-[var(--color-nav-active-text)]' : 'hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]'}`}
-              >
-                {overrideOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-              </button>
+          <button
+            onClick={onAbrirOverride}
+            title="Corregir clasificación"
+            className={`p-1.5 rounded-lg text-xs transition-colors ${overrideOpen ? 'bg-[var(--color-nav-active-bg)] text-[var(--color-nav-active-text)]' : 'hover:bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]'}`}
+          >
+            {overrideOpen ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          </button>
 
-              {/* Confirmar */}
-              {(item.estado === 'clasificado' || (overrideOpen && ov?.subramoId)) && (
-                <button
-                  onClick={onConfirmar}
-                  className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-[var(--color-brand-blue)] hover:opacity-90 rounded-lg transition-opacity"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Confirmar
-                </button>
-              )}
-            </>
+          {!terminado && (item.estado === 'clasificado' || (overrideOpen && ov?.subramoId)) && (
+            <button
+              onClick={onConfirmar}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-white bg-[var(--color-brand-blue)] hover:opacity-90 rounded-lg transition-opacity"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Confirmar
+            </button>
           )}
 
           {/* Ver + Reenviar — solo si ya se envió a entrenamiento */}
@@ -228,7 +280,6 @@ export default function ColaItemRow({
           </button>
         </div>
 
-        {/* Botón preview PDF (cualquier estado) */}
         <button
           onClick={() => setPreviewOpen((v) => !v)}
           title="Ver preview del PDF"
@@ -252,6 +303,19 @@ export default function ColaItemRow({
           </button>
         )}
       </div>
+
+      {item.estado === 'error' ? (
+        <div className="px-4 pb-3 -mt-1">
+          <Leyenda
+            motivo
+            texto={item.metodo === 'sistema' && item.error_msg ? item.error_msg : 'No se pudo procesar este archivo'}
+          />
+        </div>
+      ) : item.razon_ia && (
+        <div className="px-4 pb-3 -mt-1">
+          <Leyenda texto={item.razon_ia} />
+        </div>
+      )}
 
       {/* ── Preview de PDF ──────────────────────────────────────── */}
       {previewOpen && (
@@ -278,7 +342,6 @@ export default function ColaItemRow({
         <div className="mx-4 mb-3 px-4 py-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl">
           <p className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase mb-2">Corregir clasificación</p>
           <div className="flex gap-2 flex-wrap">
-            {/* Compañía */}
             <select
               value={ov.companiaId}
               onChange={(e) => onCompaniaChange(e.target.value)}
@@ -290,7 +353,6 @@ export default function ColaItemRow({
               ))}
             </select>
 
-            {/* Ramo */}
             <select
               value={ov.ramoId}
               onChange={(e) => onRamoChange(e.target.value)}
@@ -303,7 +365,6 @@ export default function ColaItemRow({
               ))}
             </select>
 
-            {/* Subramo */}
             <select
               value={ov.subramoId}
               onChange={(e) => onSubramoChange(e.target.value)}
@@ -318,6 +379,15 @@ export default function ColaItemRow({
 
             {ov.subramoId && (
               <button
+                onClick={onGuardarCorreccion}
+                disabled={guardandoCorreccion}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-[var(--color-text-primary)] border border-[var(--color-border)] hover:bg-[var(--color-bg-primary)] rounded-lg transition-colors disabled:opacity-50"
+              >
+                {guardandoCorreccion ? 'Guardando…' : 'Guardar corrección'}
+              </button>
+            )}
+            {ov.subramoId && !terminado && (
+              <button
                 onClick={onConfirmar}
                 className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-[var(--color-brand-blue)] hover:opacity-90 rounded-lg transition-opacity"
               >
@@ -326,6 +396,11 @@ export default function ColaItemRow({
               </button>
             )}
           </div>
+          {enviado && (
+            <p className="text-xs text-[var(--color-text-secondary)] mt-2">
+              Ya está en entrenamiento: guarda la corrección y usa Reenviar para moverla al subramo correcto.
+            </p>
+          )}
           {(finalComp || finalSub) && (
             <p className="text-xs text-[var(--color-text-secondary)] mt-2">
               → {finalComp} {finalSub ? `· ${finalSub}` : ''}

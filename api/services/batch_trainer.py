@@ -157,7 +157,6 @@ Responde SOLO con JSON válido, sin markdown:
     )
     raw = message.content[0].text.strip()
 
-    # Parse JSON
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:

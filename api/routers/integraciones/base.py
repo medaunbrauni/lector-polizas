@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from ...config import INTEGRACIONES_DIR, MAX_FILE_MB, MAX_PDFS_POR_TICKET
 from ...database import SessionLocal, get_db
 from ...models.db_models import ClasificacionCola, TicketExterno
-from ...services.clasificador_service import extraer_texto_pdf, procesar_pdf, sha256_bytes
+from ...services.clasificador_service import extraer_texto_pdf, marcar_error, procesar_pdf, sha256_bytes
 from ...services.rate_limiter import get_bucket
 
 MAX_SIZE = MAX_FILE_MB * 1024 * 1024
@@ -146,7 +146,7 @@ def _procesar_ticket_en_serie(cola_ids: list[int]) -> None:
                 item.texto_pdf, item.paginas = texto, paginas
                 procesar_pdf(item, db)
             except Exception as e:
-                item.estado, item.error_msg = "error", str(e)
+                marcar_error(item, e)
             db.commit()
     finally:
         db.close()

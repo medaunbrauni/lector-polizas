@@ -9,6 +9,7 @@ Pipeline por archivo:
 """
 import hashlib
 import json
+import logging
 import re
 import shutil
 import uuid
@@ -41,7 +42,6 @@ def dedup_carpeta(carpeta: str) -> list[str]:
     if not folder.exists():
         return []
 
-    # Agrupa rutas por hash
     grupos: dict[str, list[Path]] = {}
     for pdf in folder.glob("*.pdf"):
         if not pdf.is_file():
@@ -58,7 +58,6 @@ def dedup_carpeta(carpeta: str) -> list[str]:
             continue
         # Ordenar: más antiguo primero (menor mtime = original)
         archivos.sort(key=lambda p: p.stat().st_mtime)
-        # Conservar el primero, borrar el resto
         for duplicado in archivos[1:]:
             try:
                 duplicado.unlink()
@@ -75,6 +74,42 @@ def sha256_file(ruta: str) -> str:
         for chunk in iter(lambda: f.read(65536), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+logger = logging.getLogger(__name__)
+
+# Menos caracteres que esto en todo el PDF = sin texto seleccionable (escaneo).
+MIN_CHARS_TEXTO = 50
+
+MOTIVO_SIN_TEXTO = (
+    "El PDF no contiene texto seleccionable; parece un documento escaneado (imagen). "
+    "Se necesita OCR para procesarlo."
+)
+
+
+def _motivo_error(exc: Exception) -> str:
+    """Motivo legible, determinista, según la causa. Nunca llama a Claude."""
+    nombre = f"{type(exc).__module__}.{type(exc).__name__}".lower()
+    msg = str(exc).lower()
+    causa = exc.args[0] if exc.args and isinstance(exc.args[0], Exception) else None  # pdfplumber envuelve la de pdfminer
+    if causa is not None:
+        nombre += " " + f"{type(causa).__module__}.{type(causa).__name__}".lower()
+        msg += " " + str(causa).lower()
+    if "password" in nombre or "password" in msg or "encrypt" in msg:
+        return "El PDF está protegido con contraseña y no se pudo leer."
+    if "pdfminer" in nombre or "pdfplumber" in nombre or "fitz" in nombre:
+        return "El archivo no se pudo abrir; puede estar dañado."
+    if "anthropic" in nombre or "httpx" in nombre or "jsondecode" in nombre or "timeout" in nombre:
+        return "No se pudo clasificar por un error temporal del servicio de clasificación. Puedes reintentar."
+    return "No se pudo procesar este archivo por un error inesperado."
+
+
+def marcar_error(item: ClasificacionCola, exc: Exception) -> None:
+    """Deja el item en estado error con un motivo legible. metodo="sistema" indica que NO lo redactó la IA."""
+    logger.warning("Item %s en error: %r", item.id, exc)
+    item.estado = "error"
+    item.metodo = "sistema"
+    item.error_msg = _motivo_error(exc)
 
 
 def extraer_texto_pdf(ruta: str) -> tuple[str, int]:
@@ -109,7 +144,6 @@ def clasificar_con_ia(texto: str, db: Session) -> dict:
       confianza (str), razon, es_nueva,
       compania_nombre_ia, ramo_nombre_ia, subramo_nombre_ia
     """
-    # Construir catálogo completo para el prompt
     companias = db.query(Compania).filter(Compania.activo == True).all()
     catalogo: list[dict] = []
     for c in companias:
@@ -216,7 +250,6 @@ Responde SOLO con JSON válido:
     )
     result = parse_claude_json(msg.content[0].text)
 
-    # Validar que los patrones compileen
     for nivel in ("compania", "ramo", "subramo"):
         validos = []
         for p in result.get(nivel, []):
@@ -239,6 +272,13 @@ def procesar_pdf(item: ClasificacionCola, db: Session) -> None:
     """
     try:
         texto = item.texto_pdf or ""
+
+        # Escaneo / sin texto: no tiene sentido gastar una llamada a Claude.
+        if len(texto.strip()) < MIN_CHARS_TEXTO:
+            item.estado = "error"
+            item.metodo = "sistema"
+            item.error_msg = MOTIVO_SIN_TEXTO
+            return
 
         # ─ 1. Detector con score ─────────────────────────────────────────────
         det = detectar_con_score(texto, db)
@@ -277,8 +317,7 @@ def procesar_pdf(item: ClasificacionCola, db: Session) -> None:
                     pass  # No bloquear si falla la generación de patrones
 
     except Exception as e:
-        item.estado = "error"
-        item.error_msg = str(e)
+        marcar_error(item, e)
 
 
 # ── Enviar a entrenamiento ────────────────────────────────────────────────────
@@ -326,7 +365,30 @@ def reenviar_a_entrenamiento(item: ClasificacionCola, db: Session) -> PolizaEntr
     if item.poliza_entrenamiento_id:
         existente = db.get(PolizaEntrenamiento, item.poliza_entrenamiento_id)
         if existente:
-            return existente  # ya existe, no duplicar
+            destino = item.subramo_id_final or item.subramo_id_prop
+            if not destino or existente.subramo_id == destino:
+                return existente  # ya existe en el subramo correcto, no duplicar
+            # Clasificación corregida tras el envío: se reubica la MISMA fila
+            # (sin crear otra) — salvo que ya tenga trabajo de entrenamiento,
+            # que pertenece al subramo anterior y no debe moverse a ciegas.
+            if existente.entrenado or existente.selecciones:
+                raise ValueError(
+                    "La póliza ya tiene selecciones de entrenamiento en el subramo anterior; "
+                    "elimínala en el Entrenador y vuelve a reenviar."
+                )
+            dest_dir = Path(PDF_ENTRENAMIENTO_DIR) / str(destino)
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            dest = dest_dir / existente.nombre_archivo
+            if dest.exists():
+                dest = dest_dir / f"{dest.stem}_{uuid.uuid4().hex[:6]}{dest.suffix}"
+            if Path(existente.ruta_archivo).exists():
+                shutil.move(existente.ruta_archivo, dest)
+            else:  # el archivo se perdió del lote: se recupera desde la cola
+                shutil.copy2(item.ruta_archivo, dest)
+            existente.subramo_id = destino
+            existente.nombre_archivo = dest.name
+            existente.ruta_archivo = str(dest)
+            return existente
 
     return enviar_a_entrenamiento(item, db)
 

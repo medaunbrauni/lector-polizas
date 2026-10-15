@@ -547,7 +547,6 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
     except Exception as e:
         raise HTTPException(500, f"Error al llamar a Claude: {e}")
 
-    # Validar regex
     for nivel in ("compania", "ramo", "subramo"):
         validos = []
         for p in resultado.get(nivel, []):

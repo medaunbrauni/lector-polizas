@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, APIRouter, Depends
@@ -14,6 +15,7 @@ from .routers.auth import verificar_sesion
 from .routers.integraciones import movi_beta
 from .seed.campos_globales import sembrar_campos_globales
 from .services.folder_watcher import iniciar_watcher, detener_watcher
+from .extractores_especializados.registry import combinaciones_sin_catalogo
 
 
 @asynccontextmanager
@@ -24,6 +26,12 @@ async def lifespan(app: FastAPI):
     try:
         sembrar(db)
         sembrar_campos_globales(db)
+        faltan = combinaciones_sin_catalogo(db)
+        if faltan:
+            logging.getLogger("uvicorn.error").warning(
+                "SOPORTE de extractores no coincide con el catálogo de la BD; estas combinaciones "
+                "se rechazarían como 'sin extractor': %s", "; ".join(faltan),
+            )
     finally:
         db.close()
 

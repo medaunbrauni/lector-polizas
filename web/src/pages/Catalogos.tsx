@@ -132,7 +132,6 @@ export default function Catalogos() {
         <p className="text-sm text-[var(--color-text-secondary)] mt-1">Compañías · Ramos · Subramos — Click en <Pencil className="w-3 h-3 inline" /> para configurar nombre de exportación</p>
       </div>
 
-      {/* Leyenda */}
       <div className="flex items-center gap-4 flex-wrap text-xs text-[var(--color-text-secondary)]">
         <div className="flex items-center gap-2">
           <span className="font-medium">Prioridad:</span>
@@ -153,7 +152,6 @@ export default function Catalogos() {
 
       <div className="grid grid-cols-3 gap-4">
 
-        {/* Compañías */}
         <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <Building2 className="w-4 h-4 text-[var(--color-text-secondary)]" />
@@ -189,7 +187,6 @@ export default function Catalogos() {
           </ul>
         </div>
 
-        {/* Ramos */}
         <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <Tag className="w-4 h-4 text-[var(--color-text-secondary)]" />
@@ -223,7 +220,6 @@ export default function Catalogos() {
           )}
         </div>
 
-        {/* Subramos */}
         <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
           <div className="flex items-center gap-2 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg-secondary)]">
             <Layers className="w-4 h-4 text-[var(--color-text-secondary)]" />

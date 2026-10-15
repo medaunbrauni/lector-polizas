@@ -132,6 +132,9 @@ class PolizaEntrenamiento(Base):
     # No se revierte automáticamente si luego se borra un valor — queda
     # marcada hasta que alguien vuelva a pedir "Terminar" explícitamente.
     entrenado = Column(Boolean, default=False, nullable=False)
+    # Hash del PDF; solo lo llenan los envíos automáticos (extractor rechazado),
+    # para no duplicar el mismo archivo si llega de nuevo (ej. reintentos de MOVI).
+    sha256 = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     selecciones = relationship(

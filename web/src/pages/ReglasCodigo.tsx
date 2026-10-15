@@ -253,7 +253,7 @@ function PanelTextosGuardados({ compania, companiaId, onElegir, onClose }: {
             <p className="text-xs">No hay pólizas guardadas para esta aseguradora.</p>
             {companiaId != null && (
               <a
-                href={`/reglas?companiaId=${companiaId}`}
+                href={`/entrenador?companiaId=${companiaId}`}
                 className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 bg-[var(--color-brand-blue)] hover:opacity-90 text-white rounded-lg text-xs font-medium transition-opacity"
               >
                 Subir un PDF en Entrenador PDFs
@@ -742,7 +742,6 @@ export default function ReglasCodigo() {
         )}
       </div>
 
-      {/* Tabs extracción / detección */}
       <div className="flex gap-1 border-b border-[var(--color-border)]">
         <button
           onClick={() => setTab('extraccion')}
@@ -980,7 +979,6 @@ export default function ReglasCodigo() {
 
                     {abiertos.has(compKey) && (
                       <div className="border-t border-[var(--color-border)]">
-                        {/* Compañía patterns */}
                         {(c.keywords.length > 0 || c.patrones_deteccion.length > 0) && (
                           <div className="px-5 py-3 bg-[var(--color-bg-secondary)] flex flex-wrap gap-1.5">
                             {c.keywords.map((kw) => <PatronBadge key={kw} tipo="keyword" valor={kw} />)}
@@ -988,7 +986,6 @@ export default function ReglasCodigo() {
                           </div>
                         )}
 
-                        {/* Ramos */}
                         <div className="divide-y divide-[var(--color-border)]">
                           {c.ramos.map((r) => {
                             const ramoKey = `det::${c.nombre}::${r.nombre}`;
@@ -1021,7 +1018,6 @@ export default function ReglasCodigo() {
                                       </div>
                                     )}
 
-                                    {/* Subramos */}
                                     {r.subramos.map((s) => {
                                       const subKey = `det::${c.nombre}::${r.nombre}::${s.nombre}`;
                                       return (

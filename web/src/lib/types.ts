@@ -43,6 +43,17 @@ export interface ResultadoPDF {
   stats: StatsExtraccion;
   deteccion?: DeteccionInfo;
   error: string | null;
+  /** PDF no procesado: sin extractor para su compañía/ramo/subramo o con campos básicos incompletos. */
+  rechazo?: {
+    motivo: 'sin_extractor' | 'no_reconocida' | 'incompleta';
+    mensaje: string;
+    faltantes: string[];
+    ref: string;
+    compania_id: number | null;
+    ramo_id: number | null;
+    subramo_id: number | null;
+    poliza_entrenamiento_id: number | null;
+  } | null;
 }
 
 export interface Compania {
@@ -263,27 +274,24 @@ export interface ItemCola {
   estado: EstadoCola;
   error_msg: string | null;
   confianza: NivelConfianza | null;
-  metodo: 'detector' | 'ia' | null;
+  metodo: 'detector' | 'ia' | 'manual' | 'sistema' | null;
   razon_ia: string | null;
   es_compania_nueva: boolean;
   compania_nombre_ia: string | null;
   ramo_nombre_ia: string | null;
   subramo_nombre_ia: string | null;
-  // Propuesta
   compania_id_prop: number | null;
   compania_prop: string | null;
   ramo_id_prop: number | null;
   ramo_prop: string | null;
   subramo_id_prop: number | null;
   subramo_prop: string | null;
-  // Final
   compania_id_final: number | null;
   compania_final: string | null;
   ramo_id_final: number | null;
   ramo_final: string | null;
   subramo_id_final: number | null;
   subramo_final: string | null;
-  // Patrones
   patrones_generados: {
     compania: string[];
     ramo: string[];

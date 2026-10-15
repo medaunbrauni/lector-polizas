@@ -8,7 +8,7 @@ const NAV = [
   { to: '/',                  icon: FileSearch, label: 'Extractor',      exact: true  },
   { to: '/historial',         icon: History,    label: 'Historial',      exact: false },
   { to: '/catalogos',         icon: BookOpen,   label: 'Catálogos',      exact: false },
-  { to: '/reglas',            icon: Zap,        label: 'Entrenador PDFs', exact: true  },
+  { to: '/entrenador',        icon: Zap,        label: 'Entrenador PDFs', exact: true  },
   { to: '/reglas/codigo',     icon: Code2,      label: 'Código Reglas',  exact: false },
   { to: '/clasificador/tickets', icon: Inbox,   label: 'Tickets MOVI',   exact: false },
 ];
@@ -23,11 +23,28 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     localStorage.setItem('sidebar-colapsado', String(colapsado));
   }, [colapsado]);
 
+  // Los textos aparecen con fade cuando termina de ensancharse el menú (350 ms)
+  // y se desvanecen antes de desmontarse al contraerlo.
+  const [textosMontados, setTextosMontados] = useState(!colapsado);
+  const [textosVisibles, setTextosVisibles] = useState(!colapsado);
+  useEffect(() => {
+    if (colapsado) {
+      setTextosVisibles(false);
+      const t = setTimeout(() => setTextosMontados(false), 150);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => {
+      setTextosMontados(true);
+      requestAnimationFrame(() => setTextosVisibles(true));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [colapsado]);
+  const fade = `transition-opacity duration-150 ${textosVisibles ? 'opacity-100' : 'opacity-0'}`;
+
   return (
     <div className="flex min-h-screen bg-[var(--color-bg-secondary)]">
-      {/* Sidebar */}
       <aside
-        className={`sticky top-0 h-screen relative bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col transition-all duration-200 ${
+        className={`sticky top-0 h-screen relative bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col transition-[width] duration-[350ms] ease-in-out ${
           colapsado ? 'w-16' : 'w-56'
         }`}
       >
@@ -40,16 +57,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {colapsado ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
 
-        <Link to="/" className="px-5 py-5 border-b border-[var(--color-border)] cursor-pointer hover:opacity-80 transition-opacity">
-          <div className={`flex items-center gap-2.5 ${colapsado ? 'justify-center' : ''}`}>
-            <div className="w-8 h-8 bg-[var(--color-brand-blue)] rounded-lg flex items-center justify-center flex-shrink-0">
-              <FileSearch className="w-4 h-4 text-white" />
+        <Link to="/" className="px-5 h-[88px] flex items-center border-b border-[var(--color-border)] cursor-pointer hover:opacity-80 transition-opacity">
+          <div className={`flex w-full items-center gap-2.5 ${colapsado ? 'justify-center' : ''}`}>
+            <div className={`${colapsado ? 'w-9 h-9' : 'w-10 h-10'} bg-[var(--color-brand-blue)] rounded-lg flex items-center justify-center flex-shrink-0`}>
+              <FileSearch className={`${colapsado ? 'w-[18px] h-[18px]' : 'w-5 h-5'} text-white`} />
             </div>
-            {!colapsado && (
-              <div>
-                <p className="text-sm font-bold text-[var(--color-text-primary)] leading-none">Lector</p>
-                <p className="text-[10px] text-[var(--color-text-secondary)] mt-0.5">de Pólizas</p>
-              </div>
+            {textosMontados && (
+              <p className={`text-lg font-bold whitespace-nowrap text-[var(--color-text-primary)] leading-tight ${fade}`}>Lector<br />de Pólizas</p>
             )}
           </div>
         </Link>
@@ -61,22 +75,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               end={exact}
               title={colapsado ? label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  colapsado ? 'justify-center' : ''
-                } ${
+                `flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
                   isActive
                     ? 'bg-[var(--color-nav-active-bg)] text-[var(--color-nav-active-text)]'
                     : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] hover:text-[var(--color-text-primary)]'
                 }`
               }
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              {!colapsado && label}
+              <Icon className="w-5 h-5 flex-shrink-0" />
+              {textosMontados && <span className={fade}>{label}</span>}
             </NavLink>
           ))}
         </nav>
 
-        {/* Theme toggle + logout */}
         <div className={`px-3 py-3 border-t border-[var(--color-border)] flex items-center gap-1 ${colapsado ? 'flex-col' : ''}`}>
           <ThemeToggle />
           {isAuthenticated && (
@@ -91,14 +102,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {!colapsado && (
-          <div className="px-4 py-3 border-t border-[var(--color-border)]">
+        {textosMontados && (
+          <div className={`px-4 py-3 border-t border-[var(--color-border)] whitespace-nowrap ${fade}`}>
             <p className="text-[10px] text-[var(--color-text-secondary)]">v2.0 · Multi-compañía</p>
           </div>
         )}
       </aside>
 
-      {/* Main */}
       <main className="flex-1 overflow-auto">
         {children}
       </main>
