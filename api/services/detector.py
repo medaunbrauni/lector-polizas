@@ -5,6 +5,7 @@ Expone scores para que la UI muestre confianza.
 """
 from __future__ import annotations
 import re
+import unicodedata
 from sqlalchemy.orm import Session
 from ..models.db_models import Compania, Ramo, Subramo
 
@@ -15,6 +16,45 @@ from ..models.db_models import Compania, Ramo, Subramo
 # "sin_datos" — no hay patrones o texto sin coincidencias
 UMBRAL_ALTA  = 9
 UMBRAL_MEDIA = 3
+
+
+# ── Señales de contenido: autos vs. daños ────────────────────────────────────
+# Los keywords sueltos ("auto", "vehículo", "responsabilidad civil") aparecen en
+# cualquier ramo (una póliza de Daños menciona garages y vehículos de terceros)
+# y confundían Daños con Vehículos. Estas frases son estructurales: una póliza
+# de autos siempre trae la sección del vehículo; una de daños trae el resumen
+# de secciones/bienes. Solo se usan para corregir un empate/confusión entre
+# esos dos ramos, nunca para clasificar por sí solas.
+# pdfplumber a veces junta las palabras ("vehículoasegurado"): \s* entre palabras.
+_SENALES_AUTOS = [
+    r"veh[ií]culo\s*asegurado", r"conductor\s*habitual", r"placas",
+    r"serie.{0,40}motor",
+]
+_SENALES_DANOS = [
+    r"da[ñn]o\s*material\s*directo", r"resumen\s*de\s*secciones\s*contratadas",
+    r"especificaci[oó]n\s*de\s*bienes", r"ubicaci[oó]n(?:es)?\s*(?:del\s*riesgo|asegurad)",
+    r"multi-?rri?esgo|negocio\s*protegido|empresarial",
+]
+
+
+def _sin_acentos(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
+
+
+def _hits(texto: str, patrones: list[str]) -> int:
+    return sum(1 for p in patrones if re.search(p, texto, re.IGNORECASE | re.DOTALL))
+
+
+def _ramo_por_contenido(texto: str, ramo_nombre: str | None, ramos: list):
+    """Ramo corregido (objeto Ramo) si el contenido contradice al elegido por keywords, o None."""
+    actual = _sin_acentos(ramo_nombre or "")
+    autos, danos = _hits(texto, _SENALES_AUTOS), _hits(texto, _SENALES_DANOS)
+    destino = None
+    if actual.startswith("vehiculo") and autos == 0 and danos >= 2:
+        destino = "danos"
+    elif actual.startswith("dano") and autos >= 2 and danos == 0:
+        destino = "vehiculo"
+    return next((r for r in ramos if destino and _sin_acentos(r.nombre).startswith(destino)), None)
 
 
 def _score(texto: str, keywords: list, patrones: list) -> int:
@@ -113,6 +153,10 @@ def detectar_con_score(texto: str, db: Session) -> dict:
             ramo_id = mejor_ramo["id"]
             ramo_nombre = mejor_ramo["nombre"]
             score_ramo = mejor_ramo["score"]
+            corregido = _ramo_por_contenido(texto, ramo_nombre, ramos)
+            if corregido:
+                ramo_id, ramo_nombre = corregido.id, corregido.nombre
+                score_ramo = next(r["score"] for r in ramo_scores if r["id"] == corregido.id)
 
     # ── Subramo ───────────────────────────────────────────────────────────────
     subramo_id, subramo_nombre, score_sub = None, None, 0

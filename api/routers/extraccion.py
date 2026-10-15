@@ -1,10 +1,14 @@
 from __future__ import annotations
 import os
+import re
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..services.extractor import procesar_pdf, extraer_texto_pdf, contar_metodos_campos
+from ..config import RECHAZADOS_DIR
+from ..services.extractor import (
+    procesar_pdf, extraer_texto_pdf, contar_metodos_campos, _guardar_pdf_como_entrenamiento,
+)
 from ..services.detector import detectar_jerarquia, detectar_con_score
 from ..models.db_models import Extraccion, CampoExtraido, Subramo, Ramo, Compania, PolizaEntrenamiento
 
@@ -103,6 +107,55 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
             "patrones_nuevos":    {},
         },
         "error": None,
+    }
+
+
+class EnviarRechazadoIn(BaseModel):
+    compania_id: int
+    ramo_id: int
+    subramo_id: int
+    nombre_archivo: str
+
+
+@router.post("/rechazados/{ref}/enviar-entrenador")
+def enviar_rechazado_a_entrenador(ref: str, data: EnviarRechazadoIn, db: Session = Depends(get_db)):
+    """
+    Manda al lote del Entrenador un PDF que el extractor rechazó sin poder
+    ubicar su subramo (quedó guardado por su hash en RECHAZADOS_DIR). El
+    usuario elige compañía/ramo/subramo; no se guarda dos veces el mismo
+    archivo en el mismo subramo.
+    """
+    if not re.fullmatch(r"[0-9a-f]{64}", ref):
+        raise HTTPException(400, "Referencia inválida")
+    ramo = db.get(Ramo, data.ramo_id)
+    sub = db.get(Subramo, data.subramo_id)
+    if not ramo or ramo.compania_id != data.compania_id:
+        raise HTTPException(400, "El ramo no pertenece a la compañía")
+    if not sub or sub.ramo_id != ramo.id:
+        raise HTTPException(400, "El subramo no pertenece al ramo")
+
+    existente = db.query(PolizaEntrenamiento).filter(
+        PolizaEntrenamiento.subramo_id == sub.id, PolizaEntrenamiento.sha256 == ref,
+    ).first()
+    if existente:
+        poliza_id = existente.id
+    else:
+        ruta = os.path.join(RECHAZADOS_DIR, f"{ref}.pdf")
+        if not os.path.exists(ruta):
+            raise HTTPException(404, "El archivo ya no está disponible; vuelve a subirlo")
+        with open(ruta, "rb") as f:
+            contenido = f.read()
+        pol = _guardar_pdf_como_entrenamiento(
+            sub.id, data.nombre_archivo, contenido, extraer_texto_pdf(contenido), db, None, sha256=ref,
+        )
+        if not pol:
+            raise HTTPException(500, "No se pudo guardar el PDF en el Entrenador")
+        db.commit()
+        poliza_id = pol.id
+        os.remove(ruta)
+    return {
+        "poliza_entrenamiento_id": poliza_id,
+        "compania_id": data.compania_id, "ramo_id": data.ramo_id, "subramo_id": data.subramo_id,
     }
 
 

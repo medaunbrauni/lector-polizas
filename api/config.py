@@ -34,6 +34,12 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 INTEGRACIONES_DIR = os.path.join(STORAGE_PATH, "integraciones")
 os.makedirs(INTEGRACIONES_DIR, exist_ok=True)
 MAX_PDFS_POR_TICKET = int(os.getenv("MAX_PDFS_POR_TICKET", "30"))
+
+# PDFs que el extractor rechazó y que no se pudieron ubicar en un subramo con
+# certeza: esperan aquí a que el usuario elija el subramo (POST /extraer/
+# rechazados/{ref}/enviar-entrenador). ponytail: sin limpieza automática.
+RECHAZADOS_DIR = os.path.join(STORAGE_PATH, "rechazados")
+os.makedirs(RECHAZADOS_DIR, exist_ok=True)
 MOVI_BETA_API_KEY = os.getenv("MOVI_BETA_API_KEY")
 
 # ── CORS ─────────────────────────────────────────────────────────────────────
