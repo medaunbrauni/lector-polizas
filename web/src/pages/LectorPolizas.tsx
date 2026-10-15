@@ -9,7 +9,7 @@ import {
 import { Link } from 'react-router-dom';
 import type { ResultadoPDF, ExtractionResponse, NivelConfianza, Compania, Ramo, Subramo } from '../lib/types';
 import PolizaDetalle from '../components/lector/PolizaDetalle';
-import { getCompanias, getRamos, getSubramos, reaplicarExtraccion } from '../lib/api';
+import { getCompanias, getRamos, getSubramos, reaplicarExtraccion, enviarRechazadoAEntrenador } from '../lib/api';
 import { EXCEL_COLS, formatEntidad } from '../lib/fieldConfig';
 import {
   type Tanda, TTL_MS,
@@ -384,14 +384,30 @@ export default function LectorPolizas() {
     const key = corrKey(tandaId, i);
     const cs = corrState[key];
     if (!cs?.subramoId) return;
-    if (r.id == null) {
+    if (r.id == null && !r.rechazo) {
       setCorrState((prev) => ({ ...prev, [key]: { ...prev[key], errorMsg: 'Esta póliza no tiene ID guardado' } }));
       return;
     }
 
     setCorrState((prev) => ({ ...prev, [key]: { ...prev[key], cargando: true, errorMsg: null } }));
     try {
-      const resultado = await reaplicarExtraccion(r.id, cs.subramoId);
+      let resultado: ResultadoPDF;
+      if (r.rechazo) {
+        // PDF sin procesar: no hay extracción que re-aplicar; se manda al
+        // Entrenador en el subramo elegido y la fila refleja la elección.
+        const env = await enviarRechazadoAEntrenador(r.rechazo.ref, {
+          compania_id: cs.companiaId!, ramo_id: cs.ramoId!, subramo_id: cs.subramoId, nombre_archivo: r.archivo,
+        });
+        resultado = {
+          ...r,
+          compania: companias.find((c) => c.id === cs.companiaId)?.nombre ?? r.compania,
+          ramo: cs.ramos.find((x) => x.id === cs.ramoId)?.nombre ?? r.ramo,
+          subramo: cs.subramos.find((x) => x.id === cs.subramoId)?.nombre ?? r.subramo,
+          rechazo: { ...r.rechazo, ...env },
+        };
+      } else {
+        resultado = await reaplicarExtraccion(r.id!, cs.subramoId);
+      }
       // Corregir una póliza cuenta como actividad relevante sobre esa
       // tanda: renueva su propio timestamp de vencimiento (no el de las
       // demás tandas).
@@ -453,7 +469,7 @@ export default function LectorPolizas() {
       // Campos dinámicos (usa fieldConfig para el orden y nombres)
       ...EXCEL_COLS.map(({ campo }) => c(r, campo)),
       r.deteccion?.confianza ?? '—',
-      r.error ?? '',
+      r.error ?? r.rechazo?.mensaje ?? '',
       r.stats.por_ia > 0
         ? `IA(${r.stats.por_ia}) + Regla(${r.stats.por_regla})`
         : `Regla(${r.stats.por_regla})`,
@@ -748,12 +764,13 @@ function TandaSeccion({
   onEliminarTanda: () => void;
 }) {
   const resultados = tanda.resultados;
-  const exitosos      = resultados.filter((r) => !r.error);
+  const exitosos      = resultados.filter((r) => !r.error && !r.rechazo);
+  const rechazados    = resultados.filter((r) => r.rechazo);
   const conError      = resultados.filter((r) => r.error);
-  const noReconocidas = resultados.filter((r) => !r.compania && !r.error);
+  const noReconocidas = resultados.filter((r) => !r.compania && !r.error && !r.rechazo);
   const conPatrones   = resultados.filter((r) => r.deteccion?.patrones_generados);
   const confianzaBaja = resultados.filter((r) => r.compania && (r.deteccion?.confianza === 'baja' || r.deteccion?.confianza === 'sin_datos'));
-  const sinSubramo    = resultados.filter((r) => r.compania && !r.subramo && !r.error);
+  const sinSubramo    = resultados.filter((r) => r.compania && !r.subramo && !r.error && !r.rechazo);
 
   return (
     <div className="space-y-3 pt-2 border-t border-[var(--color-border)] first:border-t-0 first:pt-0">
@@ -768,6 +785,10 @@ function TandaSeccion({
           {exitosos.length > 0 && (
             <Chip icon={<CheckCircle2 className="w-4 h-4" />}
               label={`${exitosos.length} procesado${exitosos.length !== 1 ? 's' : ''}`} color="green" />
+          )}
+          {rechazados.length > 0 && (
+            <Chip icon={<AlertCircle className="w-4 h-4" />}
+              label={`${rechazados.length} sin procesar`} color="amber" />
           )}
           {conError.length > 0 && (
             <Chip icon={<AlertCircle className="w-4 h-4" />}
@@ -984,6 +1005,8 @@ function TandaSeccion({
                       <td className="px-3 py-2.5">
                         {r.error
                           ? <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-[10px] font-medium"><AlertCircle className="w-3 h-3" />Error</span>
+                          : r.rechazo
+                          ? <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[var(--color-warning-text)] rounded-full text-[10px] font-medium"><AlertCircle className="w-3 h-3" />{r.rechazo.motivo === 'incompleta' ? 'Incompleta' : 'Sin extractor'}</span>
                           : <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-full text-[10px] font-medium"><CheckCircle2 className="w-3 h-3" />OK</span>}
                       </td>
                       <td className="px-3 py-2.5">
@@ -991,7 +1014,7 @@ function TandaSeccion({
                           <button onClick={() => onVerDetalle(i)} className="text-[var(--color-brand-blue)] hover:opacity-80 text-xs font-medium inline-flex items-center gap-1">
                             <Eye className="w-3.5 h-3.5" />Ver
                           </button>
-                          {!r.error && r.id != null && (
+                          {((!r.error && r.id != null) || (r.rechazo && r.rechazo.poliza_entrenamiento_id == null)) && (
                             <button
                               onClick={() => onEntrarCorreccion(i, r)}
                               className={`text-xs font-medium inline-flex items-center gap-1 transition-colors ${enCorr ? 'text-[var(--color-brand-blue)] font-semibold' : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]'}`}
@@ -1005,6 +1028,24 @@ function TandaSeccion({
                       </td>
                     </tr>
 
+                    {/* ── Leyenda: PDF no procesado ── */}
+                    {r.rechazo && (
+                      <tr key={`rech-${i}`} className="bg-[var(--color-bg-secondary)]">
+                        <td colSpan={11} className="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
+                          <span className="font-semibold text-[var(--color-warning-text)]">{r.rechazo.mensaje}</span>
+                          {r.rechazo.poliza_entrenamiento_id != null && ' Se envió al Entrenador de PDFs.'}
+                          {r.rechazo.subramo_id != null && (
+                            <Link
+                              to={`/entrenador?companiaId=${r.rechazo.compania_id}&ramoId=${r.rechazo.ramo_id}&subramoId=${r.rechazo.subramo_id}${r.rechazo.poliza_entrenamiento_id != null ? `&polizaId=${r.rechazo.poliza_entrenamiento_id}` : ''}`}
+                              className="ml-2 font-medium text-[var(--color-brand-blue)] hover:underline"
+                            >
+                              Ir al Entrenador →
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+
                     {/* ── Inline correction panel ── */}
                     {enCorr && cs && (
                       <tr key={`corr-${i}`} className="bg-blue-50/60 border-b border-blue-100">
@@ -1013,7 +1054,9 @@ function TandaSeccion({
                             <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5">
                               <PenLine className="w-3.5 h-3.5" />
                               Selecciona el módulo correcto para <span className="font-bold">{r.archivo}</span>
-                              {' '}— se re-extraerán los campos con las reglas del subramo elegido
+                              {r.rechazo
+                                ? ' — el PDF se enviará al Entrenador en el subramo elegido'
+                                : ' — se re-extraerán los campos con las reglas del subramo elegido'}
                             </p>
 
                             <div className="flex flex-wrap items-end gap-3">
@@ -1074,7 +1117,7 @@ function TandaSeccion({
                                 >
                                   {cs.cargando
                                     ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Aplicando…</>
-                                    : <><CheckCircle2 className="w-3.5 h-3.5" />Aplicar reglas</>}
+                                    : <><CheckCircle2 className="w-3.5 h-3.5" />{r.rechazo ? 'Enviar al Entrenador' : 'Aplicar reglas'}</>}
                                 </button>
                               </div>
                             </div>
@@ -1099,12 +1142,13 @@ function TandaSeccion({
   );
 }
 
-function Chip({ icon, label, color }: { icon: React.ReactNode; label: string; color: 'gray' | 'green' | 'red' | 'purple' }) {
+function Chip({ icon, label, color }: { icon: React.ReactNode; label: string; color: 'gray' | 'green' | 'red' | 'purple' | 'amber' }) {
   const cls = {
     gray:   'bg-[var(--color-bg-secondary)] text-[var(--color-text-secondary)]',
     green:  'bg-emerald-50 text-emerald-700',
     red:    'bg-red-50 text-red-700',
     purple: 'bg-purple-50 text-purple-700',
+    amber:  'bg-[var(--color-bg-secondary)] text-[var(--color-warning-text)]',
   }[color];
   return (
     <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium ${cls}`}>

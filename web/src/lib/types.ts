@@ -43,6 +43,17 @@ export interface ResultadoPDF {
   stats: StatsExtraccion;
   deteccion?: DeteccionInfo;
   error: string | null;
+  /** PDF no procesado: sin extractor para su compañía/ramo/subramo o con campos básicos incompletos. */
+  rechazo?: {
+    motivo: 'sin_extractor' | 'no_reconocida' | 'incompleta';
+    mensaje: string;
+    faltantes: string[];
+    ref: string;
+    compania_id: number | null;
+    ramo_id: number | null;
+    subramo_id: number | null;
+    poliza_entrenamiento_id: number | null;
+  } | null;
 }
 
 export interface Compania {
