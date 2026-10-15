@@ -1,0 +1,12 @@
+# Fallback del SPA (React Router, BrowserRouter) para Apache/Plesk.
+# Sin esto, navegar directo a una ruta como /login da 404: Apache busca un
+# archivo/carpeta real con ese nombre en web/dist y no existe. Vite copia
+# este archivo a dist/ en cada build (por eso vive en web/public/).
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  RewriteRule ^index\.html$ - [L]
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule . /index.html [L]
+</IfModule>

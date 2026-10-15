@@ -81,9 +81,38 @@ def detectar_subramo_por_encabezado(texto: str) -> str | None:
     return None
 
 
+# ponytail: M2 del fix de validación de /extraer (2026-10-02). Títulos de
+# producto GNP que este extractor (solo autos) NO soporta; se buscan en el
+# encabezado de la carátula (primeros 800 chars), no en el cuerpo. Caso real:
+# "Daños Negocio Protegido GNP" se clasificaba como Automóviles y salía "ok"
+# con datos incorrectos. Extender esta lista conforme aparezcan más casos.
+GNP_TITULOS_NO_SOPORTADOS = [
+    r"negocio\s+protegido",
+]
+
+
+def titulo_no_soportado_gnp(texto):
+    """Devuelve el patrón que coincidió (str) o None si el título no está en la lista."""
+    cabecera = texto[:800]
+    return next((p for p in GNP_TITULOS_NO_SOPORTADOS if re.search(p, cabecera, re.IGNORECASE)), None)
+
+
 def es_poliza_auto_gnp(texto):
-    palabras_clave = ["vehículo asegurado", "auto individual", "automóvil", "tipo de uso", "serie", "placas"]
-    return any(p in texto.lower() for p in palabras_clave)
+    """
+    ponytail: M1 del fix de validación de /extraer (2026-10-02). Solo señales
+    fuertes: sección propia de pólizas de auto ("vehículo asegurado"/"auto
+    individual") o encabezado de producto con "Autos"/"Flotilla(s)". Se
+    quitaron "automóvil", "serie", "placas" y "tipo de uso" sueltas: aparecen
+    en cualquier ramo (cláusulas de garage, "placas solares") y dejaban pasar
+    pólizas de Daños. Validado SOLO contra GNP autos (Automóviles, Flotillas,
+    Motocicletas, Autobuses; 351 pólizas, 0 falsos negativos).
+    PENDIENTE: es_poliza_auto_qualitas y es_poliza_auto_el_potosi tienen el
+    mismo patrón de señales débiles y NO se han revisado.
+    """
+    t = texto.lower()
+    if "vehículo asegurado" in t or "auto individual" in t:
+        return True
+    return bool(re.search(r"\bautos\b|\bflotillas?\b", t[:600]))
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -1012,7 +1041,7 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
     los campos que logró encontrar con certeza; el resto queda a cargo
     del motor de reglas de BD (nivel 2).
     """
-    if not pdf_bytes or not es_poliza_auto_gnp(texto):
+    if not pdf_bytes or titulo_no_soportado_gnp(texto) or not es_poliza_auto_gnp(texto):
         return {}
 
     texto, paginas_dict = _leer_con_fitz(pdf_bytes)
