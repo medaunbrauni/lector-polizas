@@ -37,9 +37,9 @@ export default function Clasificador({ companias }: Props) {
   const [origenFiltro, setOrigenFiltro] = useState<'manual' | 'movi_beta' | ''>('manual');
 
   const {
-    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion,
+    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion, reprocesando,
     abrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
-    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
+    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar, reprocesar,
   } = useColaAcciones(setCola);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -258,6 +258,8 @@ export default function Clasificador({ companias }: Props) {
               reenviando={reenviando === item.id}
               onGuardarCorreccion={() => guardarCorreccion(item)}
               guardandoCorreccion={guardandoCorreccion === item.id}
+              onReprocesar={() => reprocesar(item)}
+              reprocesando={reprocesando === item.id}
             />
           ))}
         </div>

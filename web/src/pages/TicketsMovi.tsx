@@ -26,9 +26,9 @@ function TicketCard({ ticket, companias, onEliminar }: {
   };
 
   const {
-    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion,
+    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion, reprocesando,
     abrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
-    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
+    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar, reprocesar,
   } = useColaAcciones(setItems);
 
   const toggle = async () => {
@@ -118,6 +118,8 @@ function TicketCard({ ticket, companias, onEliminar }: {
               reenviando={reenviando === item.id}
               onGuardarCorreccion={() => guardarCorreccion(item)}
               guardandoCorreccion={guardandoCorreccion === item.id}
+              onReprocesar={() => reprocesar(item)}
+              reprocesando={reprocesando === item.id}
             />
           ))}
         </div>

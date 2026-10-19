@@ -23,6 +23,7 @@ from ..services.clasificador_service import (
     enviar_a_entrenamiento,
     extraer_texto_pdf,
     guardar_patrones_aprobados,
+    marcar_error,
     procesar_pdf,
     reenviar_a_entrenamiento,
     sha256_bytes,
@@ -402,6 +403,30 @@ def corregir_clasificacion(id: int, data: CorregirIn, db: Session = Depends(get_
     item.es_compania_nueva = False
     if item.estado == "requiere_manual":
         item.estado = "clasificado"
+    db.commit()
+    db.refresh(item)
+    return _item_schema(item, db)
+
+
+@router.post("/cola/{id}/reprocesar")
+def reprocesar_item(id: int, db: Session = Depends(get_db)):
+    """
+    Vuelve a leer y clasificar un item que quedó en "pendiente" (el proceso en
+    segundo plano murió o tardó) o en "error". Acción manual: nada lo
+    reprocesa solo.
+    """
+    item = db.get(ClasificacionCola, id)
+    if not item:
+        raise HTTPException(404, "No encontrado")
+    if item.estado not in ("pendiente", "error"):
+        raise HTTPException(400, "Solo se reprocesan items pendientes o con error")
+
+    item.estado, item.error_msg, item.metodo = "pendiente", None, None
+    try:
+        item.texto_pdf, item.paginas = extraer_texto_pdf(item.ruta_archivo)
+        procesar_pdf(item, db)
+    except Exception as exc:
+        marcar_error(item, exc)
     db.commit()
     db.refresh(item)
     return _item_schema(item, db)

@@ -164,6 +164,8 @@ interface Props {
   reenviando: boolean;
   onGuardarCorreccion: () => void;
   guardandoCorreccion: boolean;
+  onReprocesar: () => void;
+  reprocesando: boolean;
 }
 
 export default function ColaItemRow({
@@ -172,6 +174,7 @@ export default function ColaItemRow({
   onAbrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
   onConfirmar, onDescartar, onTogglePatrones, onTogglePatron, onGuardarPatrones,
   onReenviar, reenviando, onGuardarCorreccion, guardandoCorreccion,
+  onReprocesar, reprocesando,
 }: Props) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const finalComp = ov?.companiaId ? companias.find((c) => c.id === Number(ov.companiaId))?.nombre : null;
@@ -242,6 +245,19 @@ export default function ColaItemRow({
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               Confirmar
+            </button>
+          )}
+
+          {/* Reprocesar — items que se quedaron pendientes o fallaron */}
+          {(item.estado === 'pendiente' || item.estado === 'error') && (
+            <button
+              onClick={onReprocesar}
+              disabled={reprocesando}
+              title="Volver a leer y clasificar este PDF"
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-secondary)] rounded-lg transition-colors disabled:opacity-50"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${reprocesando ? 'animate-spin' : ''}`} />
+              Reprocesar
             </button>
           )}
 

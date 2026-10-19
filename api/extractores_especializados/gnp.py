@@ -85,16 +85,20 @@ def detectar_subramo_por_encabezado(texto: str) -> str | None:
 # producto GNP que este extractor (solo autos) NO soporta; se buscan en el
 # encabezado de la carátula (primeros 800 chars), no en el cuerpo. Caso real:
 # "Daños Negocio Protegido GNP" se clasificaba como Automóviles y salía "ok"
-# con datos incorrectos. Extender esta lista conforme aparezcan más casos.
-GNP_TITULOS_NO_SOPORTADOS = [
-    r"negocio\s+protegido",
+# con datos incorrectos. Cada entrada trae su (ramo, subramo) real del catálogo
+# para mandar el PDF al lote correcto del Entrenador. Extender conforme aparezcan casos.
+GNP_PRODUCTOS_SIN_EXTRACTOR = [
+    (r"negocio\s+protegido", "Daños", "Empresariales"),  # confirmado por el negocio
 ]
 
 
 def titulo_no_soportado_gnp(texto):
-    """Devuelve el patrón que coincidió (str) o None si el título no está en la lista."""
+    """(ramo, subramo) del producto si el encabezado coincide con la lista, o None."""
     cabecera = texto[:800]
-    return next((p for p in GNP_TITULOS_NO_SOPORTADOS if re.search(p, cabecera, re.IGNORECASE)), None)
+    return next(
+        ((ramo, sub) for patron, ramo, sub in GNP_PRODUCTOS_SIN_EXTRACTOR if re.search(patron, cabecera, re.IGNORECASE)),
+        None,
+    )
 
 
 def es_poliza_auto_gnp(texto):

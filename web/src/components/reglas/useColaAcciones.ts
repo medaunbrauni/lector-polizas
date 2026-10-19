@@ -10,7 +10,7 @@ import { useState } from 'react';
 import type { ItemCola } from '../../lib/types';
 import {
   confirmarItemCola, aprobarPatronesCola, descartarItemCola,
-  getRamos, getSubramos, reenviarItemCola, corregirClasificacionCola,
+  getRamos, getSubramos, reenviarItemCola, corregirClasificacionCola, reprocesarItemCola,
 } from '../../lib/api';
 import type { OverrideState, PatronesSeleccion } from './ColaItemRow';
 
@@ -22,6 +22,7 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
   const [guardandoPatrones, setGuardandoPatrones] = useState<number | null>(null);
   const [reenviando, setReenviando] = useState<number | null>(null);
   const [guardandoCorreccion, setGuardandoCorreccion] = useState<number | null>(null);
+  const [reprocesando, setReprocesando] = useState<number | null>(null);
 
   const abrirOverride = async (item: ItemCola) => {
     if (overrideActivo === item.id) { setOverrideActivo(null); return; }
@@ -153,6 +154,18 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
     }
   };
 
+  const reprocesar = async (item: ItemCola) => {
+    setReprocesando(item.id);
+    try {
+      const updated = await reprocesarItemCola(item.id);
+      setItems((prev) => prev.map((i) => (i.id === item.id ? updated : i)));
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : 'Error al reprocesar');
+    } finally {
+      setReprocesando(null);
+    }
+  };
+
   const reenviar = async (item: ItemCola) => {
     setReenviando(item.id);
     try {
@@ -166,8 +179,8 @@ export function useColaAcciones(setItems: (updater: (prev: ItemCola[]) => ItemCo
   };
 
   return {
-    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion,
+    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion, reprocesando,
     abrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
-    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
+    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar, reprocesar,
   };
 }

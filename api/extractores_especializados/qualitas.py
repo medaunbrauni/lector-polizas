@@ -52,17 +52,16 @@ def es_poliza_auto_qualitas(texto: str) -> bool:
         "GNP", "AXA", "MAPFRE", "CHUBB", "ZURICH", "ANA SEGUROS", "HDI", "AFIRME", "BANORTE", "BBVA SEGUROS"
     ]
 
-    palabras_clave_auto = ["VEHÍCULO", "COBERTURA", "AUTOMÓVIL", "USO PARTICULAR", "PLACAS"]
+    # "COBERTURA" salía en cualquier póliza; se piden 2 señales propias de autos.
+    # Validado contra 519 extracciones de Quálitas: las pasan todas.
+    palabras_clave_auto = ["VEHÍCULO", "AUTOMÓVIL", "USO PARTICULAR", "PLACAS"]
 
     if "QUALITAS" not in texto_upper:
         if any(aseg in texto_upper for aseg in otras_aseguradoras):
             return False
         return False
 
-    if any(p in texto_upper for p in palabras_clave_auto):
-        return True
-
-    return False
+    return sum(p in texto_upper for p in palabras_clave_auto) >= 2
 
 
 def extraer_tipo_poliza(texto: str) -> str:

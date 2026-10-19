@@ -328,7 +328,7 @@ MSG_INCOMPLETA = "No se pudieron extraer todos los campos básicos (faltan: {fal
 def _rechazar(
     motivo: str, mensaje: str, det: dict, compania, ramo, subramo,
     contenido: bytes, nombre_archivo: str, texto: str, datos_finales: dict | None, db: Session,
-    faltantes: list[str] | None = None,
+    faltantes: list[str] | None = None, forzar_lote: bool = False,
 ) -> dict:
     """
     Resultado de un PDF que no se procesa. Si se pudo ubicar el subramo, el PDF
@@ -342,7 +342,7 @@ def _rechazar(
     # producto sin extractor (ej. Daños) se equivoca con facilidad y llenaría el
     # lote equivocado. Si no, el PDF espera en RECHAZADOS_DIR y el usuario elige.
     automatico = subramo is not None and (
-        motivo == "incompleta" or (det["confianza"] == "alta" and det["score_subramo"] >= 3)
+        forzar_lote or motivo == "incompleta" or (det["confianza"] == "alta" and det["score_subramo"] >= 3)
     )
     if not automatico:
         ruta = os.path.join(RECHAZADOS_DIR, f"{sha}.pdf")
@@ -490,7 +490,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     # Un título de producto ajeno (ej. GNP "Daños Negocio Protegido") se rechaza
     # aunque el detector lo haya clasificado como autos; como ese subramo no es
     # confiable, el PDF no se manda a ningún lote del Entrenador.
-    producto_ajeno = bool(compania and compania.nombre == "GNP Seguros" and titulo_no_soportado_gnp(texto))
+    producto_ajeno = titulo_no_soportado_gnp(texto) if compania and compania.nombre == "GNP Seguros" else None
     if producto_ajeno or not esta_soportado(
         compania.nombre if compania else None,
         ramo.nombre if ramo else None,
@@ -499,8 +499,16 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         if not compania:
             return _rechazar("no_reconocida", MSG_NO_RECONOCIDA, det, None, None, None,
                              contenido, nombre_archivo, texto, None, db)
-        return _rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo,
-                         None if producto_ajeno else subramo,
+        if producto_ajeno:
+            # Producto conocido sin extractor: su ramo/subramo real viene de la lista, no del detector.
+            ramo_p = db.query(Ramo).filter(Ramo.compania_id == compania.id, Ramo.nombre == producto_ajeno[0]).first()
+            sub_p = (
+                db.query(Subramo).filter(Subramo.ramo_id == ramo_p.id, Subramo.nombre == producto_ajeno[1]).first()
+                if ramo_p else None
+            )
+            return _rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo_p or ramo, sub_p,
+                             contenido, nombre_archivo, texto, None, db, forzar_lote=sub_p is not None)
+        return _rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo, subramo,
                          contenido, nombre_archivo, texto, None, db)
 
     # 3. Auto-generar patrones si algún nivel detectado no los tiene
@@ -561,10 +569,15 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
 
     # 6c. Guardar el PDF físico (para poder verlo/reentrenarlo después desde
     # Historial) — solo si hay subramo resuelto, igual que el Entrenador.
-    poliza_guardada = (
-        _guardar_pdf_como_entrenamiento(subramo.id, nombre_archivo, contenido, texto, db, datos_finales)
-        if subramo else None
-    )
+    # Un mismo PDF reprocesado no se duplica en el lote (se deduplica por hash).
+    sha = hashlib.sha256(contenido).hexdigest()
+    poliza_guardada = None
+    if subramo:
+        poliza_guardada = db.query(PolizaEntrenamiento).filter(
+            PolizaEntrenamiento.subramo_id == subramo.id, PolizaEntrenamiento.sha256 == sha,
+        ).first() or _guardar_pdf_como_entrenamiento(
+            subramo.id, nombre_archivo, contenido, texto, db, datos_finales, sha256=sha,
+        )
 
     metodo_det = "patrones" if (det["score_compania"] >= 3) else "keywords"
     extraccion = Extraccion(

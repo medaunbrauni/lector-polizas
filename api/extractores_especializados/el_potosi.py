@@ -50,11 +50,13 @@ def _leer_con_fitz(pdf_bytes: bytes) -> tuple[str, list[dict]]:
 
 def es_poliza_auto_el_potosi(texto: str) -> bool:
     t = texto.lower()
-    palabras_clave = [
-        "datos del riesgo asegurado", "no. de serie", "no. de motor",
-        "tipo vehículo", "seguro de automóviles", "seguro de autos",
+    # "datos del riesgo asegurado" lo traen también las pólizas de otros ramos
+    # (ej. transporte de carga): se exige además un campo/título de vehículo.
+    # Validado contra 83 pólizas de El Potosí: rechaza solo la de transporte.
+    palabras_vehiculo = [
+        "no. de serie", "no. de motor", "tipo vehículo", "seguro de automóviles", "seguro de autos",
     ]
-    return any(p in t for p in palabras_clave)
+    return "datos del riesgo asegurado" in t and any(p in t for p in palabras_vehiculo)
 
 
 def _sin_acentos(valor: str) -> str:

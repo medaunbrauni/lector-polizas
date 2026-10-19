@@ -507,6 +507,15 @@ export async function corregirClasificacionCola(
   return res.json();
 }
 
+export async function reprocesarItemCola(id: number): Promise<ItemCola> {
+  const res = await fetch(`${BASE}/clasificador/cola/${id}/reprocesar`, { method: 'POST' });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+    throw new Error(err.detail ?? `Error ${res.status}`);
+  }
+  return res.json();
+}
+
 export async function reenviarItemCola(id: number): Promise<ItemCola> {
   const res = await fetch(`${BASE}/clasificador/cola/${id}/reenviar`, { method: 'POST' });
   if (!res.ok) {
