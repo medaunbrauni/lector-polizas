@@ -37,6 +37,14 @@ _SENALES_DANOS = [
 ]
 
 
+# La razón social impresa en la póliza identifica a la aseguradora mejor que los
+# keywords sueltos ("ana seguros" no aparece en los PDFs de ANA, que dicen
+# "A.N.A. Compañía de Seguros" y se detectaban como Banorte, HDI o El Potosí).
+FIRMAS_COMPANIA = {
+    "ANA Seguros": [r"A\.N\.A\.\s*Compa[ñn][ií]a\s*de\s*Seguros", r"anaseguros\.com\.mx"],
+}
+
+
 def _sin_acentos(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
 
@@ -122,6 +130,13 @@ def detectar_con_score(texto: str, db: Session) -> dict:
         key=lambda x: x["score"],
         reverse=True,
     )
+    firma = next(
+        (c for c in comp_scores if any(re.search(p, texto, re.IGNORECASE) for p in FIRMAS_COMPANIA.get(c["nombre"], []))),
+        None,
+    )
+    if firma:
+        firma["score"] = max(firma["score"], UMBRAL_ALTA)
+        comp_scores.sort(key=lambda x: x["score"], reverse=True)
     mejor_comp = comp_scores[0] if comp_scores and comp_scores[0]["score"] > 0 else None
     score_comp = mejor_comp["score"] if mejor_comp else 0
 

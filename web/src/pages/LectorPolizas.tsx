@@ -33,6 +33,7 @@ const BADGE_COMPANIA: Record<string, string> = {
   'hdi':        'bg-orange-100 text-orange-700',
   'banorte':    'bg-purple-100 text-purple-700',
   'el potosí':  'bg-yellow-100 text-yellow-700',
+  'seguros el potosí': 'bg-yellow-100 text-yellow-700',
 };
 
 const CONFIANZA_BADGE: Record<NivelConfianza, { cls: string; icon: React.ReactNode; label: string }> = {

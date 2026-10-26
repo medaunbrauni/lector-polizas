@@ -9,12 +9,13 @@ que el pipeline salte directo al motor de reglas de BD (nivel 2).
 from __future__ import annotations
 import unicodedata
 from .base import ExtractorEspecializado
-from . import qualitas, gnp, el_potosi
+from . import qualitas, gnp, el_potosi, ana
 
 REGISTRY: dict[str, ExtractorEspecializado] = {
     "Quálitas":          qualitas.extraer,
     "GNP Seguros":       gnp.extraer,
     "Seguros El Potosí": el_potosi.extraer,
+    "ANA Seguros":       ana.extraer,
 }
 
 
@@ -26,7 +27,13 @@ SOPORTE: dict[str, dict[str, set[str]]] = {
     "GNP Seguros": {"Vehículos": {"Automóviles", "Flotilla de Vehiculos", "Motocicletas", "Autobuses"}},
     "Quálitas": {"Vehículos": {"Automóviles", "Camiones", "Motocicletas"}},
     "Seguros El Potosí": {"Vehículos": {"Automóviles"}},
+    "ANA Seguros": {"Vehículos": {"Automóviles", "Camiones", "Motocicletas", "Autobuses"}},
 }
+
+# ponytail: ANA va por fases (la 1 trae solo documento, rfc, cliente y dirección),
+# así que todavía no se le exige la completitud de campos básicos. Quitar de aquí
+# al terminar la fase 3.
+SIN_COMPLETITUD = {"ANA Seguros"}
 
 
 def _norm(s: str | None) -> str:

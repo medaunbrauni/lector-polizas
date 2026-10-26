@@ -12,6 +12,7 @@ carga (una vez, cacheado) y resuelve el lookup por C.P.
 """
 from __future__ import annotations
 import json
+import re
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
@@ -29,6 +30,27 @@ def _catalogo() -> dict:
 def _normalizar(valor: str) -> str:
     valor = unicodedata.normalize("NFKD", valor.upper())
     return "".join(c for c in valor if not unicodedata.combining(c)).strip()
+
+
+def colonia_al_final(cp: str, texto: str) -> str | None:
+    """
+    Colonia del catálogo para ese C.P. con la que TERMINA `texto` (calle +
+    colonia sin separador, como la imprime ANA), o None. Sirve para que el
+    extractor identifique la colonia en una dirección sin comas: se prueba el
+    nombre completo del catálogo ("Centro (Área 6)") y luego sin el paréntesis;
+    gana el más largo para no confundir "Centro" con "Colonia Centro".
+    """
+    entrada = _catalogo().get(cp)
+    if not entrada:
+        return None
+    t = _normalizar(texto)
+    mejor = None
+    for col in entrada["colonias"]:
+        for nombre in (col, re.sub(r"\s*\(.*?\)\s*", " ", col)):
+            n = _normalizar(nombre)
+            if n and t.endswith(n) and (mejor is None or len(n) > len(_normalizar(mejor))):
+                mejor = col
+    return mejor
 
 
 def validar_direccion_cp(cp: str | None, colonia: str | None, municipio: str | None) -> dict:

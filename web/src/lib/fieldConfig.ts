@@ -68,6 +68,7 @@ export const FIELD_LABELS: Record<string, string> = {
   tipo_vehiculo:      'Tipo Vehículo',
 
   // — Dirección —
+  direccion_completa: 'Dirección completa',
   colonia:            'Colonia',
   municipio:          'Municipio',
   cp:                 'C.P.',

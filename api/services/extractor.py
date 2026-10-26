@@ -18,10 +18,11 @@ from sqlalchemy.orm import Session
 from .detector import detectar_con_score
 from .rule_engine import aplicar_reglas, campos_sin_regla
 from .ai_utils import parse_claude_json, make_anthropic_client
-from ..extractores_especializados.registry import esta_soportado, obtener_extractor
+from ..extractores_especializados.registry import SIN_COMPLETITUD, esta_soportado, obtener_extractor
 from ..extractores_especializados.qualitas import mapear_tipo_a_subramo
 from ..extractores_especializados.gnp import detectar_subramo_por_encabezado, titulo_no_soportado_gnp
 from ..extractores_especializados.el_potosi import detectar_subramo_por_titulo_el_potosi
+from ..extractores_especializados.ana import detectar_subramo_por_tipo_ana
 from ..extractores_especializados.figuras_juridicas import es_persona_moral_por_nombre, clasificar_persona_por_rfc
 from ..config import MODEL_EXTRACTOR, PDF_ENTRENAMIENTO_DIR, RECHAZADOS_DIR
 from ..models.db_models import (
@@ -483,6 +484,20 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
                 det["subramo_id"] = subramo_correcto.id
                 det["subramo_nombre"] = subramo_correcto.nombre
 
+    # 4d2. ANA Seguros: el campo "Tipo:" de la carátula (AUTOS / CAM... / MOTOS /
+    # AUTOBUSES) define el subramo. Un tipo no reconocido deja el subramo sin
+    # asignar (se rechaza como sin extractor) en vez de caer en "Automóviles".
+    if compania and compania.nombre == "ANA Seguros" and ramo:
+        subramo_mapeado = detectar_subramo_por_tipo_ana(campos_extraidos.get("tipo_vehiculo"))
+        subramo = (
+            db.query(Subramo)
+            .filter(Subramo.ramo_id == ramo.id, Subramo.nombre == subramo_mapeado, Subramo.activo == True)
+            .first()
+            if subramo_mapeado else None
+        )
+        det["subramo_id"] = subramo.id if subramo else None
+        det["subramo_nombre"] = subramo.nombre if subramo else None
+
     # 4e. Validación de soporte: solo se procesan las combinaciones compañía/
     # ramo/subramo con extractor (registry.SOPORTE). Se decide ANTES de generar
     # patrones con IA o guardar nada, para que un PDF ajeno no contamine los
@@ -560,7 +575,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     # confiable → se rechaza y se manda al Entrenador (con lo poco que sí salió
     # sembrado como selecciones) en vez de devolver datos a medias.
     faltantes = [c for c in CAMPOS_BASICOS if not (datos_finales.get(c) or {}).get("valor")]
-    if faltantes:
+    if faltantes and compania.nombre not in SIN_COMPLETITUD:
         return _rechazar(
             "incompleta", MSG_INCOMPLETA.format(faltantes=", ".join(faltantes)), det,
             compania, ramo, subramo, contenido, nombre_archivo, texto, datos_finales, db,
