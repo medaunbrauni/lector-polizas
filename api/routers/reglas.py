@@ -121,7 +121,6 @@ def listar_borradores(subramo_id: int | None = None, db: Session = Depends(get_d
 @router.post("")
 def crear_regla(data: ReglaIn, db: Session = Depends(get_db)):
     if not data.es_borrador:
-        # Solo desactivar la regla activa anterior si estamos guardando una regla real
         db.query(ReglaExtraccion).filter(
             ReglaExtraccion.subramo_id == data.subramo_id,
             ReglaExtraccion.nombre_campo == data.nombre_campo,
@@ -329,7 +328,6 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
     except Exception as e:
         raise HTTPException(500, f"Error al llamar a Claude: {e}")
 
-    # Validar que los patrones sean regex válidos
     for nivel in ("compania", "ramo", "subramo"):
         validos = []
         for p in resultado.get(nivel, []):

@@ -194,11 +194,9 @@ class ClasificacionCola(Base):
     ramo_id_final = Column(Integer, ForeignKey("ramos.id"), nullable=True)
     subramo_id_final = Column(Integer, ForeignKey("subramos.id"), nullable=True)
 
-    # Patrones de detección generados por IA (para revisión)
     patrones_generados = Column(JSON, nullable=True)
     patrones_guardados = Column(Boolean, default=False)
 
-    # Referencia al entrenamiento al que fue enviado
     poliza_entrenamiento_id = Column(Integer, ForeignKey("polizas_entrenamiento.id"), nullable=True)
 
     # Procedencia: "manual" (subida/carpeta vigilada interna) o el nombre de

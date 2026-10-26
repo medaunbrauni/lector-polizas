@@ -222,8 +222,6 @@ export async function getCodigoDeteccion() {
   return res.json();
 }
 
-// ── Entrenamiento por lotes ───────────────────────────────────────────────────
-
 export async function subirPolizasEntrenamiento(subramoId: number, files: File[]) {
   const form = new FormData();
   files.forEach((f) => form.append('files', f));
@@ -434,8 +432,6 @@ export async function generarYGuardarPatrones(subramo_id: number, texto_pdf: str
   }
   return res.json() as Promise<import('./types').PatronesGenerados>;
 }
-
-// ── Clasificador ──────────────────────────────────────────────────────────────
 
 import type { ItemCola, ResultadoUpload, InfoClasificador, TicketExterno, TicketExternoDetalle, PolizaEntrenamiento } from './types';
 

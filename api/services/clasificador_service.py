@@ -24,8 +24,6 @@ from ..services.detector import detectar_con_score
 from ..services.ai_utils import make_anthropic_client, parse_claude_json
 
 
-# ── Utilidades de archivo ─────────────────────────────────────────────────────
-
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -56,7 +54,6 @@ def dedup_carpeta(carpeta: str) -> list[str]:
     for sha, archivos in grupos.items():
         if len(archivos) < 2:
             continue
-        # Ordenar: más antiguo primero (menor mtime = original)
         archivos.sort(key=lambda p: p.stat().st_mtime)
         for duplicado in archivos[1:]:
             try:
@@ -123,8 +120,6 @@ def extraer_texto_pdf(ruta: str) -> tuple[str, int]:
             partes.append(t)
     return "\n".join(partes).strip(), paginas
 
-
-# ── Clasificación con IA ──────────────────────────────────────────────────────
 
 def _confianza_float_a_nivel(valor: float) -> str:
     if valor >= 0.85:
@@ -205,8 +200,6 @@ Reglas:
     }
 
 
-# ── Generación de patrones de detección ──────────────────────────────────────
-
 def generar_patrones_ia(
     texto: str,
     compania: Compania,
@@ -263,8 +256,6 @@ Responde SOLO con JSON válido:
     return result
 
 
-# ── Pipeline principal ────────────────────────────────────────────────────────
-
 def procesar_pdf(item: ClasificacionCola, db: Session) -> None:
     """
     Ejecuta el pipeline completo de clasificación sobre un item de la cola.
@@ -273,14 +264,12 @@ def procesar_pdf(item: ClasificacionCola, db: Session) -> None:
     try:
         texto = item.texto_pdf or ""
 
-        # Escaneo / sin texto: no tiene sentido gastar una llamada a Claude.
         if len(texto.strip()) < MIN_CHARS_TEXTO:
             item.estado = "error"
             item.metodo = "sistema"
             item.error_msg = MOTIVO_SIN_TEXTO
             return
 
-        # ─ 1. Detector con score ─────────────────────────────────────────────
         det = detectar_con_score(texto, db)
 
         if det["confianza"] == "alta" and det["subramo_id"]:
@@ -291,7 +280,6 @@ def procesar_pdf(item: ClasificacionCola, db: Session) -> None:
             item.metodo = "detector"
             item.estado = "clasificado"
         else:
-            # ─ 2. Claude ─────────────────────────────────────────────────────
             res = clasificar_con_ia(texto, db)
             item.compania_id_prop = res["compania_id"]
             item.ramo_id_prop = res["ramo_id"]
@@ -305,7 +293,6 @@ def procesar_pdf(item: ClasificacionCola, db: Session) -> None:
             item.subramo_nombre_ia = res["subramo_nombre_ia"]
             item.estado = "requiere_manual" if res["es_nueva"] else "clasificado"
 
-        # ─ 3. Generar patrones si tenemos clasificación completa ─────────────
         if item.compania_id_prop and item.ramo_id_prop and item.subramo_id_prop:
             compania = db.get(Compania, item.compania_id_prop)
             ramo = db.get(Ramo, item.ramo_id_prop)
@@ -319,8 +306,6 @@ def procesar_pdf(item: ClasificacionCola, db: Session) -> None:
     except Exception as e:
         marcar_error(item, e)
 
-
-# ── Enviar a entrenamiento ────────────────────────────────────────────────────
 
 def enviar_a_entrenamiento(item: ClasificacionCola, db: Session) -> PolizaEntrenamiento:
     """
@@ -392,8 +377,6 @@ def reenviar_a_entrenamiento(item: ClasificacionCola, db: Session) -> PolizaEntr
 
     return enviar_a_entrenamiento(item, db)
 
-
-# ── Guardar patrones aprobados ────────────────────────────────────────────────
 
 def guardar_patrones_aprobados(
     item: ClasificacionCola,

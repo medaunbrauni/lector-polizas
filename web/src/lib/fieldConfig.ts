@@ -7,9 +7,7 @@
  *   import { FIELD_LABELS, fieldLabel, EXCEL_COLS } from '../lib/fieldConfig';
  */
 
-// ── Labels de campo ───────────────────────────────────────────────────────────
 export const FIELD_LABELS: Record<string, string> = {
-  // — Identificación de póliza —
   documento:          'N° Póliza',
   numero_fianza:      'N° Fianza',
   agente:             'Agente',
@@ -17,30 +15,25 @@ export const FIELD_LABELS: Record<string, string> = {
   sub_ramo_sicas:     'Subramo Sicas',
   renovacion:         'Renovación',
 
-  // — Asegurado / Cliente —
   nombre_cliente:     'Cliente',          // campo legacy de especificos
   rfc:                'RFC',
   entidad:            'Entidad',
   ejecutivo_cuenta:   'Ejecutivo Cuenta',
   grupo:              'Grupo',
 
-  // — Asegurado específico —
   nombre_asegurado:   'Asegurado',
   beneficiarios:      'Beneficiarios',
   beneficiario:       'Beneficiario',
   afianzado:          'Afianzado',
   fecha_nacimiento:   'Fecha Nacimiento',
 
-  // — Vigencia (nombres canónicos = globales) —
   desde:              'Inicio Vigencia',
   hasta:              'Fin Vigencia',
   estatus:            'Estatus',
 
-  // — Pago —
   forma_pago:         'Forma Pago',
   moneda:             'Moneda',
 
-  // — Primas —
   prima_neta:         'Prima Neta',
   descuento:          'Descuento',
   recargos:           'Recargos',
@@ -50,16 +43,13 @@ export const FIELD_LABELS: Record<string, string> = {
   iva:                'IVA',
   prima_total:        'Prima Total',
 
-  // — Cobertura GMM / AYE —
   suma_asegurada:     'Suma Asegurada',
   deducible:          'Deducible',
   coaseguro:          'Coaseguro %',
   monto_afianzado:    'Monto Afianzado',
 
-  // — Objeto / riesgo —
   objeto_asegurado:   'Objeto Asegurado',
 
-  // — Vehículo —
   placas:             'Placas',
   serie:              'N° Serie',
   motor:              'N° Motor',
@@ -67,7 +57,6 @@ export const FIELD_LABELS: Record<string, string> = {
   descripcion_veh:    'Descripción Vehículo',
   tipo_vehiculo:      'Tipo Vehículo',
 
-  // — Dirección —
   direccion_completa: 'Dirección completa',
   colonia:            'Colonia',
   municipio:          'Municipio',
@@ -93,7 +82,6 @@ export function formatEntidad(valor: unknown): string {
   return v;
 }
 
-// ── Columnas de la tabla resumen en Extractor ─────────────────────────────────
 /** Campos a mostrar en la tabla de resultados (compacta). */
 export const TABLA_COLS = [
   'documento',
@@ -104,10 +92,8 @@ export const TABLA_COLS = [
   'prima_total',
 ] as const;
 
-// ── Columnas del Excel exportado ──────────────────────────────────────────────
 /** Campos exportados a XLSX, en orden. */
 export const EXCEL_COLS: Array<{ campo: string; header: string }> = [
-  // Identificación
   { campo: 'documento',          header: 'N° Póliza' },
   { campo: 'nombre_cliente',     header: 'Cliente' },
   { campo: 'rfc',                header: 'RFC' },
@@ -115,28 +101,23 @@ export const EXCEL_COLS: Array<{ campo: string; header: string }> = [
   { campo: 'agente_clave',       header: 'Clave Agente' },
   { campo: 'forma_pago',         header: 'Forma Pago' },
   { campo: 'moneda',             header: 'Moneda' },
-  // Vigencia
   { campo: 'desde',              header: 'Inicio Vigencia' },
   { campo: 'hasta',              header: 'Fin Vigencia' },
-  // Vehículo
   { campo: 'placas',             header: 'Placas' },
   { campo: 'serie',              header: 'N° Serie' },
   { campo: 'motor',              header: 'N° Motor' },
   { campo: 'modelo',             header: 'Modelo (año)' },
   { campo: 'descripcion_veh',    header: 'Descripción Vehículo' },
   { campo: 'tipo_vehiculo',      header: 'Tipo Vehículo' },
-  // GMM / AYE
   { campo: 'suma_asegurada',     header: 'Suma Asegurada' },
   { campo: 'deducible',          header: 'Deducible' },
   { campo: 'coaseguro',          header: 'Coaseguro %' },
-  // Primas
   { campo: 'prima_neta',         header: 'Prima Neta' },
   { campo: 'descuento',          header: 'Descuento' },
   { campo: 'derechos',           header: 'Derechos/Gastos Exp.' },
   { campo: 'sub_total',          header: 'Subtotal' },
   { campo: 'iva',                header: 'IVA' },
   { campo: 'prima_total',        header: 'Prima Total' },
-  // Dirección
   { campo: 'colonia',            header: 'Colonia' },
   { campo: 'municipio',          header: 'Municipio' },
   { campo: 'cp',                 header: 'C.P.' },

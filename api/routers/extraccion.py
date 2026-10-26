@@ -14,7 +14,6 @@ from ..models.db_models import Extraccion, CampoExtraido, Subramo, Ramo, Compani
 
 router = APIRouter(prefix="/extraer", tags=["Extracción"])
 
-# ── Límites de subida ─────────────────────────────────────────────────────────
 MAX_FILES_PER_REQUEST = 50
 MAX_FILE_MB           = 15
 MAX_FILE_BYTES        = MAX_FILE_MB * 1024 * 1024
@@ -44,7 +43,6 @@ def reaplicar_con_subramo(data: ReaplicarIn, db: Session = Depends(get_db)):
     ramo     = db.query(Ramo).filter(Ramo.id == subramo.ramo_id).first()
     compania = db.query(Compania).filter(Compania.id == ramo.compania_id).first()
 
-    # Re-aplicar reglas con el nuevo subramo
     from ..services.rule_engine import aplicar_reglas, campos_sin_regla
     from ..models.db_models import CampoDefinido
 
@@ -300,12 +298,10 @@ def _extraccion_schema(
     from ..models.db_models import Compania, Ramo, Subramo as SubramoModel
 
     def _export_name(id_val, model_cls, fallback: str | None, alias_dict: dict) -> str | None:
-        # Primero intenta el dict pre-cargado (O(1), sin query)
         if id_val and alias_dict:
             alias = alias_dict.get(id_val)
             if alias:
                 return alias
-        # Fallback: query individual (solo en vista de detalle)
         if db and id_val:
             obj = db.query(model_cls).filter(model_cls.id == id_val).first()
             if obj and obj.nombre_exportacion:

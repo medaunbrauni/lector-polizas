@@ -52,10 +52,7 @@ function formatConteos(nombre: string, totalEntrenadas: number, totalLote: numbe
   return `${nombre} (${totalEntrenadas}/${totalLote} entrenadas)`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 export default function Reglas() {
-  // ── Catálogos ──────────────────────────────────────────────────────────────
   const [companias, setCompanias] = useState<Compania[]>([]);
   const [ramos, setRamos] = useState<Ramo[]>([]);
   const [subramos, setSubramos] = useState<Subramo[]>([]);
@@ -65,7 +62,6 @@ export default function Reglas() {
   const [selRamo, setSelRamo] = useState('');
   const [selSubramo, setSelSubramo] = useState('');
 
-  // ── Lote de pólizas ────────────────────────────────────────────────────────
   const [polizas, setPolizas] = useState<PolizaEntrenamiento[]>([]);
   const [polizaIdx, setPolizaIdx] = useState(0);
   const [subiendo, setSubiendo] = useState(false);
@@ -79,16 +75,13 @@ export default function Reglas() {
   // que se vea de entrada; "PDFs Entrenados" es más una bandeja de consulta.
   const [mostrarLote, setMostrarLote] = useState(true);
 
-  // ── Selecciones y reglas ───────────────────────────────────────────────────
   const [selecciones, setSelecciones] = useState<MapaSelecciones>({});
   const [reglas, setReglas] = useState<Record<string, { id: number; patron_regex: string; cobertura_lote: number | null; total_lote: number | null; creado_por: string }>>({});
 
-  // ── Estado del campo activo ────────────────────────────────────────────────
   const [campoActivo, setCampoActivo] = useState('');
   const [textoSeleccionado, setTextoSeleccionado] = useState('');
   const [bboxCapturado, setBboxCapturado] = useState<BBox | null>(null);
 
-  // ── Regex y resultados ─────────────────────────────────────────────────────
   const [resultados, setResultados] = useState<Record<string, ResultadoRegexLote>>({});
   const [regexEditado, setRegexEditado] = useState<Record<string, string>>({});
   const [generando, setGenerando] = useState<string | null>(null);  // nombre_campo en proceso
@@ -96,7 +89,6 @@ export default function Reglas() {
   const [guardando, setGuardando] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // ── Auto-detección ─────────────────────────────────────────────────────────
   const [autoDeteccion, setAutoDeteccion] = useState<AutoDeteccion[]>([]);
   // Qué coincidencias auto-detectadas (encontrado=true) quedan marcadas para
   // agregarse como selección real al hacer clic en "Agregar seleccionadas" —
@@ -108,12 +100,10 @@ export default function Reglas() {
   const [autoDeteccionAbierta, setAutoDeteccionAbierta] = useState(true);
   const [agregandoAutoDeteccion, setAgregandoAutoDeteccion] = useState(false);
 
-  // ── Detección por PDF (identificar módulo) ─────────────────────────────────
   const [detectando, setDetectando] = useState(false);
   const [detectMsg, setDetectMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const pendingAutoSelect = useRef<{ ramo_id: number; subramo_id: number } | null>(null);
 
-  // ── Llegada desde Historial ("Ver/Reentrenar" de una extracción puntual) ───
   const [searchParams] = useSearchParams();
   const pendingPolizaId = useRef<number | null>(null);
   const [avisoSinArchivo, setAvisoSinArchivo] = useState(false);
@@ -130,7 +120,6 @@ export default function Reglas() {
   const [modoVistaExtraida, setModoVistaExtraida] = useState(false);
   const [panelDerechoTab, setPanelDerechoTab] = useState<'campos' | 'entrenar'>('campos');
 
-  // ── Modo imagen / OCR ──────────────────────────────────────────────────────
   const [modoImagen, setModoImagen] = useState(false);
   const [paginaImagen, setPaginaImagen] = useState(1);
   const [textoPdfActivo, setTextoPdfActivo] = useState('');
@@ -142,16 +131,13 @@ export default function Reglas() {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ── Refs ───────────────────────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loteInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageWidth, setPageWidth] = useState(520);
 
-  // ── Tab activo ─────────────────────────────────────────────────────────────
   const [tabActivo, setTabActivo] = useState<'reglas' | 'clasificador'>('reglas');
 
-  // ── Paneles redimensionables ─────────────────────────────────────────────────
   const [anchoIzquierdo, setAnchoIzquierdo] = useState<number>(
     Number(localStorage.getItem('reglas-ancho-izq')) || 256
   );
@@ -200,7 +186,6 @@ export default function Reglas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [redimensionando]);
 
-  // ── Alto del panel de texto extraído (redimensionable verticalmente) ────────
   const [altoTextoExtraido, setAltoTextoExtraido] = useState<number>(
     Number(localStorage.getItem('reglas-alto-texto')) || 240
   );
@@ -237,7 +222,6 @@ export default function Reglas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [redimensionandoAlto]);
 
-  // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => { getCompanias().then(setCompanias); }, []);
 
   // Llegada desde Historial vía "Ver/Reentrenar" (?companiaId=&ramoId=&
@@ -334,7 +318,6 @@ export default function Reglas() {
     }
   }
 
-  // ── ResizeObserver para el ancho del visor PDF ─────────────────────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -344,10 +327,8 @@ export default function Reglas() {
     });
     ro.observe(el);
     return () => ro.disconnect();
-    // El contenedor del visor solo existe una vez elegido el subramo.
   }, [selSubramo]);
 
-  // ── Auto-scroll al highlight del texto extraído ────────────────────────────
   useEffect(() => {
     if (!textoSeleccionado) return;
     const t = setTimeout(() => {
@@ -358,7 +339,6 @@ export default function Reglas() {
     return () => clearTimeout(t);
   }, [textoSeleccionado]);
 
-  // ── Póliza activa ──────────────────────────────────────────────────────────
   const polizaActiva = polizas[polizaIdx] ?? null;
   const pdfUrl = polizaActiva ? urlPdfEntrenamiento(polizaActiva.id) : null;
 
@@ -369,7 +349,6 @@ export default function Reglas() {
   const mostrarSwitcherCampos = modoVistaExtraida || tienePolizaSeleccionesReales;
   const mostrarVistaSimple = mostrarSwitcherCampos && panelDerechoTab === 'campos';
 
-  // Cargar texto extraído cuando cambia la póliza activa
   useEffect(() => {
     if (!polizaActiva) { setTextoPdfActivo(''); return; }
     getTextoPdf(polizaActiva.id)
@@ -377,7 +356,6 @@ export default function Reglas() {
       .catch(() => setTextoPdfActivo(''));
   }, [polizaActiva?.id]);
 
-  // ── Subir pólizas al lote ──────────────────────────────────────────────────
   async function handleSubirPolizas(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length || !selSubramo) return;
@@ -403,7 +381,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Detectar módulo desde PDF ──────────────────────────────────────────────
   async function handleDetectarPDF(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -452,7 +429,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Eliminar póliza del lote ───────────────────────────────────────────────
   async function handleEliminarPoliza(id: number) {
     await eliminarPolizaEntrenamiento(id);
     // El id se puede reutilizar en una póliza futura (SQLite reasigna el más
@@ -472,7 +448,6 @@ export default function Reglas() {
     ajustarContador('total_lote', -1);
   }
 
-  // ── Vaciar lote completo ────────────────────────────────────────────────────
   const [mostrarConfirmVaciar, setMostrarConfirmVaciar] = useState(false);
   const [vaciandoLote, setVaciandoLote] = useState(false);
 
@@ -526,7 +501,6 @@ export default function Reglas() {
     setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, [campo]: Math.max(0, s[campo] + delta) } : s)));
   }
 
-  // ── "Terminar" (marcar póliza como entrenada) ──────────────────────────────
   const [terminando, setTerminando] = useState(false);
   const [terminarError, setTerminarError] = useState<string[] | null>(null);
 
@@ -550,7 +524,6 @@ export default function Reglas() {
     }
   }
 
-  // ── "Corregir/Reentrenar" (revierte entrenado=false) ───────────────────────
   const [reentrenando, setReentrenando] = useState(false);
 
   async function handleReentrenarPoliza(poliza: PolizaEntrenamiento) {
@@ -569,7 +542,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Captura de selección desde el visor PDF ────────────────────────────────
   const handleSeleccion = useCallback(() => {
     if (!campoActivo || !polizaActiva) return;
     const sel = window.getSelection();
@@ -606,7 +578,6 @@ export default function Reglas() {
     setAutoDeteccion([]);
   }, [campoActivo, polizaActiva]);
 
-  // ── Guardar selección ──────────────────────────────────────────────────────
   async function handleGuardarSeleccion() {
     if (!polizaActiva || !campoActivo || !textoSeleccionado) return;
     const res = await guardarSeleccion({
@@ -623,7 +594,6 @@ export default function Reglas() {
         [polizaActiva.id]: res.seleccion,
       },
     }));
-    // Actualizar contador en la lista de pólizas
     setPolizas((prev) =>
       prev.map((p) =>
         p.id === polizaActiva.id
@@ -698,7 +668,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Generar regex ──────────────────────────────────────────────────────────
   async function handleGenerarRegex(nombreCampo: string) {
     const campoObj = campos.find((c) => c.nombre === nombreCampo);
     setGenerando(nombreCampo);
@@ -714,7 +683,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Reintentar con regex editado ───────────────────────────────────────────
   async function handleProbarRegex(nombreCampo: string) {
     const patron = regexEditado[nombreCampo];
     if (!patron) return;
@@ -730,7 +698,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Guardar regla ──────────────────────────────────────────────────────────
   async function handleGuardarRegla(nombreCampo: string) {
     const resultado = resultados[nombreCampo];
     const patron = regexEditado[nombreCampo];
@@ -752,7 +719,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Estado panel detección ────────────────────────────────────────────────
   const [panelDeteccionAbierto, setPanelDeteccionAbierto] = useState(false);
   const [deteccionActual, setDeteccionActual] = useState<ResultadoDeteccion | null>(null);
   const [probandoDeteccion, setProbandoDeteccion] = useState(false);
@@ -762,7 +728,6 @@ export default function Reglas() {
   const [guardandoPatrones, setGuardandoPatrones] = useState(false);
   const [msgPatrones, setMsgPatrones] = useState<{ok: boolean; texto: string} | null>(null);
 
-  // Auto-probar detección cuando cambia subramo y hay pólizas
   useEffect(() => {
     if (!selSubramo || polizas.length === 0) { setDeteccionActual(null); return; }
     const p = polizas[0];
@@ -806,7 +771,6 @@ export default function Reglas() {
     setGuardandoPatrones(true);
     setMsgPatrones(null);
     try {
-      // Guardar nivel por nivel con los valores editados
       await Promise.all([
         patchPatrones('companias', patronesPreview.compania_id, patronesEditados.compania),
         patchPatrones('ramos',     patronesPreview.ramo_id,     patronesEditados.ramo),
@@ -826,7 +790,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Computed ───────────────────────────────────────────────────────────────
   const camposConRegla = new Set(Object.keys(reglas));
   // sub_ramo_sicas no tiene valor_fijo en catálogo (no es un texto estático):
   // su "valor de sistema" es el subramo actualmente seleccionado arriba, para
@@ -930,7 +893,6 @@ export default function Reglas() {
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-secondary)]">
 
@@ -960,7 +922,6 @@ export default function Reglas() {
         </p>
       </DismissibleAlert>
 
-      {/* ── Header ── */}
       <div className="px-6 py-4 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-4 flex-wrap">
         <div>
           <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Entrenador PDFs</h1>
@@ -971,7 +932,6 @@ export default function Reglas() {
           </p>
         </div>
 
-        {/* ── Tabs ── */}
         <div className="flex items-center gap-1 bg-[var(--color-bg-secondary)] rounded-xl p-1">
           <button
             onClick={() => setTabActivo('clasificador')}
@@ -1015,17 +975,14 @@ export default function Reglas() {
         )}
       </div>
 
-      {/* ── Tab Clasificador ── */}
       {tabActivo === 'clasificador' && (
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <Clasificador companias={companias} />
         </div>
       )}
 
-      {/* ── Tab Entrenamiento ── */}
       {tabActivo === 'reglas' && (<>
 
-      {/* ── Selector compañía / ramo / subramo ── */}
       <div className="px-6 py-3 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex gap-3">
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -1044,7 +1001,6 @@ export default function Reglas() {
         </select>
       </div>
 
-      {/* ── Panel de Detección Automática ── */}
       {selSubramo && (
         <PanelDeteccion
           abierto={panelDeteccionAbierto}
@@ -1078,7 +1034,6 @@ export default function Reglas() {
       ) : (
         <div ref={filaPanelesRef} className="flex flex-1 min-h-0 overflow-hidden">
 
-          {/* ══ Panel izquierdo: Lote de pólizas ══ */}
           <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
             <div className="px-3 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
               <button
@@ -1173,7 +1128,6 @@ export default function Reglas() {
             className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           />
 
-          {/* ══ Centro: Visor PDF ══ */}
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
             {polizaActiva && (
@@ -1229,7 +1183,6 @@ export default function Reglas() {
               </div>
             )}
 
-            {/* Visor principal — flex-1 para ocupar espacio restante */}
             <div
               ref={containerRef}
               className="flex-1 min-h-[240px] relative overflow-hidden"
@@ -1269,10 +1222,8 @@ export default function Reglas() {
               )}
             </div>
 
-            {/* Panel texto extraído — debajo del visor, alto ajustable */}
             {mostrarTexto && polizaActiva && (
               <>
-                {/* Handle de arrastre — alto del panel de texto extraído */}
                 <div
                   onMouseDown={(e) => {
                     altoDragRef.current = { startY: e.clientY, startAlto: altoTextoExtraido };
@@ -1410,7 +1361,6 @@ export default function Reglas() {
             className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           />
 
-          {/* ══ Panel derecho: Campos ══ */}
           <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
             {/* Pestañas: cuando se llegó desde Historial, o cuando la
                 póliza activa ya tiene al menos un dato real sembrado
@@ -1747,10 +1697,6 @@ export default function Reglas() {
   );
 }
 
-// ── Subcomponentes ─────────────────────────────────────────────────────────────
-
-// ── Visor de imagen (modo OCR) ─────────────────────────────────────────────────
-
 function VisorImagen({
   polizaId, page, totalPages, onPageChange, ocrBbox, onBboxChange, campoActivo, textoSeleccionado, onTextoZona,
 }: {
@@ -1790,13 +1736,11 @@ function VisorImagen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polizaId, page, campoActivo]);
 
-  // Imagen ya completa antes de que React enganchara onLoad (caché).
   useEffect(() => {
     const img = imgRef.current;
     if (img?.complete && img.naturalWidth) setLoadedUrl(imgUrl);
   }, [imgUrl]);
 
-  // Al guardar o descartar el valor capturado, el recuadro ya no aplica.
   const habiaTexto = useRef(false);
   useEffect(() => {
     if (habiaTexto.current && !textoSeleccionado) limpiarRecuadro();
@@ -1817,7 +1761,6 @@ function VisorImagen({
     setLoadedUrl(imgUrl);
   }
 
-  // Redibujar rect cuando cambia o imagen carga
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !imgLoaded) return;
@@ -1944,8 +1887,6 @@ function VisorImagen({
   );
 }
 
-// ── Panel de texto extraído con highlight ─────────────────────────────────────
-
 function TextoExtraido({
   texto, highlight, alto = 384, onCapturarTexto,
 }: {
@@ -1964,7 +1905,6 @@ function TextoExtraido({
 
   const lineas = texto.split('\n');
 
-  // ── Ubicar la línea que contiene el highlight (primera coincidencia) ────────
   let lineaHighlightIdx = -1;
   let localIdx = -1;
   if (highlight) {
@@ -2164,8 +2104,6 @@ function SpinIcon() {
   );
 }
 
-// ── Panel de Detección Automática ─────────────────────────────────────────────
-
 const CONFIANZA_CONFIG: Record<NivelConfianza, { label: string; cls: string; icon: React.ReactNode }> = {
   alta:      { label: 'Alta',      cls: 'bg-emerald-50 border-emerald-200 text-emerald-700', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
   media:     { label: 'Media',     cls: 'bg-amber-50 border-amber-200 text-amber-700',       icon: <Shield className="w-3.5 h-3.5" /> },
@@ -2251,7 +2189,6 @@ function PanelDeteccion({
 
   return (
     <div className={`bg-[var(--color-bg-primary)] border-b flex-shrink-0 ${alertar && !abierto ? 'border-amber-200' : 'border-[var(--color-border)]'}`}>
-      {/* ── Cabecera colapsable ── */}
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--color-bg-secondary)] transition-colors text-left"
@@ -2283,7 +2220,6 @@ function PanelDeteccion({
         </span>
       </button>
 
-      {/* ── Contenido expandido ── */}
       {abierto && (
         <div className="px-4 pb-4 space-y-4">
 
@@ -2301,7 +2237,6 @@ function PanelDeteccion({
             </div>
           )}
 
-          {/* ── Resultado de la última prueba ── */}
           {deteccion && (
             <div className="grid grid-cols-3 gap-3">
               {([
@@ -2326,7 +2261,6 @@ function PanelDeteccion({
             </div>
           )}
 
-          {/* ── Botones de acción ── */}
           {!preview && (
             <div className="flex gap-2">
               <button
@@ -2348,7 +2282,6 @@ function PanelDeteccion({
             </div>
           )}
 
-          {/* ── Preview de patrones generados ── */}
           {preview && (
             <div className="border border-purple-200 rounded-lg bg-purple-50 p-3 space-y-3">
               <div className="flex items-center justify-between">

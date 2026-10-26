@@ -92,6 +92,15 @@ def extraer_direccion(direccion_lineas: list[str]) -> str | None:
     return re.sub(r"\s+", " ", " ".join(l for l in limpias if l)).strip() or None
 
 
+def _colonia_tras_numero(antes: str) -> str | None:
+    """Sin coincidencia en el catálogo: la colonia es lo que sigue al último
+    número de la dirección ("MORELIA NUM 10 CHAUTONGO" -> "CHAUTONGO"). Sin
+    número o sin texto después, la dirección no trae colonia."""
+    tokens = antes.split()
+    ultimo = max((i for i, t in enumerate(tokens) if any(c.isdigit() for c in t)), default=-1)
+    return " ".join(tokens[ultimo + 1:]) or None if ultimo >= 0 else None
+
+
 def extraer_colonia_municipio_cp(direccion: str | None) -> dict[str, str]:
     """cp, colonia y municipio de la dirección ya unida, validados con el catálogo."""
     if not direccion:
@@ -102,13 +111,8 @@ def extraer_colonia_municipio_cp(direccion: str | None) -> dict[str, str]:
     cp = m.group(1)
     antes, despues = direccion[: m.start()], direccion[m.end():]
     municipio = despues.split(",")[0].strip() or None
-    colonia = colonia_al_final(cp, antes)
-    resultado = validar_direccion_cp(cp, colonia, municipio)
-    if not colonia:
-        # Sin coincidencia con el catálogo no se adivina: validar_direccion_cp
-        # pondría la 1ª colonia de ese C.P., que puede ser otra distinta a la del PDF.
-        resultado.pop("colonia", None)
-    return resultado
+    colonia = colonia_al_final(cp, antes) or _colonia_tras_numero(antes)
+    return validar_direccion_cp(cp, colonia, municipio)
 
 
 def extraer_tipo_vehiculo(texto: str) -> str | None:

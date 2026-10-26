@@ -102,7 +102,6 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden">
 
-      {/* ── Barra de navegación + zoom ── */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0 select-none">
 
         <button
@@ -140,7 +139,6 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
         >+</button>
       </div>
 
-      {/* ── Página actual — scroll dentro del visor ── */}
       <div className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-[var(--color-bg-secondary)]">
         {noDisponible ? (
           <div className="absolute inset-0 flex items-center justify-center p-6">

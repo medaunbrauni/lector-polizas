@@ -1,7 +1,7 @@
 /**
  * Persistencia temporal del estado del Extractor (LectorPolizas.tsx), para
  * que sobreviva a un F5 o a cambiar de pestaña sin perder los resultados,
- * hasta 25 minutos — con una tanda (lote de PDFs subido de una vez) por
+ * hasta 3 horas (o hasta "Limpiar interfaz" / cerrar sesión) — con una tanda (lote de PDFs subido de una vez) por
  * cada extracción, cada una con su propio vencimiento independiente.
  *
  * Por qué localStorage y no sessionStorage: sessionStorage se borra al
@@ -36,7 +36,7 @@
 import type { ResultadoPDF } from './types';
 
 const STORAGE_KEY = 'lector_polizas:extractor_tandas';
-export const TTL_MS = 25 * 60 * 1000; // 25 minutos, por tanda
+export const TTL_MS = 3 * 60 * 60 * 1000; // 3 horas, por tanda
 
 export interface Tanda {
   id: string;
@@ -67,7 +67,6 @@ export function guardarTandas(tandas: Tanda[]): void {
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tandas));
   } catch {
-    // localStorage lleno o deshabilitado: no persistir, pero no romper la app
   }
 }
 
@@ -91,7 +90,7 @@ export function leerTandasVigentes(): Tanda[] {
   }
 }
 
-/** Usado por "Limpiar interfaz": borra todas las tandas de una sola vez. */
+/** Usado por "Limpiar interfaz" y al cerrar sesión: borra todas las tandas de una sola vez. */
 export function limpiarTandas(): void {
   localStorage.removeItem(STORAGE_KEY);
 }

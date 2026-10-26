@@ -157,8 +157,6 @@ def _guardar_pdf_como_entrenamiento(
         return None
 
 
-# ── Generación automática de patrones de detección ───────────────────────────
-
 def _necesita_patrones(compania: Compania | None, ramo: Ramo | None, subramo: Subramo | None) -> bool:
     """True si algún nivel detectado no tiene patrones regex (sólo keywords o nada)."""
     if compania and not (compania.patrones_deteccion or []):
@@ -256,8 +254,6 @@ Responde ÚNICAMENTE JSON válido:
     }
 
 
-# ── Derivación de campos ──────────────────────────────────────────────────────
-
 def _derivar_campos(datos: dict) -> dict:
     """
     Calcula campos cuyo valor se infiere de otros campos ya extraídos.
@@ -288,7 +284,6 @@ def _derivar_campos(datos: dict) -> dict:
     ejecutivo_cuenta  ← vendedor  (referencia a tabla de catálogo)
     despacho          ← vendedor  (referencia a tabla de catálogo)
     """
-    # ── entidad ───────────────────────────────────────────────────────────────
     rfc_info = datos.get("rfc")
     rfc_val  = (rfc_info.get("valor") or "").strip() if rfc_info else ""
 
@@ -313,8 +308,6 @@ def _derivar_campos(datos: dict) -> dict:
 
     return datos
 
-
-# ── Pipeline principal ────────────────────────────────────────────────────────
 
 # Campos mínimos para dar una extracción por buena. Medido contra las 926
 # extracciones históricas: los pasa ~96% (GNP 334/351, Quálitas 501/519,
@@ -367,7 +360,6 @@ def _rechazar(
         "archivo": nombre_archivo,
         "compania": compania.nombre if compania else None,
         "ramo": ramo.nombre if ramo else None,
-        # Un subramo poco confiable no se informa: se elige a mano.
         "subramo": subramo.nombre if automatico else None,
         "campos": {},
         "stats": {"por_regla": 0, "por_ia": 0, "no_encontrados": 0},
@@ -411,7 +403,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     ramo     = db.query(Ramo).filter(Ramo.id == det["ramo_id"]).first()             if det["ramo_id"]     else None
     subramo  = db.query(Subramo).filter(Subramo.id == det["subramo_id"]).first()    if det["subramo_id"]  else None
 
-    # 4. Nivel 1 — extractor especializado por compañía (si existe)
     datos_reglas: dict[str, dict] = {}
     campos_faltantes: list[CampoDefinido] = []
     campos_extractor_dedicado: set[str] = set()
@@ -526,7 +517,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         return _rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo, subramo,
                          contenido, nombre_archivo, texto, None, db)
 
-    # 3. Auto-generar patrones si algún nivel detectado no los tiene
     patrones_generados: dict = {}
     if compania and ramo and _necesita_patrones(compania, ramo, subramo):
         patrones_generados = _generar_y_guardar_patrones(compania, ramo, subramo, texto, db)
@@ -561,7 +551,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
             "valor": subramo.nombre, "metodo": "derivado", "regla_id": None,
         }
 
-    # 6b. Derivar campos calculables (entidad ← rfc, etc.)
     _derivar_campos(datos_finales)
 
     # Contadores correctos (una sola pasada, sin doble cómputo) — ver
@@ -638,7 +627,6 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
             "por_ia":         por_ia,
             "no_encontrados": no_encontrados,
         },
-        # ── Metadata de detección ──
         "deteccion": {
             "confianza":          det["confianza"],
             "score_compania":     det["score_compania"],

@@ -35,8 +35,6 @@ router = APIRouter(prefix="/clasificador", tags=["Clasificador"])
 MAX_SIZE = MAX_FILE_MB * 1024 * 1024
 
 
-# ── Schema helper ─────────────────────────────────────────────────────────────
-
 def _item_schema(item: ClasificacionCola, db: Session) -> dict:
     def _nombre(modelo, id_val):
         if not id_val:
@@ -78,8 +76,6 @@ def _item_schema(item: ClasificacionCola, db: Session) -> dict:
     }
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
 @router.post("/upload")
 async def upload_pdfs(
     archivos: list[UploadFile] = File(...),
@@ -105,7 +101,6 @@ async def upload_pdfs(
             })
             continue
 
-        # ── Dedup temprana por SHA-256 ────────────────────────────────────────
         sha = sha256_bytes(contenido)
         existente = db.query(ClasificacionCola).filter(ClasificacionCola.sha256 == sha).first()
         if existente:
@@ -116,7 +111,6 @@ async def upload_pdfs(
             })
             continue
 
-        # ── Guardar en carpeta de entrada ────────────────────────────────────
         dest = Path(UPLOAD_FOLDER) / nombre_original
         if dest.exists():
             stem = Path(nombre_original).stem
@@ -125,7 +119,6 @@ async def upload_pdfs(
 
         dest.write_bytes(contenido)
 
-        # ── Dedup carpeta: eliminar si ya existe un archivo con mismo contenido ──
         eliminados = dedup_carpeta(UPLOAD_FOLDER)
         if dest.name in eliminados:
             # El archivo que acabamos de escribir fue eliminado porque ya existía
@@ -138,7 +131,6 @@ async def upload_pdfs(
             })
             continue
 
-        # ── Extraer texto ────────────────────────────────────────────────────
         try:
             texto, paginas = extraer_texto_pdf(str(dest))
         except Exception as exc:
@@ -146,7 +138,6 @@ async def upload_pdfs(
             resultados.append({"archivo": nombre_original, "error": f"No se pudo leer el PDF: {exc}"})
             continue
 
-        # ── Crear item en cola ───────────────────────────────────────────────
         item = ClasificacionCola(
             nombre_archivo=dest.name,
             ruta_archivo=str(dest),
@@ -158,7 +149,6 @@ async def upload_pdfs(
         db.add(item)
         db.flush()
 
-        # ── Clasificar ───────────────────────────────────────────────────────
         procesar_pdf(item, db)
         db.commit()
         db.refresh(item)
@@ -329,8 +319,6 @@ def eliminar_ticket(id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ── Confirmar ─────────────────────────────────────────────────────────────────
-
 class ConfirmarIn(BaseModel):
     compania_id: int | None = None
     ramo_id:     int | None = None
@@ -350,7 +338,6 @@ def confirmar_item(id: int, data: ConfirmarIn, db: Session = Depends(get_db)):
     if item.estado in ("enviado",):
         raise HTTPException(400, "El item ya fue enviado a entrenamiento")
 
-    # Prioridad: override del request > corrección ya guardada > propuesta.
     item.compania_id_final = data.compania_id or item.compania_id_final or item.compania_id_prop
     item.ramo_id_final     = data.ramo_id     or item.ramo_id_final     or item.ramo_id_prop
     item.subramo_id_final  = data.subramo_id  or item.subramo_id_final  or item.subramo_id_prop
@@ -459,8 +446,6 @@ def reenviar_item(id: int, db: Session = Depends(get_db)):
     return _item_schema(item, db)
 
 
-# ── Patrones ──────────────────────────────────────────────────────────────────
-
 class PatronesAprobarIn(BaseModel):
     compania: list[str] = []
     ramo:     list[str] = []
@@ -496,8 +481,6 @@ def aprobar_patrones(id: int, data: PatronesAprobarIn, db: Session = Depends(get
     return {"ok": True, "guardados": data.model_dump()}
 
 
-# ── Lote ──────────────────────────────────────────────────────────────────────
-
 @router.post("/cola/confirmar-lote")
 def confirmar_lote(db: Session = Depends(get_db)):
     """Confirma y envía a entrenamiento todos los items 'clasificado' con confianza 'alta'."""
@@ -525,8 +508,6 @@ def confirmar_lote(db: Session = Depends(get_db)):
     db.commit()
     return {"confirmados": confirmados, "errores": errores}
 
-
-# ── Descartar ─────────────────────────────────────────────────────────────────
 
 @router.delete("/cola/{id}")
 def descartar_item(id: int, db: Session = Depends(get_db)):

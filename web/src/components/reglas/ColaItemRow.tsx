@@ -44,8 +44,6 @@ function linkVer(item: ItemCola): string | null {
   return `/entrenador?${params.toString()}`;
 }
 
-// ── Badges ────────────────────────────────────────────────────────────────────
-
 const ESTADO_CONFIG: Record<string, { label: string; cls: string; Icon: React.FC<{ className?: string }> }> = {
   pendiente:       { label: 'Pendiente',   cls: 'bg-gray-100 text-gray-500',   Icon: RefreshCw },
   clasificado:     { label: 'Clasificado', cls: 'bg-blue-100 text-blue-700',   Icon: Shield },
@@ -80,8 +78,6 @@ export function ConfianzaBadge({ confianza }: { confianza: NivelConfianza | null
     </span>
   );
 }
-
-// ── Leyenda de IA ─────────────────────────────────────────────────────────────
 
 /**
  * Leyenda de ancho completo: 2 líneas por defecto; si no cabe, clic/Enter/Espacio la expande.
@@ -141,8 +137,6 @@ function Leyenda({ texto, motivo = false }: { texto: string; motivo?: boolean })
   );
 }
 
-// ── Fila ──────────────────────────────────────────────────────────────────────
-
 interface Props {
   item: ItemCola;
   companias: Compania[];
@@ -194,7 +188,6 @@ export default function ColaItemRow({
   return (
     <div className="border border-[var(--color-border)] rounded-2xl overflow-hidden bg-[var(--color-bg-primary)] shadow-sm">
 
-      {/* ── Fila principal ─────────────────────────────────────── */}
       <div className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
         <div className="flex-[1_1_18rem] min-w-0">
           <p className="text-sm font-medium text-[var(--color-text-primary)] truncate" title={item.nombre_archivo}>{item.nombre_archivo}</p>
@@ -248,7 +241,6 @@ export default function ColaItemRow({
             </button>
           )}
 
-          {/* Reprocesar — items que se quedaron pendientes o fallaron */}
           {(item.estado === 'pendiente' || item.estado === 'error') && (
             <button
               onClick={onReprocesar}
@@ -333,7 +325,6 @@ export default function ColaItemRow({
         </div>
       )}
 
-      {/* ── Preview de PDF ──────────────────────────────────────── */}
       {previewOpen && (
         <div className="mx-4 mb-3 relative h-[480px] border border-[var(--color-border)] rounded-xl overflow-hidden">
           <PdfVisorErrorBoundary key={previewId}>
@@ -342,7 +333,6 @@ export default function ColaItemRow({
         </div>
       )}
 
-      {/* ── Alerta compañía nueva ──────────────────────────────── */}
       {item.es_compania_nueva && (
         <div className="mx-4 mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
           <strong>Nueva compañía detectada: "{item.compania_nombre_ia}"</strong>
@@ -353,7 +343,6 @@ export default function ColaItemRow({
         </div>
       )}
 
-      {/* ── Override inline ────────────────────────────────────── */}
       {overrideOpen && ov && (
         <div className="mx-4 mb-3 px-4 py-3 bg-[var(--color-bg-secondary)] border border-[var(--color-border)] rounded-xl">
           <p className="text-xs font-semibold text-[var(--color-text-secondary)] uppercase mb-2">Corregir clasificación</p>
@@ -425,7 +414,6 @@ export default function ColaItemRow({
         </div>
       )}
 
-      {/* ── Panel de patrones ──────────────────────────────────── */}
       {patronesOpen && item.patrones_generados && (
         <div className="mx-4 mb-3 px-4 py-3 bg-purple-50 border border-purple-200 rounded-xl space-y-3">
           <div className="flex items-center justify-between">

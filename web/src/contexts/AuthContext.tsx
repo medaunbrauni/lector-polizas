@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { verifySession, loginRequest, logoutRequest } from '../lib/api';
+import { limpiarTandas } from '../lib/extractorPersistence';
 
 interface AuthState {
   isAuthenticated: boolean;
@@ -33,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await logoutRequest();
+    limpiarTandas(); // los resultados del Extractor no sobreviven a cerrar sesión
     setIsAuthenticated(false);
   };
 

@@ -15,8 +15,6 @@ from ..services.rule_engine import cobertura_subramo, _es_vehiculo, _ramo_de_sub
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
 
 
-# ── Schemas ──────────────────────────────────────────────────────────────────
-
 class CompaniaIn(BaseModel):
     nombre: str
     keywords: list[str] = []
@@ -184,8 +182,6 @@ def _conteos_lote_y_entrenadas(db: Session) -> ConteosLoteEntrenadas:
     )
 
 
-# ── Compañías ────────────────────────────────────────────────────────────────
-
 @router.get("/companias")
 def listar_companias(db: Session = Depends(get_db)):
     rows = (
@@ -244,8 +240,6 @@ def eliminar_compania(id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ── Ramos ────────────────────────────────────────────────────────────────────
-
 @router.get("/ramos")
 def listar_ramos(compania_id: int | None = None, db: Session = Depends(get_db)):
     q = db.query(Ramo).filter(Ramo.activo == True)
@@ -291,8 +285,6 @@ def patrones_ramo(id: int, data: PatronesIn, db: Session = Depends(get_db)):
     db.commit()
     return _ramo_dict(r)
 
-
-# ── Subramos ─────────────────────────────────────────────────────────────────
 
 @router.get("/subramos")
 def listar_subramos(ramo_id: int | None = None, db: Session = Depends(get_db)):
@@ -340,8 +332,6 @@ def patrones_subramo(id: int, data: PatronesIn, db: Session = Depends(get_db)):
     db.commit()
     return _subramo_dict(s, db)
 
-
-# ── Código de detección ───────────────────────────────────────────────────────
 
 @router.get("/codigo-deteccion")
 def codigo_deteccion(db: Session = Depends(get_db)):
@@ -418,8 +408,6 @@ def _campo_def_dict(c: CampoDefinido) -> dict:
     }
 
 
-# ── Campos definidos ──────────────────────────────────────────────────────────
-
 @router.get("/subramos/{subramo_id}/campos")
 def listar_campos(subramo_id: int, db: Session = Depends(get_db)):
     ramo = _ramo_de_subramo(subramo_id, db)
@@ -456,8 +444,6 @@ def crear_campo(subramo_id: int, data: CampoIn, db: Session = Depends(get_db)):
     db.refresh(c)
     return _campo_def_dict(c)
 
-
-# ── Detección automática ──────────────────────────────────────────────────────
 
 class ProbarDeteccionIn(BaseModel):
     texto_pdf: str
@@ -562,7 +548,6 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
     resultado["subramo_id"]  = subramo.id
     resultado["guardado"]    = False
 
-    # Guardar en BD (merge — no duplicar)
     if data.guardar:
         def _merge(existing: list, nuevos: list) -> list:
             existentes_set = set(existing or [])

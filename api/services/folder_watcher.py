@@ -41,7 +41,6 @@ class _PDFHandler(FileSystemEventHandler):
 
     def _clasificar(self, ruta: str) -> None:
         try:
-            # Esperar a que el archivo termine de escribirse
             time.sleep(1.5)
 
             from ..database import SessionLocal
@@ -55,7 +54,6 @@ class _PDFHandler(FileSystemEventHandler):
             eliminados = dedup_carpeta(carpeta)
             if eliminados:
                 logger.info("[watcher] Duplicados eliminados: %s", eliminados)
-            # Si el propio archivo fue eliminado como duplicado, salir
             if Path(ruta).name in eliminados:
                 logger.info("[watcher] Archivo %s era duplicado y fue eliminado.", ruta)
                 return
@@ -91,8 +89,6 @@ class _PDFHandler(FileSystemEventHandler):
         finally:
             self._en_proceso.discard(ruta)
 
-
-# ── API pública ───────────────────────────────────────────────────────────────
 
 def iniciar_watcher(carpeta: str) -> None:
     """Inicia el Observer en la carpeta indicada (idempotente)."""

@@ -767,10 +767,8 @@ export default function ReglasCodigo() {
         </button>
       </div>
 
-      {/* ── EXTRACCIÓN ── */}
       {tab === 'extraccion' && (
         <>
-          {/* Mini-tabs: extractor dedicado (nivel 1) vs. entrenador/BD (nivel 2) */}
           <div className="flex gap-1 -mt-1">
             <button
               onClick={() => setSubTabExtraccion('nivel1')}
@@ -933,7 +931,6 @@ export default function ReglasCodigo() {
         </>
       )}
 
-      {/* ── DETECCIÓN ── */}
       {tab === 'deteccion' && (
         <>
           {companiasSinPatrones.length > 0 && vista === 'arbol' && (

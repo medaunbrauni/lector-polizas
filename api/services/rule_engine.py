@@ -12,8 +12,6 @@ from ..extractores_especializados.figuras_juridicas import clasificar_persona_po
 from collections import Counter
 from time import perf_counter
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
 _VEHICULO_KW = ("vehículo", "vehiculo", "auto", "moto", "camión", "camion", "transporte", "carga")
 
 
@@ -40,8 +38,6 @@ def _globales_para_subramo(subramo_id: int, db: Session) -> list[CampoGlobal]:
         )
     return q.order_by(CampoGlobal.orden).all()
 
-
-# ── Motor principal ────────────────────────────────────────────────────────────
 
 def aplicar_reglas(
     texto: str,
@@ -155,8 +151,6 @@ def _aplicar_patron(patron: str, texto: str) -> str | None:
     return None
 
 
-# ── Campos sin regla ───────────────────────────────────────────────────────────
-
 def campos_sin_regla(subramo_id: int, campos_cubiertos: set[str], db: Session) -> list:
     """
     Retorna campos (globales + específicos) sin regla activa ni valor_fijo
@@ -180,8 +174,6 @@ def campos_sin_regla(subramo_id: int, campos_cubiertos: set[str], db: Session) -
     faltantes.extend(especificos)
     return faltantes
 
-
-# ── Cobertura ──────────────────────────────────────────────────────────────────
 
 def cobertura_subramo(subramo_id: int, db: Session) -> dict:
     """Calcula cobertura total: (globales + específicos) vs (reglas + valor_fijo)."""

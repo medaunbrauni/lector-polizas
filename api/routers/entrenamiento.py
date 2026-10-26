@@ -32,8 +32,6 @@ from .catalogos import listar_campos
 router = APIRouter(prefix="/entrenamiento", tags=["Entrenamiento por lotes"])
 
 
-# ── Schemas ───────────────────────────────────────────────────────────────────
-
 class SeleccionIn(BaseModel):
     poliza_id: int
     nombre_campo: str
@@ -62,8 +60,6 @@ class GuardarReglaIn(BaseModel):
     ocr_bbox: dict | None = None
     confianza: float = 0.9
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _extraer_texto_pdf(contenido: bytes) -> tuple[str, int]:
     """Retorna (texto, num_paginas)."""
@@ -162,8 +158,6 @@ def _sel_dict(s: SeleccionCampo) -> dict:
         "metodo": s.metodo,
     }
 
-
-# ── PDFs del lote ─────────────────────────────────────────────────────────────
 
 @router.post("/subramos/{subramo_id}/polizas")
 async def subir_polizas(
@@ -357,8 +351,6 @@ def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
     return {"ok": True, "borradas": borradas}
 
 
-# ── Selecciones de campo ──────────────────────────────────────────────────────
-
 @router.post("/selecciones")
 def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
     """
@@ -370,7 +362,6 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
     if not p:
         raise HTTPException(404, "Póliza no encontrada")
 
-    # Auto-calcular contexto desde el texto extraído del PDF
     contexto = data.contexto
     if p.texto_pdf and data.texto_seleccionado:
         CTX = 350
@@ -381,7 +372,6 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
             end = min(len(texto), idx + len(data.texto_seleccionado) + CTX)
             contexto = texto[start:end]
         else:
-            # No se encontró literal: dar el texto seleccionado como mínimo contexto
             contexto = data.texto_seleccionado
 
     existente = (
@@ -412,7 +402,6 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(sel)
 
-    # Auto-detectar en las otras pólizas del mismo lote
     otras_polizas = (
         db.query(PolizaEntrenamiento)
         .filter(
@@ -465,8 +454,6 @@ def eliminar_seleccion(sel_id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ── Generación y prueba de regex ──────────────────────────────────────────────
-
 @router.post("/subramos/{subramo_id}/generar-regex")
 def generar_regex(subramo_id: int, data: GenerarRegexIn, db: Session = Depends(get_db)):
     """
@@ -495,7 +482,6 @@ def generar_regex(subramo_id: int, data: GenerarRegexIn, db: Session = Depends(g
     if not selecciones_db:
         raise HTTPException(400, f"No hay selecciones para el campo '{data.nombre_campo}'")
 
-    # Construir la lista de ejemplos para Claude
     poliza_map = {p.id: p for p in polizas}
     selecciones = [
         {
@@ -541,8 +527,6 @@ def probar_regex(subramo_id: int, data: ProbarRegexIn, db: Session = Depends(get
     }
 
 
-# ── Guardar regla desde lote ──────────────────────────────────────────────────
-
 @router.post("/subramos/{subramo_id}/guardar-regla")
 def guardar_regla(subramo_id: int, data: GuardarReglaIn, db: Session = Depends(get_db)):
     """
@@ -575,8 +559,6 @@ def guardar_regla(subramo_id: int, data: GuardarReglaIn, db: Session = Depends(g
     return {"ok": True, "regla_id": regla.id}
 
 
-# ── Texto extraído de una póliza ─────────────────────────────────────────────
-
 @router.get("/polizas/{poliza_id}/texto")
 def texto_poliza(poliza_id: int, db: Session = Depends(get_db)):
     """Retorna el texto extraído de una póliza de entrenamiento."""
@@ -585,8 +567,6 @@ def texto_poliza(poliza_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404)
     return {"texto": p.texto_pdf or "", "paginas": p.paginas}
 
-
-# ── Renderizado de página como imagen ─────────────────────────────────────────
 
 @router.get("/polizas/{poliza_id}/pagina/{page_num}/imagen")
 def imagen_pagina(poliza_id: int, page_num: int, escala: float = 2.0, db: Session = Depends(get_db)):
@@ -673,8 +653,6 @@ def texto_de_zona(poliza_id: int, data: TextoZonaIn, db: Session = Depends(get_d
         raise HTTPException(500, f"No se pudo leer la zona: {e}")
 
 
-# ── Pólizas guardadas por aseguradora (todos sus subramos) ────────────────────
-
 @router.get("/companias/{nombre}/polizas")
 def polizas_de_compania(nombre: str, db: Session = Depends(get_db)):
     """
@@ -699,8 +677,6 @@ def polizas_de_compania(nombre: str, db: Session = Depends(get_db)):
     polizas = _polizas_visibles_multi(subramo_ids, db)
     return [_poliza_dict(p, db) for p in polizas]
 
-
-# ── Estado completo del lote ──────────────────────────────────────────────────
 
 @router.get("/subramos/{subramo_id}/estado")
 def estado_lote(subramo_id: int, db: Session = Depends(get_db)):

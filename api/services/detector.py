@@ -80,8 +80,6 @@ def _score(texto: str, keywords: list, patrones: list) -> int:
     return score
 
 
-# ── API pública ───────────────────────────────────────────────────────────────
-
 def detectar_jerarquia(
     texto: str, db: Session
 ) -> tuple[Compania | None, Ramo | None, Subramo | None]:
@@ -109,7 +107,6 @@ def detectar_con_score(texto: str, db: Session) -> dict:
     """
     texto_lower = texto.lower()
 
-    # ── Compañía ──────────────────────────────────────────────────────────────
     companias = (
         db.query(Compania)
         .filter(Compania.activo == True)
@@ -143,7 +140,6 @@ def detectar_con_score(texto: str, db: Session) -> dict:
     compania_id = mejor_comp["id"] if mejor_comp else None
     compania_nombre = mejor_comp["nombre"] if mejor_comp else None
 
-    # ── Ramo ──────────────────────────────────────────────────────────────────
     ramo_id, ramo_nombre, score_ramo = None, None, 0
     if compania_id:
         ramos = (
@@ -173,7 +169,6 @@ def detectar_con_score(texto: str, db: Session) -> dict:
                 ramo_id, ramo_nombre = corregido.id, corregido.nombre
                 score_ramo = next(r["score"] for r in ramo_scores if r["id"] == corregido.id)
 
-    # ── Subramo ───────────────────────────────────────────────────────────────
     subramo_id, subramo_nombre, score_sub = None, None, 0
     if ramo_id:
         subramos = (
@@ -200,7 +195,6 @@ def detectar_con_score(texto: str, db: Session) -> dict:
             subramo_nombre = mejor_sub["nombre"]
             score_sub = mejor_sub["score"]
 
-    # ── Confianza ─────────────────────────────────────────────────────────────
     total = score_comp + score_ramo + score_sub
     if subramo_id and total >= UMBRAL_ALTA:
         confianza = "alta"

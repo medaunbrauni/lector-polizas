@@ -29,7 +29,6 @@ export default function App() {
                   <Route path="/historial"    element={<Historial />} />
                   <Route path="/catalogos"    element={<Catalogos />} />
                   <Route path="/entrenador"   element={<Reglas />} />
-                  {/* URLs anteriores: se conservan (con su query) por enlaces guardados */}
                   <Route path="/reglas"       element={<RedirigirEntrenador />} />
                   <Route path="/trainer"      element={<RedirigirEntrenador />} />
                   <Route path="/reglas/codigo" element={<ReglasCodigo />} />

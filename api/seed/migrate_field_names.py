@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../.
 
 from sqlalchemy import text
 
-# Cargar engine directamente (sin depender del app lifecycle)
 from api.database import engine
 
 RENOMBRES = [
@@ -73,7 +72,6 @@ def run_migration():
                 else:
                     print(f"    · {tabla}.{col}: sin cambios")
 
-        # También actualizar datos_completos en extracciones (JSON column)
         print("\n  Actualizando clave en extracciones.datos_completos (JSON)…")
         for viejo, nuevo in RENOMBRES:
             # SQLite: json_each + replace en texto (compatible sin extensiones)

@@ -7,17 +7,14 @@ from ..models.db_models import CampoGlobal
 
 
 CAMPOS = [
-    # ── Asegurado ───────────────────────────────────────────────────────
     dict(nombre="entidad",           label="Entidad",              tipo="catalogo", orden=1,  requerido=True,
          descripcion="Auto-derivado del RFC: 13 chars → Persona Física · 12 chars → Persona Moral"),
     # "Cliente" (nombre_cliente, por subramo) ya cubre nombre completo o
     # razón social para ambos tipos de persona — no se agregan
     # apellido_paterno/apellido_materno/nombre/razon_social por separado.
     dict(nombre="rfc",               label="R.F.C.",               tipo="texto",    orden=6),
-    # ── Agente / Despacho ───────────────────────────────────────────────
     dict(nombre="grupo",             label="Grupo",                tipo="texto",    orden=7,
          valor_fijo="General"),
-    # ── Póliza ──────────────────────────────────────────────────────────
     dict(nombre="tipo_documento",    label="Tipo Documento",       tipo="catalogo", orden=10,
          valor_fijo="Poliza", descripcion="Poliza | Fianza"),
     dict(nombre="documento",         label="Documento",            tipo="texto",    orden=11, requerido=True,
@@ -30,7 +27,6 @@ CAMPOS = [
          descripcion="Según catálogo Sicas"),
     dict(nombre="sub_ramo_sicas",    label="Sub Ramo",             tipo="catalogo", orden=15,
          descripcion="Según catálogo Sicas"),
-    # ── Vigencia ────────────────────────────────────────────────────────
     dict(nombre="renovacion",        label="Renovación",           tipo="numero",   orden=17,
          valor_fijo="0", descripcion="Número de renovaciones; 0 para pólizas nuevas"),
     dict(nombre="desde",             label="Desde",                tipo="fecha",    orden=19, requerido=True,
@@ -39,7 +35,6 @@ CAMPOS = [
          descripcion="Fin de vigencia  dd/mm/aaaa"),
     dict(nombre="estatus",           label="Estatus",              tipo="numero",   orden=21,
          valor_fijo="0", descripcion="0 = Vigente"),
-    # ── Primas ──────────────────────────────────────────────────────────
     dict(nombre="prima_neta",        label="Prima Neta",           tipo="moneda",   orden=22, requerido=True),
     dict(nombre="descuento",         label="Descuento",            tipo="moneda",   orden=23),
     dict(nombre="recargos",          label="Recargos",             tipo="moneda",   orden=24),
@@ -48,7 +43,6 @@ CAMPOS = [
          descripcion="Campo calculado: Prima Neta - Descuento + Recargos + Derechos (no se extrae del PDF)"),
     dict(nombre="iva",               label="IVA",                  tipo="moneda",   orden=27),
     dict(nombre="prima_total",       label="Prima Total",          tipo="moneda",   orden=28, requerido=True),
-    # ── Vehículos (solo ramos de tipo vehicular) ─────────────────────────
     dict(nombre="serie",             label="Serie",                tipo="texto",    orden=30, grupo="vehiculos"),
     dict(nombre="descripcion_veh",   label="Descripción",          tipo="texto",    orden=31, grupo="vehiculos"),
     dict(nombre="modelo",            label="Modelo",               tipo="numero",   orden=32, grupo="vehiculos",

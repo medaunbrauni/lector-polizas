@@ -15,8 +15,6 @@ import { uploadClasificador, getColaClasificador, confirmarLoteCola, clasificado
 import ColaItemRow from './ColaItemRow';
 import { useColaAcciones } from './useColaAcciones';
 
-// ── Componente principal ──────────────────────────────────────────────────────
-
 interface Props {
   companias: Compania[];
 }
@@ -44,7 +42,6 @@ export default function Clasificador({ companias }: Props) {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── Carga inicial ──────────────────────────────────────────────────────────
   const cargarCola = useCallback(async () => {
     setCargando(true);
     try {
@@ -66,7 +63,6 @@ export default function Clasificador({ companias }: Props) {
     });
   }, []);
 
-  // ── Upload ─────────────────────────────────────────────────────────────────
   const procesarArchivos = async (files: FileList | File[]) => {
     const pdfs = Array.from(files).filter((f) => f.name.toLowerCase().endsWith('.pdf'));
     if (!pdfs.length) { setErrorUpload('Selecciona archivos PDF'); return; }
@@ -89,7 +85,6 @@ export default function Clasificador({ companias }: Props) {
     procesarArchivos(e.dataTransfer.files);
   }, []);
 
-  // ── Confirmar lote ─────────────────────────────────────────────────────────
   const confirmarLote = async () => {
     setConfirmandoLote(true);
     try {
@@ -101,7 +96,6 @@ export default function Clasificador({ companias }: Props) {
     }
   };
 
-  // ── Estadísticas ───────────────────────────────────────────────────────────
   const stats = {
     total:    cola.length,
     alta:     cola.filter((i) => i.confianza === 'alta' && i.estado === 'clasificado').length,
@@ -112,11 +106,9 @@ export default function Clasificador({ companias }: Props) {
 
   const loteDisponible = cola.filter((i) => i.estado === 'clasificado' && i.confianza === 'alta').length;
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
 
-      {/* ── Info carpeta + watchdog ─────────────────────────────────────────── */}
       <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-sm">
         <Folder className="w-4 h-4 text-blue-500 flex-shrink-0" />
         <div className="flex-1 min-w-0">
@@ -129,7 +121,6 @@ export default function Clasificador({ companias }: Props) {
         </span>
       </div>
 
-      {/* ── Zona de upload ──────────────────────────────────────────────────── */}
       <div
         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
         onDragLeave={() => setDrag(false)}
@@ -165,7 +156,6 @@ export default function Clasificador({ companias }: Props) {
         <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{errorUpload}</p>
       )}
 
-      {/* ── Resultados del último upload ─────────────────────────────────────── */}
       {resultadosUpload.length > 0 && (
         <div className="space-y-1">
           {resultadosUpload.map((r, i) => (
@@ -179,7 +169,6 @@ export default function Clasificador({ companias }: Props) {
         </div>
       )}
 
-      {/* ── Stats + acciones de lote ─────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-2 flex-wrap">
           {[
@@ -226,7 +215,6 @@ export default function Clasificador({ companias }: Props) {
         </div>
       </div>
 
-      {/* ── Cola de clasificación ────────────────────────────────────────────── */}
       {cola.length === 0 ? (
         <div className="text-center py-12 text-gray-400">
           <Upload className="w-10 h-10 mx-auto mb-3 opacity-30" />

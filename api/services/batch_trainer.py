@@ -14,8 +14,6 @@ from ..models.db_models import PolizaEntrenamiento, ReglaExtraccion, Subramo, Ra
 from .rule_engine import _aplicar_patron
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
-
 def _jerarquia(subramo_id: int, db: Session) -> tuple[str, str, str]:
     row = (
         db.query(Subramo, Ramo, Compania)
@@ -94,8 +92,6 @@ def auto_detectar_en_lote(
             })
     return resultados
 
-
-# ── Generación de regex por lote ─────────────────────────────────────────────
 
 def generar_regex_lote(
     subramo_id: int,

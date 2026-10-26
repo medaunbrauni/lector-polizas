@@ -23,6 +23,7 @@ import unicodedata
 
 import fitz  # PyMuPDF
 
+from .catalogo_cp import validar_direccion_cp
 from .figuras_juridicas import es_persona_moral_por_nombre, normalizar_siglas_razon_social
 
 
@@ -118,10 +119,6 @@ def es_poliza_auto_gnp(texto):
         return True
     return bool(re.search(r"\bautos\b|\bflotillas?\b", t[:600]))
 
-
-# ════════════════════════════════════════════════════════════════════════
-# UTILIDADES DE POSICIONAMIENTO (BBOX)
-# ════════════════════════════════════════════════════════════════════════
 
 def _spans_pagina(pagina_dict):
     """Aplana un page.get_text('dict') a una lista de spans con texto y bbox.
@@ -249,10 +246,6 @@ def _campo_por_etiqueta(paginas_dict, etiqueta, etiquetas_excluir=None, multilin
     return ""
 
 
-# ════════════════════════════════════════════════════════════════════════
-# UTILIDADES DE TEXTO PLANO (fallback / campos que ya eran confiables)
-# ════════════════════════════════════════════════════════════════════════
-
 def buscar_valor_monetario(paginas_dict, etiqueta):
     for pagina in paginas_dict:
         for bloque in pagina.get("blocks", []):
@@ -287,10 +280,6 @@ def extraer_por_lineas_regex(texto, patrones):
     return ""
 
 
-# ════════════════════════════════════════════════════════════════════════
-# CAMPOS DEL ENCABEZADO / TIPO DE PÓLIZA
-# ════════════════════════════════════════════════════════════════════════
-
 def extraer_numero_poliza(texto, paginas_dict):
     patrones = [
         r'No\.?\s*P[oó]liza\s*[:\-]?\s*([A-Z0-9\-]+)',
@@ -299,7 +288,6 @@ def extraer_numero_poliza(texto, paginas_dict):
     valor = extraer_por_lineas_regex(texto, patrones)
     if valor:
         return valor
-    # Fallback por posición: valor a la derecha de "No. Póliza"
     return _campo_por_etiqueta(paginas_dict, "No. Póliza", pagina_idx=0)
 
 
@@ -322,10 +310,6 @@ def extraer_renovacion(texto, paginas_dict):
                 return valor
     return ""
 
-
-# ════════════════════════════════════════════════════════════════════════
-# CONTRATANTE
-# ════════════════════════════════════════════════════════════════════════
 
 def _spans_seccion_contratante(paginas_dict):
     """Acota la búsqueda a la franja vertical de la sección CONTRATANTE,
@@ -385,7 +369,6 @@ def extraer_rfc(texto, paginas_dict):
     if valor and valor.upper() != RFC_GNP and re.fullmatch(r'[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{0,3}', valor.upper()):
         return valor.upper()
 
-    # Fallback por regex sobre el texto completo
     patrones = [
         r'R\.?F\.?C\.?\s*[:\-]?\s*([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{0,3})',
         r'\b([A-ZÑ&]{3,4}\d{6}[A-Z0-9]{0,3})\b'
@@ -399,10 +382,6 @@ def extraer_rfc(texto, paginas_dict):
                 return rfc
     return ""
 
-
-# ════════════════════════════════════════════════════════════════════════
-# DETALLE DE PRIMA (montos)
-# ════════════════════════════════════════════════════════════════════════
 
 def extraer_prima_neta(texto, paginas_dict):
     valor = extraer_por_lineas_regex(texto, [r'Prima\s+Neta\s*[:\-]?\s*\$?\s*([0-9,]+\.\d{2})'])
@@ -588,10 +567,6 @@ def extraer_vigencia(texto, paginas_dict):
     return {"Inicio Vigencia": "No encontrada", "Fin Vigencia": "No encontrada"}
 
 
-# ════════════════════════════════════════════════════════════════════════
-# VEHÍCULO ASEGURADO
-# ════════════════════════════════════════════════════════════════════════
-
 def _spans_seccion_vehiculo(paginas_dict):
     if not paginas_dict:
         return []
@@ -695,7 +670,6 @@ def extraer_descripcion(texto, paginas_dict):
     valor = _valores_multilinea_por_posicion(seccion, etiqueta, etiquetas_excluir=excluir,
                                               tolerancia_x=10, max_distancia_y=40, max_lineas=3)
     if valor:
-        # corta si por error arrastró el inicio de "Serie..."
         valor = re.split(r'\bSerie\b', valor, flags=re.IGNORECASE)[0].strip()
         if valor:
             return valor
@@ -726,7 +700,6 @@ def extraer_serie(texto, paginas_dict):
     match = re.search(r'\b([A-HJ-NPR-Z0-9]{17})\b', texto)
     if match:
         return match.group(1)
-    # Fallback por posición, por si el VIN no cumple el patrón estricto
     seccion = _spans_seccion_vehiculo(paginas_dict)
     etiqueta = _encontrar_etiqueta(seccion, "Serie", coincidencia_exacta=True)
     valor = _valor_por_posicion(seccion, etiqueta, etiquetas_excluir={"modelo", "placas", "motor"})
@@ -747,7 +720,6 @@ def extraer_motor(texto, paginas_dict):
     if match:
         return match.group(1).upper()
 
-    # Fallback por posición, si el layout es de tabla (Modelo/Placas/Motor)
     seccion = _spans_seccion_vehiculo(paginas_dict)
     etiqueta = _encontrar_etiqueta(seccion, "Motor", coincidencia_exacta=True)
     valor = _valor_por_posicion(seccion, etiqueta, etiquetas_excluir={"modelo", "placas"},
@@ -897,10 +869,6 @@ def _extraer_placas_legacy(texto, paginas_dict):
     return buscar_con_regex() or ""
 
 
-# ════════════════════════════════════════════════════════════════════════
-# AGENTE
-# ════════════════════════════════════════════════════════════════════════
-
 def _spans_seccion_agente(paginas_dict):
 
     for pagina in reversed(paginas_dict):
@@ -1028,10 +996,6 @@ def extraer_colonia_municipio_cp(direccion_completa):
     }
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Punto de entrada usado por el pipeline (nivel 1)
-# ────────────────────────────────────────────────────────────────────────────
-
 _SENTINELS_NO_ENCONTRADO = {"", "no encontrado", "no encontrada"}
 
 
@@ -1111,5 +1075,8 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
     # Colonia/Municipio/C.P.: no se extraen de forma independiente, se
     # parsean del "direccion_completa" ya extraído arriba.
     candidatos.update(extraer_colonia_municipio_cp(candidatos["direccion_completa"]))
+    candidatos.update(validar_direccion_cp(
+        candidatos.get("cp"), candidatos.get("colonia"), candidatos.get("municipio"),
+    ))
 
     return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}

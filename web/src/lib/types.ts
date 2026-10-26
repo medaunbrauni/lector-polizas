@@ -163,8 +163,6 @@ export interface Regla {
   bbox: BBox | null;
 }
 
-// ── Entrenamiento por lotes ───────────────────────────────────────────────────
-
 export interface PolizaEntrenamiento {
   id: number;
   subramo_id: number;
@@ -232,8 +230,6 @@ export interface AutoDeteccion {
   contexto: string | null;
 }
 
-// ── Detección automática ──────────────────────────────────────────────────────
-
 export interface CandidatoCompania {
   id: number;
   nombre: string;
@@ -256,8 +252,6 @@ export interface ResultadoDeteccion {
   candidatos_compania: CandidatoCompania[];
   texto_pdf?: string;
 }
-
-// ── Clasificador ──────────────────────────────────────────────────────────────
 
 export type EstadoCola =
   | 'pendiente'
@@ -330,8 +324,6 @@ export interface PatronesGenerados {
   ramo_patrones_total?: number;
   subramo_patrones_total?: number;
 }
-
-// ── Tickets externos (MOVI y futuros CRMs) ─────────────────────────────────────
 
 export interface TicketExterno {
   id: number;

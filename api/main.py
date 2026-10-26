@@ -20,7 +20,6 @@ from .extractores_especializados.registry import combinaciones_sin_catalogo
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Inicializar BD y datos semilla ─────────────────────────────────────
     init_db()
     db = SessionLocal()
     try:
@@ -35,12 +34,10 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # ── Iniciar watchdog sobre la carpeta de entrada ───────────────────────
     iniciar_watcher(UPLOAD_FOLDER)
 
     yield
 
-    # ── Limpieza al apagar ─────────────────────────────────────────────────
     detener_watcher()
 
 

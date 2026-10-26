@@ -22,6 +22,7 @@ from collections import Counter
 
 import fitz  # PyMuPDF
 
+from .catalogo_cp import validar_direccion_cp
 from .figuras_juridicas import es_persona_moral_por_nombre, normalizar_siglas_razon_social
 
 
@@ -1394,10 +1395,6 @@ def validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva):
     return subtotal_calculado
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Punto de entrada usado por el pipeline (nivel 1)
-# ────────────────────────────────────────────────────────────────────────────
-
 _SENTINELS_NO_ENCONTRADO = {
     "", "no encontrado", "s/n",
     "no se encontraron rfcs válidos",
@@ -1484,5 +1481,8 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "modelo":          extraer_modelo(texto),
         "descuento":       descuento,
     }
+    candidatos.update(validar_direccion_cp(
+        candidatos.get("cp"), candidatos.get("colonia"), candidatos.get("municipio"),
+    ))
 
     return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}

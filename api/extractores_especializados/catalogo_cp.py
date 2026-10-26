@@ -55,18 +55,14 @@ def colonia_al_final(cp: str, texto: str) -> str | None:
 
 def validar_direccion_cp(cp: str | None, colonia: str | None, municipio: str | None) -> dict:
     """
-    Si el C.P. existe en el catálogo:
-      - Si la Colonia ya extraída coincide (sin acentos/mayúsculas) con
-        alguna Colonia real de ese C.P., se deja tal cual — ya viene
-        validada del PDF, solo se homologa el Municipio con el del
-        catálogo (más confiable que un parseo de texto libre).
-      - Si no coincide, o no se extrajo Colonia, se reemplazan Colonia y
-        Municipio por los del catálogo. Un mismo C.P. puede tener varias
-        Colonias reales; sin más señal que el propio C.P. no hay forma
-        de saber cuál es la correcta, así que se toma la primera de la
-        lista — ceiling conocido, documentado a propósito.
-    Si el C.P. no existe en el catálogo (o no se extrajo C.P.), se
-    devuelven los valores ya extraídos tal cual: no hay con qué validar.
+    Si el C.P. existe en el catálogo, el Municipio se homologa con el del
+    catálogo (más confiable que un parseo de texto libre). La Colonia
+    extraída del PDF SIEMPRE se conserva, coincida o no con el catálogo: hay
+    direcciones sin colonia o con una que el catálogo no lista, y reemplazarla
+    por "la primera del C.P." metía colonias que no decía el PDF. Si no se
+    extrajo Colonia, queda vacía.
+    Si el C.P. no existe en el catálogo (o no se extrajo), se devuelven los
+    valores ya extraídos tal cual: no hay con qué validar.
     """
     resultado = {}
     if cp:
@@ -76,18 +72,7 @@ def validar_direccion_cp(cp: str | None, colonia: str | None, municipio: str | N
     if municipio:
         resultado["municipio"] = municipio
 
-    if not cp:
-        return resultado
-    entrada = _catalogo().get(cp)
-    if not entrada:
-        return resultado
-
-    if colonia:
-        colonia_norm = _normalizar(colonia)
-        if any(_normalizar(c) == colonia_norm for c in entrada["colonias"]):
-            resultado["municipio"] = entrada["municipio"]
-            return resultado
-
-    resultado["colonia"] = entrada["colonias"][0]
-    resultado["municipio"] = entrada["municipio"]
+    entrada = _catalogo().get(cp) if cp else None
+    if entrada:
+        resultado["municipio"] = entrada["municipio"]
     return resultado
