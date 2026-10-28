@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 
 import pdfplumber
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from .detector import detectar_con_score
@@ -94,9 +95,10 @@ def sembrar_selecciones_auto(poliza_id: int, datos_finales: dict[str, dict] | No
     nivel 1+2) y por entrenamiento.py::subir_polizas (solo nivel 2 —
     aplicar_reglas — al subir un PDF directo al lote).
     """
+    existentes = {n for (n,) in db.query(SeleccionCampo.nombre_campo).filter(SeleccionCampo.poliza_id == poliza_id)}
     for nombre_campo, info in (datos_finales or {}).items():
         valor = info.get("valor")
-        if not valor:
+        if not valor or nombre_campo in existentes:  # lo seleccionado a mano no se pisa
             continue
         db.add(SeleccionCampo(
             poliza_id=poliza_id,
@@ -106,6 +108,30 @@ def sembrar_selecciones_auto(poliza_id: int, datos_finales: dict[str, dict] | No
             metodo=info.get("metodo"),
         ))
     db.flush()
+
+
+def clave_contenido(p: PolizaEntrenamiento) -> str:
+    """Identidad del PDF de una póliza del lote: hash de su texto (todas las filas lo
+    tienen; el sha256 solo lo traen las nuevas). Sin texto, cae al nombre."""
+    return hashlib.sha256((p.texto_pdf or f"nombre:{p.nombre_archivo}").encode("utf-8")).hexdigest()
+
+
+def mapa_vigentes(db: Session, subramo_ids) -> dict[int, int]:
+    """{id de póliza: id de la versión vigente del MISMO PDF}. Vigente = la más reciente
+    con archivo en disco. Así Historial siempre abre la versión actual de un PDF repetido."""
+    if not subramo_ids:
+        return {}
+    polizas = (
+        db.query(PolizaEntrenamiento)
+        .filter(PolizaEntrenamiento.subramo_id.in_(list(subramo_ids)))
+        .order_by(PolizaEntrenamiento.created_at, PolizaEntrenamiento.id)
+        .all()
+    )
+    ultima: dict[tuple, int] = {}
+    for p in polizas:
+        if os.path.exists(p.ruta_archivo):
+            ultima[(p.subramo_id, clave_contenido(p))] = p.id
+    return {p.id: ultima.get((p.subramo_id, clave_contenido(p)), p.id) for p in polizas}
 
 
 def _guardar_pdf_como_entrenamiento(
@@ -181,7 +207,7 @@ def _generar_y_guardar_patrones(
         return {}
 
     try:
-        client    = make_anthropic_client()
+        client    = make_anthropic_client("patrones_extractor")
         sub_nombre = subramo.nombre if subramo else "No identificado"
         prompt = f"""Eres un experto en pólizas de seguros mexicanas.
 
@@ -384,11 +410,22 @@ def _rechazar(
     }
 
 
-def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
+def _rechazar_sin_efectos(motivo, mensaje, *_):
+    return {"id": None, "campos": {}, "error": None, "rechazo": {"motivo": motivo, "mensaje": mensaje}}
+
+
+def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session, actualizar: PolizaEntrenamiento | None = None) -> dict:
     """
     Pipeline completo. Retorna dict con todos los datos, metadata y detección.
     Si la detección no tiene patrones regex, los genera automáticamente.
+    `actualizar`: solo refresca los valores automáticos de esa póliza del Entrenador
+    (sin IA, sin rechazados ni Extraccion nueva).
     """
+    def rechazar(*a, **k):
+        if actualizar is not None:
+            return _rechazar_sin_efectos(*a)
+        return _rechazar(*a, **k)
+
     try:
         texto = extraer_texto_pdf(contenido)
     except Exception as e:
@@ -503,7 +540,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
         subramo.nombre if subramo else None,
     ):
         if not compania:
-            return _rechazar("no_reconocida", MSG_NO_RECONOCIDA, det, None, None, None,
+            return rechazar("no_reconocida", MSG_NO_RECONOCIDA, det, None, None, None,
                              contenido, nombre_archivo, texto, None, db)
         if producto_ajeno:
             # Producto conocido sin extractor: su ramo/subramo real viene de la lista, no del detector.
@@ -512,13 +549,13 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
                 db.query(Subramo).filter(Subramo.ramo_id == ramo_p.id, Subramo.nombre == producto_ajeno[1]).first()
                 if ramo_p else None
             )
-            return _rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo_p or ramo, sub_p,
+            return rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo_p or ramo, sub_p,
                              contenido, nombre_archivo, texto, None, db, forzar_lote=sub_p is not None)
-        return _rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo, subramo,
+        return rechazar("sin_extractor", MSG_SIN_EXTRACTOR, det, compania, ramo, subramo,
                          contenido, nombre_archivo, texto, None, db)
 
     patrones_generados: dict = {}
-    if compania and ramo and _necesita_patrones(compania, ramo, subramo):
+    if compania and ramo and actualizar is None and _necesita_patrones(compania, ramo, subramo):
         patrones_generados = _generar_y_guardar_patrones(compania, ramo, subramo, texto, db)
         if patrones_generados:
             det = detectar_con_score(texto, db)
@@ -565,7 +602,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     # sembrado como selecciones) en vez de devolver datos a medias.
     faltantes = [c for c in CAMPOS_BASICOS if not (datos_finales.get(c) or {}).get("valor")]
     if faltantes and compania.nombre not in SIN_COMPLETITUD:
-        return _rechazar(
+        return rechazar(
             "incompleta", MSG_INCOMPLETA.format(faltantes=", ".join(faltantes)), det,
             compania, ramo, subramo, contenido, nombre_archivo, texto, datos_finales, db,
             faltantes=faltantes,
@@ -576,12 +613,36 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session) -> dict:
     # Un mismo PDF reprocesado no se duplica en el lote (se deduplica por hash).
     sha = hashlib.sha256(contenido).hexdigest()
     poliza_guardada = None
-    if subramo:
+    if subramo and actualizar is not None:
+        poliza_guardada = actualizar if actualizar.subramo_id == subramo.id else None
+        if poliza_guardada is None:
+            return rechazar("otro_subramo", "Ahora se detecta en otro subramo.", det, compania, ramo, subramo,
+                            contenido, nombre_archivo, texto, None, db)
+    elif subramo:
         poliza_guardada = db.query(PolizaEntrenamiento).filter(
-            PolizaEntrenamiento.subramo_id == subramo.id, PolizaEntrenamiento.sha256 == sha,
-        ).first() or _guardar_pdf_como_entrenamiento(
-            subramo.id, nombre_archivo, contenido, texto, db, datos_finales, sha256=sha,
-        )
+            PolizaEntrenamiento.subramo_id == subramo.id,
+            or_(
+                PolizaEntrenamiento.sha256 == sha,
+                and_(PolizaEntrenamiento.sha256.is_(None), PolizaEntrenamiento.texto_pdf == texto[:80_000]),
+            ),
+        ).order_by(PolizaEntrenamiento.created_at.desc()).first()
+        if poliza_guardada:
+            # Mismo PDF: la póliza existente se pone al día con esta extracción (valores
+            # automáticos nuevos) sin tocar lo que el usuario ya seleccionó a mano.
+            poliza_guardada.sha256 = sha
+            poliza_guardada.texto_pdf = texto[:80_000]
+            db.query(SeleccionCampo).filter(
+                SeleccionCampo.poliza_id == poliza_guardada.id, SeleccionCampo.es_auto == True,  # noqa: E712
+            ).delete()
+            sembrar_selecciones_auto(poliza_guardada.id, datos_finales, db)
+        else:
+            poliza_guardada = _guardar_pdf_como_entrenamiento(
+                subramo.id, nombre_archivo, contenido, texto, db, datos_finales, sha256=sha,
+            )
+
+    if actualizar is not None:
+        db.commit()
+        return {"id": None, "campos": datos_finales, "rechazo": None, "error": None}
 
     metodo_det = "patrones" if (det["score_compania"] >= 3) else "keywords"
     extraccion = Extraccion(

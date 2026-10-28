@@ -34,6 +34,8 @@ _TIPO_A_SUBRAMO = [
 
 _RE_FECHA_EXPEDICION = re.compile(r"\s*Fecha\s+de\s+Expedici[oó]n\s+Desde\s+Hasta", re.IGNORECASE)
 _RE_FILA_FECHAS = re.compile(r"^D\s*\d+\s+M\s*\d+\s+A\s*\d{4}")
+_RE_FECHA = re.compile(r"D\s*(\d{1,2})\s+M\s*(\d{1,2})\s+A\s*(\d{4})")
+_MESES = ("ENE", "FEB", "MAR", "ABR", "MAY", "JUN", "JUL", "AGO", "SEP", "OCT", "NOV", "DIC")
 
 
 def es_poliza_auto_ana(texto: str) -> bool:
@@ -115,6 +117,20 @@ def extraer_colonia_municipio_cp(direccion: str | None) -> dict[str, str]:
     return validar_direccion_cp(cp, colonia, municipio)
 
 
+def extraer_vigencia(texto: str) -> dict[str, str]:
+    """desde/hasta en el formato DD/MMM/AAAA de las otras aseguradoras. ANA imprime
+    una fila 'D10 M03 A2026' (día, mes, año) con tres fechas: expedición, desde, hasta."""
+    fila = next((l for l in _lineas(texto) if _RE_FILA_FECHAS.match(l)), "")
+    fechas = _RE_FECHA.findall(fila)
+    if len(fechas) < 3 or not all(1 <= int(m) <= 12 and 1 <= int(d) <= 31 for d, m, _ in fechas[1:3]):
+        return {}
+    (d1, m1, a1), (d2, m2, a2) = fechas[1], fechas[2]
+    return {
+        "desde": f"{int(d1):02d}/{_MESES[int(m1) - 1]}/{a1}",
+        "hasta": f"{int(d2):02d}/{_MESES[int(m2) - 1]}/{a2}",
+    }
+
+
 def extraer_tipo_vehiculo(texto: str) -> str | None:
     m = re.search(r"Tipo:\s*(.+?)\s*(?:Descripci[oó]n:|Bonificaci[oó]n|$)", texto, re.MULTILINE)
     return m.group(1).strip() if m and m.group(1).strip() else None
@@ -139,6 +155,7 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "nombre_cliente": extraer_nombre_cliente(nombre_lineas),
         "direccion_completa": direccion,
         "tipo_vehiculo": extraer_tipo_vehiculo(texto),
+        **extraer_vigencia(texto),
         **extraer_colonia_municipio_cp(direccion),
     }
     return {k: v for k, v in candidatos.items() if v}

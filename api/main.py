@@ -10,7 +10,7 @@ load_dotenv()
 from .config import ALLOWED_ORIGINS, UPLOAD_FOLDER
 from .database import init_db, SessionLocal
 from .seed.data import sembrar
-from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador
+from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador, metricas
 from .routers.auth import verificar_sesion
 from .routers.integraciones import movi_beta
 from .seed.campos_globales import sembrar_campos_globales
@@ -85,6 +85,7 @@ api_router.include_router(catalogos.router, dependencies=[Depends(verificar_sesi
 api_router.include_router(reglas.router, dependencies=[Depends(verificar_sesion)])
 api_router.include_router(entrenamiento.router, dependencies=[Depends(verificar_sesion)])
 api_router.include_router(clasificador.router, dependencies=[Depends(verificar_sesion)])
+api_router.include_router(metricas.router, dependencies=[Depends(verificar_sesion)])
 
 app.include_router(api_router)
 

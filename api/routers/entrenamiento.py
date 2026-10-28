@@ -23,11 +23,12 @@ from ..models.db_models import (
     Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion, ClasificacionCola,
 )
 from ..services.batch_trainer import (
-    generar_regex_lote, probar_regex_en_lote, auto_detectar_en_lote,
+    generar_regex_lote, probar_regex_en_lote, cobertura_lote, auto_detectar_en_lote,
 )
 from ..services.rule_engine import _aplicar_patron, aplicar_reglas
-from ..services.extractor import sembrar_selecciones_auto
+from ..services.extractor import clave_contenido, sembrar_selecciones_auto, procesar_pdf
 from .catalogos import listar_campos
+from .metricas import stats_reglas_produccion
 
 router = APIRouter(prefix="/entrenamiento", tags=["Entrenamiento por lotes"])
 
@@ -39,11 +40,13 @@ class SeleccionIn(BaseModel):
     contexto: str | None = None
     bbox: dict | None = None
     es_auto: bool = False
+    metodo: str | None = None   # pdf | texto_extraido | imagen | busqueda_lote
 
 
 class GenerarRegexIn(BaseModel):
     nombre_campo: str
     campo_label: str
+    poliza_ids: list[int] | None = None   # ejemplos a usar; None = todos los del campo
 
 
 class ProbarRegexIn(BaseModel):
@@ -89,7 +92,8 @@ def _poliza_dict(p: PolizaEntrenamiento, db: Session) -> dict:
 def _campos_faltantes(poliza: PolizaEntrenamiento, db: Session) -> list[dict]:
     """
     Campos requerido=True del subramo de `poliza` que todavía no tienen una
-    SeleccionCampo con valor no vacío. Reutiliza la misma fuente de campos
+    SeleccionCampo con valor no vacío Y confirmado (es_auto=False): un valor
+    automático sin confirmar cuenta como faltante, con "sin_confirmar": True. Reutiliza la misma fuente de campos
     que el panel "Campos" (CampoGlobal + CampoDefinido vía listar_campos),
     para no duplicar ni desincronizar esa lógica.
 
@@ -106,7 +110,7 @@ def _campos_faltantes(poliza: PolizaEntrenamiento, db: Session) -> list[dict]:
         return []
 
     con_valor = {
-        s.nombre_campo
+        s.nombre_campo: s.es_auto
         for s in db.query(SeleccionCampo).filter(
             SeleccionCampo.poliza_id == poliza.id,
             SeleccionCampo.nombre_campo.in_([c["nombre"] for c in requeridos]),
@@ -114,7 +118,11 @@ def _campos_faltantes(poliza: PolizaEntrenamiento, db: Session) -> list[dict]:
             SeleccionCampo.texto_seleccionado != "",
         )
     }
-    return [c for c in requeridos if c["nombre"] not in con_valor]
+    return [
+        {**c, "sin_confirmar": c["nombre"] in con_valor}
+        for c in requeridos
+        if c["nombre"] not in con_valor or con_valor[c["nombre"]]
+    ]
 
 
 def _polizas_visibles_multi(subramo_ids: list[int], db: Session) -> list[PolizaEntrenamiento]:
@@ -122,7 +130,7 @@ def _polizas_visibles_multi(subramo_ids: list[int], db: Session) -> list[PolizaE
     Pólizas del lote a mostrar en el listado del Entrenador, para uno o
     varios subramos a la vez: oculta las que ya no tienen archivo físico
     (borrado por la limpieza de 7 días u otro motivo) y deduplica por
-    nombre_archivo, conservando la más reciente. Solo afecta el listado
+    contenido (el mismo PDF subido varias veces), conservando la más reciente. Solo afecta el listado
     del lote — el Historial de Extracciones no usa esta función y sigue
     mostrando todo.
     """
@@ -134,12 +142,12 @@ def _polizas_visibles_multi(subramo_ids: list[int], db: Session) -> list[PolizaE
         .order_by(PolizaEntrenamiento.created_at)
         .all()
     )
-    por_nombre: dict[str, PolizaEntrenamiento] = {}
+    por_contenido: dict[str, PolizaEntrenamiento] = {}
     for p in polizas:
         if not os.path.exists(p.ruta_archivo):
             continue
-        por_nombre[p.nombre_archivo] = p  # orden ASC: la última pisa a las anteriores
-    return sorted(por_nombre.values(), key=lambda p: p.created_at)
+        por_contenido[clave_contenido(p)] = p  # orden ASC: la última pisa a las anteriores
+    return sorted(por_contenido.values(), key=lambda p: p.created_at)
 
 
 def _polizas_visibles(subramo_id: int, db: Session) -> list[PolizaEntrenamiento]:
@@ -278,7 +286,8 @@ def terminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
     if faltantes:
         raise HTTPException(400, detail={
             "error": "Faltan campos requeridos",
-            "campos_faltantes": [c["label"] for c in faltantes],
+            "campos_faltantes": [c["label"] for c in faltantes if not c["sin_confirmar"]],
+            "campos_sin_confirmar": [c["label"] for c in faltantes if c["sin_confirmar"]],
         })
 
     p.entrenado = True
@@ -387,6 +396,7 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
         existente.contexto = contexto
         existente.bbox = data.bbox
         existente.es_auto = data.es_auto
+        existente.metodo = data.metodo
         sel = existente
     else:
         sel = SeleccionCampo(
@@ -396,6 +406,7 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
             contexto=contexto,
             bbox=data.bbox,
             es_auto=data.es_auto,
+            metodo=data.metodo,
         )
         db.add(sel)
 
@@ -444,6 +455,20 @@ def listar_selecciones(subramo_id: int, db: Session = Depends(get_db)):
     return por_campo
 
 
+class ConfirmarSeleccionesIn(BaseModel):
+    ids: list[int]
+
+
+@router.post("/selecciones/confirmar")
+def confirmar_selecciones(data: ConfirmarSeleccionesIn, db: Session = Depends(get_db)):
+    """Pasa valores automáticos (extractor/búsqueda en lote) a confirmados por el usuario."""
+    sels = db.query(SeleccionCampo).filter(SeleccionCampo.id.in_(data.ids)).all()
+    for s in sels:
+        s.es_auto = False
+    db.commit()
+    return {"selecciones": [_sel_dict(s) for s in sels]}
+
+
 @router.delete("/selecciones/{sel_id}")
 def eliminar_seleccion(sel_id: int, db: Session = Depends(get_db)):
     s = db.query(SeleccionCampo).filter(SeleccionCampo.id == sel_id).first()
@@ -460,12 +485,7 @@ def generar_regex(subramo_id: int, data: GenerarRegexIn, db: Session = Depends(g
     Genera un regex para el campo indicado usando todos los ejemplos del lote
     y lo prueba contra todas las pólizas.
     """
-    polizas = (
-        db.query(PolizaEntrenamiento)
-        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
-        .order_by(PolizaEntrenamiento.created_at)
-        .all()
-    )
+    polizas = _polizas_visibles(subramo_id, db)
     if not polizas:
         raise HTTPException(400, "No hay pólizas en el lote")
 
@@ -489,41 +509,50 @@ def generar_regex(subramo_id: int, data: GenerarRegexIn, db: Session = Depends(g
             "nombre_archivo": poliza_map[s.poliza_id].nombre_archivo,
             "texto_seleccionado": s.texto_seleccionado,
             "contexto": s.contexto or "",
+            "es_auto": s.es_auto,
         }
         for s in selecciones_db
         if s.poliza_id in poliza_map
     ]
 
-    resultado = generar_regex_lote(
-        subramo_id=subramo_id,
-        nombre_campo=data.nombre_campo,
-        campo_label=data.campo_label,
-        selecciones=selecciones,
-        polizas=polizas,
-        db=db,
-    )
-    return resultado
+    try:
+        return generar_regex_lote(
+            subramo_id=subramo_id,
+            nombre_campo=data.nombre_campo,
+            campo_label=data.campo_label,
+            selecciones=selecciones,
+            polizas=polizas,
+            db=db,
+            poliza_ids=data.poliza_ids,
+        )
+    except ValueError as e:   # sin clave de IA, respuesta inválida, sin ejemplos...
+        raise HTTPException(503 if "ANTHROPIC" in str(e) else 400, str(e))
 
 
 @router.post("/subramos/{subramo_id}/probar-regex")
 def probar_regex(subramo_id: int, data: ProbarRegexIn, db: Session = Depends(get_db)):
     """Prueba un regex existente (editado manualmente) contra todas las pólizas del lote."""
-    polizas = (
-        db.query(PolizaEntrenamiento)
-        .filter(PolizaEntrenamiento.subramo_id == subramo_id)
-        .order_by(PolizaEntrenamiento.created_at)
-        .all()
-    )
+    polizas = _polizas_visibles(subramo_id, db)
     if not polizas:
         raise HTTPException(400, "No hay pólizas en el lote")
 
-    matches = probar_regex_en_lote(data.patron_regex, polizas)
-    encontrados = sum(1 for m in matches if m["encontrado"])
+    esperados = {
+        s.poliza_id: s.texto_seleccionado
+        for s in db.query(SeleccionCampo).filter(
+            SeleccionCampo.poliza_id.in_([p.id for p in polizas]),
+            SeleccionCampo.nombre_campo == data.nombre_campo,
+            SeleccionCampo.es_auto == False,  # noqa: E712
+            SeleccionCampo.texto_seleccionado.isnot(None),
+            SeleccionCampo.texto_seleccionado != "",
+        )
+    }
+    matches = probar_regex_en_lote(data.patron_regex, polizas, esperados)
+    ok = cobertura_lote(matches)
     return {
         "matches": matches,
-        "cobertura": encontrados,
+        "cobertura": ok,
         "total": len(polizas),
-        "pasa_lote": encontrados == len(polizas),
+        "pasa_lote": ok == len(polizas),
     }
 
 
@@ -722,3 +751,151 @@ def estado_lote(subramo_id: int, db: Session = Depends(get_db)):
         "selecciones": selecciones,
         "reglas": reglas_dict,
     }
+
+
+@router.post("/subramos/{subramo_id}/actualizar-automaticos")
+def actualizar_automaticos(subramo_id: int, db: Session = Depends(get_db)):
+    """
+    Vuelve a correr el extractor sobre los PDFs guardados del lote y refresca solo los valores
+    automáticos. No toca lo confirmado/manual ni las pólizas ya entrenadas.
+    """
+    r = {"actualizadas": 0, "omitidas_entrenadas": 0, "rechazadas": 0, "otro_subramo": 0, "errores": 0}
+    for p in _polizas_visibles(subramo_id, db):
+        if p.entrenado:
+            r["omitidas_entrenadas"] += 1
+            continue
+        try:
+            res = procesar_pdf(Path(p.ruta_archivo).read_bytes(), p.nombre_archivo, db, actualizar=p)
+        except Exception:
+            db.rollback()
+            r["errores"] += 1
+            continue
+        rech = res.get("rechazo")
+        if not rech:
+            r["actualizadas"] += 1
+        elif rech["motivo"] == "otro_subramo":
+            r["otro_subramo"] += 1
+        else:
+            r["rechazadas"] += 1
+    return r
+
+
+@router.get("/subramos/{subramo_id}/cobertura")
+def cobertura_subramo(subramo_id: int, db: Session = Depends(get_db)):
+    """Por campo: cuántas pólizas del lote tienen valor confirmado, automático (por método) o ninguno."""
+    polizas = _polizas_visibles(subramo_id, db)
+    ids = [p.id for p in polizas]
+    sels = db.query(SeleccionCampo).filter(SeleccionCampo.poliza_id.in_(ids)).all() if ids else []
+    por_campo: dict = {}
+    for s in sels:
+        por_campo.setdefault(s.nombre_campo, []).append(s)
+    reglas = {
+        r.nombre_campo: r for r in db.query(ReglaExtraccion).filter(
+            ReglaExtraccion.subramo_id == subramo_id,
+            ReglaExtraccion.activo == True, ReglaExtraccion.es_borrador == False,  # noqa: E712
+        ).all()
+    }
+    prod = stats_reglas_produccion(db, [r.id for r in reglas.values()])
+    filas = []
+    for c in listar_campos(subramo_id, db):
+        ss = por_campo.get(c["nombre"], [])
+        auto = [s for s in ss if s.es_auto]
+        metodos: dict = {}
+        for s in auto:
+            metodos[s.metodo or "automatico"] = metodos.get(s.metodo or "automatico", 0) + 1
+        r = reglas.get(c["nombre"])
+        filas.append({
+            "nombre": c["nombre"], "label": c["label"], "requerido": c.get("requerido", False),
+            "valor_fijo": c.get("valor_fijo"),
+            "confirmadas": len(ss) - len(auto), "automaticas": metodos,
+            "sin_valor": len(polizas) - len(ss),
+            "regla": {"cobertura": r.cobertura_lote, "total": r.total_lote, "produccion": prod.get(r.id)} if r else None,
+        })
+    return {"total": len(polizas), "campos": filas}
+
+
+def _grupos_duplicados(subramo_id: int, db: Session) -> list[list[PolizaEntrenamiento]]:
+    grupos: dict = {}
+    for p in db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.subramo_id == subramo_id).order_by(PolizaEntrenamiento.created_at).all():
+        grupos.setdefault(clave_contenido(p), []).append(p)
+    return [g for g in grupos.values() if len(g) > 1]
+
+
+def _a_conservar(g: list[PolizaEntrenamiento]) -> PolizaEntrenamiento:
+    con_archivo = [p for p in g if os.path.exists(p.ruta_archivo)]
+    return (con_archivo or g)[-1]
+
+
+def _protegida(p: PolizaEntrenamiento, db: Session) -> bool:
+    return p.entrenado or db.query(SeleccionCampo).filter(
+        SeleccionCampo.poliza_id == p.id, SeleccionCampo.es_auto == False,  # noqa: E712
+    ).count() > 0
+
+
+@router.get("/subramos/{subramo_id}/duplicados")
+def ver_duplicados(subramo_id: int, db: Session = Depends(get_db)):
+    sobrantes = revisar = 0
+    for g in _grupos_duplicados(subramo_id, db):
+        k = _a_conservar(g)
+        for p in g:
+            if p is k:
+                continue
+            if _protegida(p, db):
+                revisar += 1
+            else:
+                sobrantes += 1
+    return {"eliminables": sobrantes, "requieren_revision": revisar}
+
+
+@router.post("/subramos/{subramo_id}/limpiar-duplicados")
+def limpiar_duplicados(subramo_id: int, db: Session = Depends(get_db)):
+    """Borra copias repetidas sin trabajo del usuario; Historial y Clasificador se re-apuntan a la que queda."""
+    borradas = revisar = 0
+    for g in _grupos_duplicados(subramo_id, db):
+        k = _a_conservar(g)
+        for p in g:
+            if p is k:
+                continue
+            if _protegida(p, db):
+                revisar += 1
+                continue
+            db.query(Extraccion).filter(Extraccion.poliza_entrenamiento_id == p.id).update({"poliza_entrenamiento_id": k.id})
+            db.query(ClasificacionCola).filter(ClasificacionCola.poliza_entrenamiento_id == p.id).update({"poliza_entrenamiento_id": k.id})
+            if p.ruta_archivo != k.ruta_archivo and os.path.exists(p.ruta_archivo):
+                try:
+                    os.remove(p.ruta_archivo)
+                except Exception:
+                    pass
+            db.delete(p)
+            borradas += 1
+    db.commit()
+    return {"borradas": borradas, "requieren_revision": revisar}
+
+
+@router.get("/subramos/{subramo_id}/reglas/{campo}/historial")
+def historial_reglas(subramo_id: int, campo: str, db: Session = Depends(get_db)):
+    rs = db.query(ReglaExtraccion).filter(
+        ReglaExtraccion.subramo_id == subramo_id, ReglaExtraccion.nombre_campo == campo,
+        ReglaExtraccion.es_borrador == False,  # noqa: E712
+    ).order_by(ReglaExtraccion.created_at.desc(), ReglaExtraccion.id.desc()).all()
+    return [{
+        "id": r.id, "patron_regex": r.patron_regex, "activo": r.activo, "creado_por": r.creado_por,
+        "cobertura": r.cobertura_lote, "total": r.total_lote,
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    } for r in rs]
+
+
+@router.post("/reglas-lote/{regla_id}/restaurar")
+def restaurar_regla(regla_id: int, db: Session = Depends(get_db)):
+    r = db.get(ReglaExtraccion, regla_id)
+    if not r or r.es_borrador:
+        raise HTTPException(404, "Regla no encontrada")
+    for o in db.query(ReglaExtraccion).filter(
+        ReglaExtraccion.subramo_id == r.subramo_id, ReglaExtraccion.nombre_campo == r.nombre_campo,
+        ReglaExtraccion.activo == True, ReglaExtraccion.id != r.id,  # noqa: E712
+    ).all():
+        o.activo = False
+    db.flush()  # libera el índice único antes de activar la elegida
+    r.activo = True
+    db.commit()
+    return {"ok": True}

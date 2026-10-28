@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..config import RECHAZADOS_DIR
 from ..services.extractor import (
-    procesar_pdf, extraer_texto_pdf, contar_metodos_campos, _guardar_pdf_como_entrenamiento,
+    procesar_pdf, extraer_texto_pdf, contar_metodos_campos, _guardar_pdf_como_entrenamiento, mapa_vigentes,
 )
 from ..services.detector import detectar_jerarquia, detectar_con_score
 from ..models.db_models import Extraccion, CampoExtraido, Subramo, Ramo, Compania, PolizaEntrenamiento
@@ -267,14 +267,19 @@ def historial(skip: int = 0, limit: int = 50, db: Session = Depends(get_db)):
     # mostrar el aviso de "archivo ya no disponible".
     poliza_ids = {e.poliza_entrenamiento_id for e in items if e.poliza_entrenamiento_id}
     archivo_disponible_por_poliza = {}
+    vigentes: dict[int, int] = {}
     if poliza_ids:
-        for p in db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id.in_(poliza_ids)).all():
+        subramos = {s for (s,) in db.query(PolizaEntrenamiento.subramo_id).filter(PolizaEntrenamiento.id.in_(poliza_ids))}
+        vigentes = mapa_vigentes(db, subramos)
+        ids = poliza_ids | set(vigentes.values())
+        for p in db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id.in_(ids)).all():
             archivo_disponible_por_poliza[p.id] = os.path.exists(p.ruta_archivo)
 
     return {
         "total": total,
         "items": [
-            _extraccion_schema(e, aliases=aliases, archivo_disponible_por_poliza=archivo_disponible_por_poliza)
+            _extraccion_schema(e, aliases=aliases, archivo_disponible_por_poliza=archivo_disponible_por_poliza,
+                               vigentes=vigentes)
             for e in items
         ],
     }
@@ -294,6 +299,7 @@ def _extraccion_schema(
     detalle: bool = False,
     aliases: tuple | None = None,   # (comp_alias, ramo_alias, sub_alias) pre-cargados
     archivo_disponible_por_poliza: dict | None = None,  # {poliza_entrenamiento_id: bool}, pre-cargado
+    vigentes: dict | None = None,  # {poliza_id: id de la versión vigente del mismo PDF}
 ) -> dict:
     from ..models.db_models import Compania, Ramo, Subramo as SubramoModel
 
@@ -312,12 +318,21 @@ def _extraccion_schema(
 
     # Disponibilidad del PDF físico: usa el dict pre-cargado si vino (vista
     # de lista); si no (vista de detalle), consulta directo — un solo registro.
+    # Un PDF repetido tiene varias extracciones/pólizas: "Ver/Reentrenar" siempre
+    # abre la versión vigente (la más reciente), no la que quedó atada a esta fila.
+    poliza_id = e.poliza_entrenamiento_id
+    if poliza_id:
+        if vigentes is None and db:
+            sub = db.query(PolizaEntrenamiento.subramo_id).filter(PolizaEntrenamiento.id == poliza_id).scalar()
+            vigentes = mapa_vigentes(db, [sub] if sub else [])
+        poliza_id = (vigentes or {}).get(poliza_id, poliza_id)
+
     archivo_disponible = False
-    if e.poliza_entrenamiento_id:
+    if poliza_id:
         if archivo_disponible_por_poliza is not None:
-            archivo_disponible = archivo_disponible_por_poliza.get(e.poliza_entrenamiento_id, False)
+            archivo_disponible = archivo_disponible_por_poliza.get(poliza_id, False)
         elif db:
-            p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == e.poliza_entrenamiento_id).first()
+            p = db.query(PolizaEntrenamiento).filter(PolizaEntrenamiento.id == poliza_id).first()
             archivo_disponible = bool(p and os.path.exists(p.ruta_archivo))
 
     base = {
@@ -329,7 +344,7 @@ def _extraccion_schema(
         "compania_id": e.compania_id,
         "ramo_id":     e.ramo_id,
         "subramo_id":  e.subramo_id,
-        "poliza_entrenamiento_id": e.poliza_entrenamiento_id,
+        "poliza_entrenamiento_id": poliza_id,
         "archivo_disponible": archivo_disponible,
         "exitoso":              e.exitoso,
         "campos_por_regla":    e.campos_por_regla,

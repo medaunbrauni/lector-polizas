@@ -152,7 +152,7 @@ def clasificar_con_ia(texto: str, db: Session) -> dict:
                     "subramo_id": s.id, "subramo":  s.nombre,
                 })
 
-    client = make_anthropic_client()
+    client = make_anthropic_client("clasificador")
     prompt = f"""Eres un experto en seguros mexicanos. Clasifica este documento PDF.
 
 Catálogo disponible en el sistema:
@@ -210,7 +210,7 @@ def generar_patrones_ia(
     Genera patrones regex para detectar el tipo de póliza en el futuro.
     Retorna {compania:[...], ramo:[...], subramo:[...], explicacion:...}
     """
-    client = make_anthropic_client()
+    client = make_anthropic_client("clasificador")
     prompt = f"""Eres un experto en pólizas de seguros mexicanas y expresiones regulares Python.
 
 Este PDF pertenece a:

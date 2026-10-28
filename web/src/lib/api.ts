@@ -281,11 +281,15 @@ export async function vaciarLoteEntrenamiento(subramoId: number) {
 // genérico la habría descartado.
 export async function terminarPoliza(
   polizaId: number,
-): Promise<{ ok: true; poliza: PolizaEntrenamiento } | { ok: false; camposFaltantes: string[] }> {
+): Promise<{ ok: true; poliza: PolizaEntrenamiento } | { ok: false; camposFaltantes: string[]; camposSinConfirmar: string[] }> {
   const res = await fetch(`${BASE}/entrenamiento/polizas/${polizaId}/terminar`, { method: 'PATCH' });
   const data = await res.json().catch(() => ({}));
   if (res.ok) return { ok: true, poliza: data };
-  return { ok: false, camposFaltantes: data?.detail?.campos_faltantes ?? [] };
+  return {
+    ok: false,
+    camposFaltantes: data?.detail?.campos_faltantes ?? [],
+    camposSinConfirmar: data?.detail?.campos_sin_confirmar ?? [],
+  };
 }
 
 export async function reentrenarPoliza(polizaId: number): Promise<PolizaEntrenamiento> {
@@ -310,12 +314,22 @@ export async function getTextoZona(
 
 export async function guardarSeleccion(data: {
   poliza_id: number; nombre_campo: string; texto_seleccionado: string;
-  contexto?: string; bbox?: object | null; es_auto?: boolean;
+  contexto?: string; bbox?: object | null; es_auto?: boolean; metodo?: string;
 }) {
   const res = await fetch(`${BASE}/entrenamiento/selecciones`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+export async function confirmarSelecciones(ids: number[]): Promise<{ selecciones: import('./types').SeleccionCampo[] }> {
+  const res = await fetch(`${BASE}/entrenamiento/selecciones/confirmar`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
   });
   if (!res.ok) throw new Error(`Error ${res.status}`);
   return res.json();
@@ -333,11 +347,11 @@ export async function getEstadoLote(subramoId: number) {
   return res.json();
 }
 
-export async function generarRegexLote(subramoId: number, nombre_campo: string, campo_label: string) {
+export async function generarRegexLote(subramoId: number, nombre_campo: string, campo_label: string, poliza_ids?: number[]) {
   const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/generar-regex`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nombre_campo, campo_label }),
+    body: JSON.stringify({ nombre_campo, campo_label, poliza_ids }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
@@ -567,3 +581,37 @@ export async function descartarItemCola(id: number): Promise<{ ok: boolean }> {
   if (!res.ok) throw new Error(`Error ${res.status}`);
   return res.json();
 }
+
+// ── Entrenador: mantenimiento del lote y reglas ──────────────────────────────
+
+async function jsonOk<T>(res: Response): Promise<T> {
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return res.json();
+}
+
+const ENT = `${BASE}/entrenamiento`;
+
+export interface CoberturaCampo {
+  nombre: string; label: string; requerido: boolean; valor_fijo: string | null;
+  confirmadas: number; automaticas: Record<string, number>; sin_valor: number;
+  regla: { cobertura: number | null; total: number | null; produccion: { intentos: number; aciertos: number } | null } | null;
+}
+export interface ReglaHistorial {
+  id: number; patron_regex: string; activo: boolean; creado_por: string | null;
+  cobertura: number | null; total: number | null; created_at: string | null;
+}
+
+export const actualizarAutomaticos = (subramoId: number) =>
+  fetch(`${ENT}/subramos/${subramoId}/actualizar-automaticos`, { method: 'POST' })
+    .then((r) => jsonOk<{ actualizadas: number; omitidas_entrenadas: number; rechazadas: number; otro_subramo: number; errores: number }>(r));
+export const getCoberturaSubramo = (subramoId: number) =>
+  fetch(`${ENT}/subramos/${subramoId}/cobertura`).then((r) => jsonOk<{ total: number; campos: CoberturaCampo[] }>(r));
+export const getDuplicados = (subramoId: number) =>
+  fetch(`${ENT}/subramos/${subramoId}/duplicados`).then((r) => jsonOk<{ eliminables: number; requieren_revision: number }>(r));
+export const limpiarDuplicados = (subramoId: number) =>
+  fetch(`${ENT}/subramos/${subramoId}/limpiar-duplicados`, { method: 'POST' })
+    .then((r) => jsonOk<{ borradas: number; requieren_revision: number }>(r));
+export const getHistorialReglas = (subramoId: number, campo: string) =>
+  fetch(`${ENT}/subramos/${subramoId}/reglas/${encodeURIComponent(campo)}/historial`).then((r) => jsonOk<ReglaHistorial[]>(r));
+export const restaurarRegla = (reglaId: number) =>
+  fetch(`${ENT}/reglas-lote/${reglaId}/restaurar`, { method: 'POST' }).then((r) => jsonOk<{ ok: boolean }>(r));

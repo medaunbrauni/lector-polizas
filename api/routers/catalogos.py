@@ -11,6 +11,8 @@ from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
 from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion, PolizaEntrenamiento
 from ..services.rule_engine import cobertura_subramo, _es_vehiculo, _ramo_de_subramo
+from ..services.extractor import clave_contenido
+from ..services.ai_utils import ClienteMedido
 
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
 
@@ -113,7 +115,7 @@ def _polizas_visibles_por_subramo(db: Session) -> dict[int, list[PolizaEntrenami
     parten de aquí, para que nunca puedan divergir en su definición.
 
     Mismo criterio que _polizas_visibles en entrenamiento.py: se excluyen
-    filas sin archivo físico en disco, y se dedupea por nombre_archivo
+    filas sin archivo físico en disco, y se dedupea por contenido del PDF
     quedándose con la más reciente. No se importa esa función directamente
     para evitar un import circular (entrenamiento.py ya importa de este
     módulo) — es la misma lógica, reimplementada aquí.
@@ -132,8 +134,8 @@ def _polizas_visibles_por_subramo(db: Session) -> dict[int, list[PolizaEntrenami
     for p in filas:
         if not os.path.exists(p.ruta_archivo):
             continue
-        por_subramo.setdefault(p.subramo_id, {})[p.nombre_archivo] = p
-    return {sid: list(nombres.values()) for sid, nombres in por_subramo.items()}
+        por_subramo.setdefault(p.subramo_id, {})[clave_contenido(p)] = p
+    return {sid: list(claves.values()) for sid, claves in por_subramo.items()}
 
 
 def _rollup_ramo_y_compania(db: Session, por_subramo: dict[int, int]) -> tuple[dict[int, int], dict[int, int]]:
@@ -486,7 +488,7 @@ def generar_y_guardar_patrones(
     compania = db.query(Compania).filter(Compania.id == ramo.compania_id).first()
 
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = ClienteMedido(anthropic.Anthropic(api_key=api_key), "patrones_deteccion")
 
     prompt = f"""Eres un experto en pólizas de seguros mexicanas.
 

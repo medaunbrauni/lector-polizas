@@ -290,3 +290,14 @@ class SesionAuth(Base):
     token = Column(String(64), unique=True, index=True, nullable=False)
     creado_en = Column(DateTime, default=datetime.utcnow)
     expira_en = Column(DateTime, nullable=False)
+
+
+class UsoIA(Base):
+    """Una llamada a la API de Anthropic (tokens por origen y modelo) para controlar el gasto."""
+    __tablename__ = "uso_ia"
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    origen = Column(String(40), nullable=False)
+    modelo = Column(String(80))
+    tokens_in = Column(Integer, default=0)
+    tokens_out = Column(Integer, default=0)

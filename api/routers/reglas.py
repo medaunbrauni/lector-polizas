@@ -10,6 +10,7 @@ from ..database import get_db
 from ..models.db_models import ReglaExtraccion, Extraccion
 from ..services.rule_engine import _aplicar_patron, cobertura_subramo
 from ..services.nivel1_rules import obtener_reglas_nivel1, ARCHIVOS_NIVEL1
+from ..services.ai_utils import ClienteMedido
 
 router = APIRouter(prefix="/reglas", tags=["Reglas de Extracción"])
 
@@ -199,7 +200,7 @@ def generar_regex_con_ia(data: GenerarRegexIn):
         raise HTTPException(400, "ANTHROPIC_API_KEY no configurada")
 
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = ClienteMedido(anthropic.Anthropic(api_key=api_key), "reglas_ia")
 
     prompt = f"""Eres un experto en pólizas de seguros mexicanas y expresiones regulares Python (módulo `re`).
 
@@ -286,7 +287,7 @@ def generar_patrones_deteccion(
     compania = db.query(Compania).filter(Compania.id == ramo.compania_id).first()
 
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = ClienteMedido(anthropic.Anthropic(api_key=api_key), "reglas_ia")
 
     prompt = f"""Eres un experto en pólizas de seguros mexicanas.
 
@@ -352,7 +353,7 @@ def reintentar_regex(data: ReintentarRegexIn):
         raise HTTPException(400, "ANTHROPIC_API_KEY no configurada")
 
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = ClienteMedido(anthropic.Anthropic(api_key=api_key), "reglas_ia")
 
     prompt = f"""Eres un experto en pólizas de seguros mexicanas y regex Python.
 

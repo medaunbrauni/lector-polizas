@@ -195,6 +195,10 @@ export interface MatchLote {
   nombre_archivo: string;
   encontrado: boolean;
   valor_extraido: string | null;
+  /** Valor seleccionado/confirmado por el usuario en esa póliza, si lo hay. */
+  valor_esperado?: string | null;
+  /** El regex extrae exactamente el valor esperado (null si no hay esperado). */
+  coincide?: boolean | null;
   error: string | null;
 }
 
@@ -206,6 +210,11 @@ export interface ResultadoRegexLote {
   cobertura: number;
   total: number;
   pasa_lote: boolean;
+  /** Cómo se obtuvo: regla_existente y heuristica no usan IA. */
+  origen?: 'regla_existente' | 'heuristica' | 'ia';
+  ejemplos_usados?: number;
+  ejemplos_total?: number;
+  llamadas_ia?: number;
 }
 
 export interface ReglaResumen {
