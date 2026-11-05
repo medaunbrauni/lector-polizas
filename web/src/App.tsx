@@ -8,6 +8,7 @@ import Catalogos from './pages/Catalogos';
 import Reglas from './pages/Reglas';
 import ReglasCodigo from './pages/ReglasCodigo';
 import TicketsMovi from './pages/TicketsMovi';
+import Metricas from './pages/Metricas';
 
 function RedirigirEntrenador() {
   const { search } = useLocation();
@@ -33,6 +34,7 @@ export default function App() {
                   <Route path="/trainer"      element={<RedirigirEntrenador />} />
                   <Route path="/reglas/codigo" element={<ReglasCodigo />} />
                   <Route path="/clasificador/tickets" element={<TicketsMovi />} />
+                  <Route path="/metricas"     element={<Metricas />} />
                 </Routes>
               </Layout>
             </ProtectedRoute>

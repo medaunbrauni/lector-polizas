@@ -1,6 +1,6 @@
 /** Bloque gris pulsante: da forma a la pantalla mientras llegan los datos. */
 export function Skeleton({ className = '' }: { className?: string }) {
-  return <div aria-hidden="true" className={`animate-pulse rounded-md bg-[var(--color-bg-secondary)] border border-[var(--color-border)]/40 ${className}`} />;
+  return <div aria-hidden="true" className={`animate-pulse rounded-md bg-[var(--color-bg-primary)] border border-[var(--color-border)] ${className}`} />;
 }
 
 export function SkeletonFilas({ filas = 5, alto = 'h-10' }: { filas?: number; alto?: string }) {

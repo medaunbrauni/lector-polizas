@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
-import { FileSearch, BookOpen, Zap, History, Code2, Inbox, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { FileSearch, BookOpen, Zap, History, Code2, Inbox, ChevronLeft, ChevronRight, LogOut, BarChart3 } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -11,14 +11,23 @@ const NAV = [
   { to: '/entrenador',        icon: Zap,        label: 'Entrenador PDFs', exact: true  },
   { to: '/reglas/codigo',     icon: Code2,      label: 'Código Reglas',  exact: false },
   { to: '/clasificador/tickets', icon: Inbox,   label: 'Tickets MOVI',   exact: false },
+  { to: '/metricas',          icon: BarChart3,  label: 'Métricas',       exact: false },
 ];
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [colapsado, setColapsado] = useState<boolean>(
-    () => localStorage.getItem('sidebar-colapsado') === 'true'
+    () => localStorage.getItem('sidebar-colapsado') === 'true' || window.innerWidth < 768
   );
   const { isAuthenticated, logout } = useAuth();
   const { pathname } = useLocation();
+
+  // En ventanas angostas el menú se contrae solo para dejar espacio al contenido.
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    const alCambiar = (e: MediaQueryListEvent) => { if (e.matches) setColapsado(true); };
+    mq.addEventListener('change', alCambiar);
+    return () => mq.removeEventListener('change', alCambiar);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('sidebar-colapsado', String(colapsado));

@@ -615,3 +615,11 @@ export const getHistorialReglas = (subramoId: number, campo: string) =>
   fetch(`${ENT}/subramos/${subramoId}/reglas/${encodeURIComponent(campo)}/historial`).then((r) => jsonOk<ReglaHistorial[]>(r));
 export const restaurarRegla = (reglaId: number) =>
   fetch(`${ENT}/reglas-lote/${reglaId}/restaurar`, { method: 'POST' }).then((r) => jsonOk<{ ok: boolean }>(r));
+
+export interface UsoIAFila { origen: string; modelo: string | null; llamadas: number; tokens_in: number; tokens_out: number }
+export interface ReglaProduccion { regla_id: number; subramo: string | null; campo: string; intentos: number; aciertos: number; tasa: number }
+
+export const getMetricasIA = (dias: number) =>
+  fetch(`${BASE}/metricas/ia?dias=${dias}`, { credentials: 'include' }).then((r) => jsonOk<UsoIAFila[]>(r));
+export const getMetricasReglas = () =>
+  fetch(`${BASE}/metricas/reglas`, { credentials: 'include' }).then((r) => jsonOk<ReglaProduccion[]>(r));
