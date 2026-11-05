@@ -1,3 +1,5 @@
+import { useToast } from '../contexts/ToastContext';
+import Cargando from '../components/ui/Cargando';
 import { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import {
@@ -146,7 +148,8 @@ export default function LectorPolizas() {
      en package.json — se revisó antes de escribir esto — así que se
      construye una discreta reusando el mismo estilo de tarjeta/alerta que
      ya usa el resto de esta página). */
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
+  const setToast = (m: string | null) => { if (m) toast(m, 'aviso'); };
 
   // Persiste cada vez que cambian las tandas (nueva extracción, corrección
   // aplicada, expiración, o "Limpiar interfaz" dejándolas en []).
@@ -167,12 +170,6 @@ export default function LectorPolizas() {
     return () => clearInterval(iv);
   }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 6000);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   const totalAcumulado = tandas.reduce((acc, t) => acc + t.resultados.length, 0);
   const limiteAlcanzado = totalAcumulado >= MAX_PDFS_ACUMULADOS;
 
@@ -182,7 +179,7 @@ export default function LectorPolizas() {
       return;
     }
     setProcesando(true);
-    setProcesandoMsg('Analizando PDFs…');
+    setProcesandoMsg(`Analizando ${files.length} PDF${files.length === 1 ? '' : 's'}…`);
     setError(null);
     try {
       const formData = new FormData();
@@ -519,8 +516,11 @@ export default function LectorPolizas() {
 
           {procesando ? (
             <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+              <Cargando tamano={72} />
               <p className="font-semibold text-[var(--color-text-primary)]">{procesandoMsg}</p>
+              <div className="w-48 h-1 rounded-full bg-[var(--color-bg-secondary)] overflow-hidden" aria-hidden="true">
+                <div className="h-full w-1/4 rounded-full bg-[var(--color-brand-blue)] barra-indeterminada" />
+              </div>
               <p className="text-xs text-[var(--color-text-secondary)]">
                 El sistema detecta compañía · ramo · subramo y genera reglas si son necesarias
               </p>
@@ -622,18 +622,6 @@ export default function LectorPolizas() {
           indiceActual={indiceGlobalActual}
           totalPolizas={totalPolizasGlobal}
         />
-      )}
-
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-sm">
-          <div className="flex items-start gap-3 p-4 bg-gray-900 border border-[var(--color-border)] text-white rounded-xl shadow-lg">
-            <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-            <p className="text-sm flex-1">{toast}</p>
-            <button onClick={() => setToast(null)} className="flex-shrink-0">
-              <X className="w-4 h-4 text-gray-400 hover:text-white" />
-            </button>
-          </div>
-        </div>
       )}
 
       {modalExportAbierto && (

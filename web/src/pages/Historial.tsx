@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getHistorial } from '../lib/api';
-import { CheckCircle2, AlertCircle, Cpu, Zap, Eye, FileX } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Cpu, Zap, Eye, FileX, History } from 'lucide-react';
+import { SkeletonFilas } from '../components/ui/Skeleton';
+import EstadoVacio from '../components/ui/EstadoVacio';
 
 const POR_PAGINA = 50;
 
@@ -44,11 +46,13 @@ export default function Historial() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-[var(--color-text-secondary)]">Cargando…</p>
+        <SkeletonFilas filas={8} />
       ) : items.length === 0 ? (
-        <div className="text-center py-20 text-[var(--color-text-secondary)]">
-          <p className="text-sm">Aún no hay extracciones. Sube un PDF para comenzar.</p>
-        </div>
+        <EstadoVacio
+          icono={History}
+          texto="Aún no hay extracciones. Sube un PDF para comenzar."
+          accion={<Link to="/" className="inline-block px-4 py-2 bg-[var(--color-brand-blue)] text-white rounded-xl text-sm font-medium hover:opacity-90">Ir al Extractor</Link>}
+        />
       ) : (
         <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
           <div className="overflow-x-auto">

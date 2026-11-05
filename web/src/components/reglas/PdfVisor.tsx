@@ -1,3 +1,4 @@
+import Cargando from '../ui/Cargando';
 /**
  * PdfVisor — mini-visor de PDF con paginación y zoom, más su error boundary.
  *
@@ -156,7 +157,7 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
           <>
             {cargando && (
               <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                <span className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
+                <span className="bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm"><Cargando texto="Cargando PDF…" tamano={36} /></span>
               </div>
             )}
             {falloRender && (

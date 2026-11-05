@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import ConfirmDialog from '../ui/ConfirmDialog';
+import Cargando from '../ui/Cargando';
 import {
   actualizarAutomaticos, getCoberturaSubramo, getDuplicados, limpiarDuplicados,
   getHistorialReglas, restaurarRegla,
@@ -68,6 +69,7 @@ export default function MantenimientoLote({ subramoId, onCambio }: { subramoId: 
         <button className={BTN} onClick={abrirCobertura}>Cobertura</button>
         <button className={BTN} onClick={abrirDuplicados}>Quitar copias</button>
       </div>
+      {trabajando && <Cargando texto="Procesando el lote…" tamano={28} className="py-1" />}
       {msg && <p className="text-[10px] text-[var(--color-text-secondary)]">{msg}</p>}
 
       <ConfirmDialog
@@ -130,7 +132,7 @@ export function HistorialReglasModal({ subramoId, campo, onClose, onRestaurada }
   return (
     <Modal titulo={`Historial de reglas · ${campo}`} onClose={onClose}>
       {error && <p className="text-red-500 mb-2">Ocurrió un error.</p>}
-      {!filas ? <p>Cargando…</p> : filas.length === 0 ? <p>Sin versiones.</p> : (
+      {!filas ? <Cargando texto="Cargando…" tamano={32} /> : filas.length === 0 ? <p>Sin versiones.</p> : (
         <ul className="space-y-2">
           {filas.map((r) => (
             <li key={r.id} className="border border-[var(--color-border)] rounded-lg p-2">

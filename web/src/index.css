@@ -7,3 +7,18 @@ body {
   background-color: var(--color-bg-secondary);
   color: var(--color-text-primary);
 }
+
+/* Entrada suave de página y de toasts: solo opacity/transform. */
+@keyframes fade-pagina { from { opacity: 0; } to { opacity: 1; } }
+@keyframes toast-entrada { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes barra-indeterminada { from { transform: translateX(-100%); } to { transform: translateX(350%); } }
+.fade-pagina { animation: fade-pagina 150ms ease-out; }
+.toast-entrada { animation: toast-entrada 200ms ease-out; }
+.barra-indeterminada { animation: barra-indeterminada 1.4s ease-in-out infinite; }
+
+/* Aros en tamaño chico: trazo más grueso y glow corto (el del login es de 18px). */
+.cargando-aros .login-ring path { stroke-width: 7px; filter: drop-shadow(0 0 3px currentColor); }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin, .animate-pulse, .fade-pagina, .toast-entrada, .barra-indeterminada { animation: none; }
+}

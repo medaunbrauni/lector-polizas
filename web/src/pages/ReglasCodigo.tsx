@@ -1,6 +1,7 @@
+import Cargando from '../components/ui/Cargando';
 import { useEffect, useState } from 'react';
 import { getReglasConJerarquia, getCodigoDeteccion, getReglasNivel1, probarRegla, getPolizasDeCompania, getTextoPdf } from '../lib/api';
-import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search, Lock, FlaskConical, X, Wrench, Database, FileStack, Inbox, Loader2, FileText } from 'lucide-react';
+import { Copy, Check, Code2, ChevronDown, ChevronRight, Shield, Search, Lock, FlaskConical, X, Wrench, Database, FileStack, Inbox, FileText } from 'lucide-react';
 import type { PolizaEntrenamiento } from '../lib/types';
 
 const COMPANIAS_NIVEL1 = ['GNP Seguros', 'Quálitas'];
@@ -245,7 +246,7 @@ function PanelTextosGuardados({ compania, companiaId, onElegir, onClose }: {
           </div>
         ) : polizas === null ? (
           <div className="flex items-center justify-center py-10 text-[var(--color-text-secondary)]">
-            <Loader2 className="w-5 h-5 animate-spin" />
+            <Cargando tamano={32} />
           </div>
         ) : polizas.length === 0 ? (
           <div className="text-center py-8 text-[var(--color-text-secondary)]">
@@ -571,7 +572,7 @@ function SeccionNivel1({ compania, companiaId }: { compania: string; companiaId?
             automáticamente a partir del código fuente — no se editan desde aquí.
           </div>
           {reglas === null ? (
-            <div className="px-5 py-4 text-xs text-[var(--color-text-secondary)]">Cargando…</div>
+            <Cargando texto="Cargando…" tamano={32} className="py-4" />
           ) : reglas.length === 0 ? (
             <div className="px-5 py-4 text-xs text-[var(--color-text-secondary)]">No se pudieron detectar reglas.</div>
           ) : (
@@ -697,7 +698,7 @@ export default function ReglasCodigo() {
   }
 
   if (cargando) {
-    return <div className="p-8 text-sm text-[var(--color-text-secondary)]">Cargando…</div>;
+    return <Cargando texto="Cargando reglas…" tamano={56} className="p-12" />;
   }
 
   const companiasSinPatrones = deteccion.filter((c) => totalPatrones(c) === 0);

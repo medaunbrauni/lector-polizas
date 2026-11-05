@@ -1,3 +1,5 @@
+import Cargando from '../ui/Cargando';
+import { useToast } from '../../contexts/ToastContext';
 /**
  * Clasificador — pestaña dentro de Reglas
  *
@@ -20,6 +22,7 @@ interface Props {
 }
 
 export default function Clasificador({ companias }: Props) {
+  const toast = useToast();
   const [cola, setCola] = useState<ItemCola[]>([]);
   const [carpeta, setCarpeta] = useState('');
   const [watcherActivo, setWatcherActivo] = useState(false);
@@ -89,7 +92,7 @@ export default function Clasificador({ companias }: Props) {
     setConfirmandoLote(true);
     try {
       const res = await confirmarLoteCola();
-      alert(`✅ ${res.confirmados} confirmados${res.errores.length ? ` · ${res.errores.length} errores` : ''}`);
+      toast(`${res.confirmados} confirmados${res.errores.length ? ` · ${res.errores.length} errores` : ''}`, res.errores.length ? 'aviso' : 'exito');
       await cargarCola();
     } finally {
       setConfirmandoLote(false);
@@ -138,7 +141,7 @@ export default function Clasificador({ companias }: Props) {
           onChange={(e) => e.target.files && procesarArchivos(e.target.files)}
         />
         {subiendo ? (
-          <RefreshCw className="w-8 h-8 text-blue-400 animate-spin" />
+          <Cargando tamano={40} />
         ) : (
           <Upload className="w-8 h-8 text-gray-300" />
         )}

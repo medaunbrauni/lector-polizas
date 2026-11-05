@@ -1,3 +1,5 @@
+import EstadoVacio from '../components/ui/EstadoVacio';
+import { SkeletonFilas } from '../components/ui/Skeleton';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { invalidarPdf } from '../lib/pdfCache';
@@ -27,7 +29,7 @@ import {
   Zap, CheckCircle2, XCircle, AlertCircle, RefreshCw,
   FileText, MousePointer2, Sparkles, Save, Image,
   Target, ChevronDown, ChevronUp, Shield, ShieldAlert, ShieldCheck, ShieldOff,
-  ZoomIn, ZoomOut, RotateCcw,
+  ZoomIn, ZoomOut, RotateCcw, FileStack,
 } from 'lucide-react';
 
 // Mismo bucket de 3 que clasificar_metodo_campo en api/services/extractor.py
@@ -110,6 +112,7 @@ export default function Reglas() {
   const [regexEditado, setRegexEditado] = useState<Record<string, string>>({});
   const [generando, setGenerando] = useState<string | null>(null);  // nombre_campo en proceso
   const [historialCampo, setHistorialCampo] = useState<string | null>(null);
+  const [cargandoLote, setCargandoLote] = useState(false);
   // Por campo: pólizas que el usuario sacó como ejemplos del regex, y si su lista está contraída.
   const [ejemplosExcluidos, setEjemplosExcluidos] = useState<Record<string, Set<number>>>({});
   const [listasContraidas, setListasContraidas] = useState<Set<string>>(new Set());
@@ -321,7 +324,8 @@ export default function Reglas() {
     pendingAutoSelect.current = null;
     const sid = Number(selSubramo);
     getCampos(sid).then(setCampos);
-    cargarEstado(sid);
+    setCargandoLote(true);
+    cargarEstado(sid).finally(() => setCargandoLote(false));
     setCampoActivo('');
     setTextoSeleccionado('');
     setBboxCapturado(null);
@@ -1159,10 +1163,9 @@ export default function Reglas() {
             <div className="flex-1 overflow-y-auto">
               {mostrarLote && (
                 <div className="divide-y divide-[var(--color-border)]">
-                  {polizasPendientes.length === 0 && (
-                    <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
-                      Sin pólizas. Agrega al menos una para empezar.
-                    </div>
+                  {cargandoLote && <SkeletonFilas filas={4} alto="h-12" />}
+                  {!cargandoLote && polizasPendientes.length === 0 && (
+                    <EstadoVacio icono={FileStack} texto="Sin pólizas. Agrega al menos una para empezar." className="py-6" />
                   )}
                   {polizasPendientes.map(({ p, idx }) => renderFilaPoliza(p, idx))}
                 </div>
@@ -1665,7 +1668,7 @@ export default function Reglas() {
                               <div
                                 key={p.id}
                                 title={sel ? `"${sel.texto_seleccionado}"` : p.nombre_archivo}
-                                className={`flex-1 h-1.5 rounded-full ${
+                                className={`flex-1 h-1.5 rounded-full transition-colors duration-200 ${
                                   sel ? (sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-[var(--color-border)]'
                                 }`}
                               />
@@ -1720,7 +1723,7 @@ export default function Reglas() {
                                     title="Usar esta póliza como ejemplo para el regex"
                                     className="w-3 h-3 flex-shrink-0"
                                   />
-                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors duration-200 ${sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500'}`} />
                                   <span className="text-gray-600 truncate">{p.nombre_archivo.substring(0, 20)}</span>
                                   <code className="font-mono text-blue-700 truncate flex-1">"{sel.texto_seleccionado.substring(0, 20)}"</code>
                                   <span className="text-gray-500 flex-shrink-0">{etiquetaMetodo(sel)}</span>

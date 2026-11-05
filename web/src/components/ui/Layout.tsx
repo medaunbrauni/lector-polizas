@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { FileSearch, BookOpen, Zap, History, Code2, Inbox, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { useAuth } from '../../contexts/AuthContext';
@@ -18,6 +18,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     () => localStorage.getItem('sidebar-colapsado') === 'true'
   );
   const { isAuthenticated, logout } = useAuth();
+  const { pathname } = useLocation();
 
   useEffect(() => {
     localStorage.setItem('sidebar-colapsado', String(colapsado));
@@ -109,7 +110,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         )}
       </aside>
 
-      <main className="flex-1 overflow-auto">
+      <main key={pathname} className="flex-1 overflow-auto fade-pagina">
         {children}
       </main>
     </div>

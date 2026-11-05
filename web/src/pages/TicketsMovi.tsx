@@ -1,3 +1,5 @@
+import EstadoVacio from '../components/ui/EstadoVacio';
+import { SkeletonFilas } from '../components/ui/Skeleton';
 /**
  * TicketsMovi — cola de PDFs que llegan agrupados por ticket desde un CRM
  * externo (hoy solo MOVI BETA). Vista separada de la cola manual: aquí un
@@ -208,11 +210,10 @@ export default function TicketsMovi() {
       />
 
       {!cargando && tickets.length === 0 && (
-        <div className="text-center py-12 text-[var(--color-text-secondary)]">
-          <Inbox className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No hay tickets recibidos todavía.</p>
-        </div>
+        <EstadoVacio icono={Inbox} texto="No hay tickets recibidos todavía." />
       )}
+
+      {cargando && tickets.length === 0 && <SkeletonFilas filas={4} alto="h-20" />}
 
       <div className="space-y-3">
         {tickets.map((t) => (
