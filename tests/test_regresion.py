@@ -12,7 +12,7 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from api.database import SessionLocal, init_db  # noqa: E402
-from api.extractores_especializados.ana import extraer_vigencia  # noqa: E402
+from api.extractores_especializados.ana import extraer_datos_vehiculo, extraer_vigencia  # noqa: E402
 from api.models.db_models import (  # noqa: E402
     Compania, Ramo, Subramo, ReglaExtraccion, CampoExtraido, Extraccion, PolizaEntrenamiento, UsoIA,
 )
@@ -26,6 +26,15 @@ class Puros(unittest.TestCase):
         r = extraer_vigencia("x\nD10 M03 A2026 D10 M03 A2026 D10 M03 A2027\ny")
         self.assertEqual(r, {"desde": "10/MAR/2026", "hasta": "10/MAR/2027"})
         self.assertEqual(extraer_vigencia("sin fechas"), {})
+
+    def test_vehiculo_ana_con_vacios_y_sn(self):
+        t = ("Tipo:AUTOS Descripción: FORD ESCAPE TITANIUM .\n"
+             "Carga:NO PELIG. No.Motor: Capacidad:05 PASAJEROS Modelo: 2020\n"
+             "Clave: M1 Color: Serie: 1FMCU0J92LUA88671 Placas:\n")
+        self.assertEqual(extraer_datos_vehiculo(t), {
+            "descripcion_veh": "FORD ESCAPE TITANIUM", "motor": None, "serie": "1FMCU0J92LUA88671", "modelo": "2020", "placas": None})
+        v = extraer_datos_vehiculo("No.Motor:SN Capacidad:05 Placas: S/N")
+        self.assertEqual((v["motor"], v["placas"]), ("SN", "S/N"))
 
     def test_regex_exige_el_valor_correcto(self):
         ps = [SimpleNamespace(id=1, nombre_archivo="a", texto_pdf="Poliza: 123"),

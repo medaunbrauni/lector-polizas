@@ -44,7 +44,7 @@ export default function TransicionSesion({ texto, activa, onFin }: Props) {
       }}
     >
       <div style={{ position: 'relative', width: 'min(34vmin, 260px)', height: 'min(34vmin, 260px)' }}>
-        <AurorasLuz cargando tamano="100%" />
+        <AurorasLuz cargando adaptar tamano="100%" />
       </div>
       <p className="text-sm font-medium">{texto}</p>
     </div>

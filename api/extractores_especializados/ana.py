@@ -136,6 +136,36 @@ def extraer_tipo_vehiculo(texto: str) -> str | None:
     return m.group(1).strip() if m and m.group(1).strip() else None
 
 
+# Datos del vehículo: la carátula los imprime como "Etiqueta:valor" en dos líneas
+# (Tipo/Descripción, y No.Motor/Modelo/Serie/Placas). Un valor vacío deja la
+# etiqueta pegada a la siguiente ("Placas:" al final de línea, "No.Motor: Capacidad:"),
+# por eso el valor no puede ser otra etiqueta ni cruzar el salto de línea. Un "SN"
+# impreso sí se conserva: solo la etiqueta vacía cuenta como sin dato.
+
+
+def _valor_etiqueta(texto: str, etiqueta: str) -> str | None:
+    # Solo la primera aparición (la carátula): si ahí está vacía no se busca más adelante.
+    m = re.search(rf"{etiqueta}:[ \t]*(?!\w+:)(\S*)", texto)
+    return (m.group(1) or None) if m else None
+
+
+def extraer_descripcion_vehiculo(texto: str) -> str | None:
+    m = re.search(r"Descripci[oó]n:[ \t]*(.+)", texto)
+    desc = re.sub(r"\s+\.$", "", m.group(1).strip()) if m else ""
+    return desc or None
+
+
+def extraer_datos_vehiculo(texto: str) -> dict[str, str | None]:
+    modelo = re.search(r"Modelo:[ \t]*(\d{4})\b", texto)
+    return {
+        "descripcion_veh": extraer_descripcion_vehiculo(texto),
+        "motor": _valor_etiqueta(texto, r"No\.\s?Motor"),
+        "serie": _valor_etiqueta(texto, "Serie"),
+        "modelo": modelo.group(1) if modelo else None,
+        "placas": _valor_etiqueta(texto, "Placas"),
+    }
+
+
 def detectar_subramo_por_tipo_ana(tipo: str | None) -> str | None:
     """Subramo del catálogo según el 'Tipo:' de la carátula, o None si no se reconoce."""
     t = (tipo or "").upper().strip()
@@ -156,6 +186,7 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "direccion_completa": direccion,
         "tipo_vehiculo": extraer_tipo_vehiculo(texto),
         **extraer_vigencia(texto),
+        **extraer_datos_vehiculo(texto),
         **extraer_colonia_municipio_cp(direccion),
     }
     return {k: v for k, v in candidatos.items() if v}

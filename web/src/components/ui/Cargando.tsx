@@ -5,7 +5,7 @@ export default function Cargando({ texto, tamano = 40, className = '' }: { texto
   return (
     <div role="status" aria-live="polite" className={`flex flex-col items-center justify-center gap-2 text-[var(--color-text-secondary)] ${className}`}>
       <div className="cargando-aros relative" style={{ width: tamano, height: tamano }}>
-        <AurorasLuz cargando tamano="100%" />
+        <AurorasLuz cargando adaptar tamano="100%" />
       </div>
       {texto && <span className="text-xs">{texto}</span>}
     </div>

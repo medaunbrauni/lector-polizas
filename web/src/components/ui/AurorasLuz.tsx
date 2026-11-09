@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import './AurorasLuz.css';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export const DEFAULT_RING_COLOR = '#D8E8FF';
 
@@ -17,8 +18,12 @@ export const RINGS = [
   { path: 'M100,40 C118,38 134,48 144,62 C154,76 152,92 144,104 C134,118 118,126 100,124 C82,122 66,112 58,98 C50,84 52,68 62,54 C72,42 86,42 100,40 Z', duration: '2.5s', direction: 'reverse' as const },
 ];
 
-export function randomHslColor() {
-  return `hsl(${Math.floor(Math.random() * 360)}, 85%, 65%)`;
+/** Reposo de los aros sobre fondo claro (el blanco azulado del login no se ve). */
+export const RING_COLOR_CLARO = '#072146';
+
+/** `luz` = luminosidad: 65 sobre fondo oscuro, 45 sobre claro para que no se laven. */
+export function randomHslColor(luz = 65) {
+  return `hsl(${Math.floor(Math.random() * 360)}, 85%, ${luz}%)`;
 }
 
 const COLORES_BLANCOS = RINGS.map(() => DEFAULT_RING_COLOR);
@@ -32,20 +37,26 @@ interface Props {
   cargando?: boolean;
   /** Anula el tamaño por defecto (ancho y alto CSS). */
   tamano?: string;
+  /** Ajusta los colores al tema (modo claro = aros oscuros). El login no lo usa: su fondo siempre es oscuro. */
+  adaptar?: boolean;
 }
 
-export default function AurorasLuz({ hovered = false, colors = COLORES_BLANCOS, cargando = false, tamano }: Props) {
+export default function AurorasLuz({ hovered = false, colors = COLORES_BLANCOS, cargando = false, tamano, adaptar = false }: Props) {
+  const { theme } = useTheme();
+  const claro = adaptar && theme === 'light';
   const [coloresAuto, setColoresAuto] = useState<string[]>(COLORES_BLANCOS);
 
   useEffect(() => {
     if (!cargando || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    const nuevos = () => setColoresAuto(RINGS.map(() => randomHslColor()));
+    const nuevos = () => setColoresAuto(RINGS.map(() => randomHslColor(claro ? 45 : 65)));
     nuevos();
     const id = setInterval(nuevos, CAMBIO_COLOR_MS);
     return () => clearInterval(id);
-  }, [cargando]);
+  }, [cargando, claro]);
 
-  const activos = cargando ? coloresAuto : hovered ? colors : COLORES_BLANCOS;
+  const reposo = claro ? RINGS.map(() => RING_COLOR_CLARO) : COLORES_BLANCOS;
+  // coloresAuto sigue siendo COLORES_BLANCOS antes del primer cambio o con movimiento reducido: ahí cae al reposo.
+  const activos = cargando && coloresAuto !== COLORES_BLANCOS ? coloresAuto : hovered ? colors : reposo;
 
   return (
     <div className="login-rings" aria-hidden="true" style={tamano ? { width: tamano, height: tamano } : undefined}>
