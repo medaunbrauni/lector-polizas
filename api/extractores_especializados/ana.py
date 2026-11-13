@@ -192,6 +192,13 @@ def extraer_finanzas(texto: str) -> dict[str, str | None]:
     }
 
 
+def extraer_agente(texto: str) -> dict[str, str]:
+    """La carátula imprime clave y nombre pegados: "Agente: 17719JIRO Y ASOCIADOS AGENTE DE
+    SEGUROS Tel.5555669566". Clave = los dígitos iniciales; nombre = lo que sigue hasta "Tel."."""
+    m = re.search(r"Agente:[ \t]*(\d+)[ \t]*(.+?)[ \t]*Tel\.", texto)
+    return {"agente_clave": m.group(1), "agente_nombre": m.group(2)} if m and m.group(2) else {}
+
+
 def extraer_moneda(texto: str) -> str | None:
     v = _valor_etiqueta(texto, "Moneda")
     return v.title() if v else None
@@ -224,6 +231,7 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         **extraer_vigencia(texto),
         **extraer_datos_vehiculo(texto),
         **extraer_finanzas(texto),
+        **extraer_agente(texto),
         "moneda": extraer_moneda(texto),
         "forma_pago": extraer_forma_pago(texto),
         **extraer_colonia_municipio_cp(direccion),

@@ -12,9 +12,9 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from api.database import SessionLocal, init_db  # noqa: E402
-from api.extractores_especializados.ana import extraer_datos_vehiculo, extraer_vigencia, extraer_finanzas, extraer_moneda, extraer_forma_pago  # noqa: E402
+from api.extractores_especializados.ana import extraer_agente, extraer_datos_vehiculo, extraer_vigencia, extraer_finanzas, extraer_moneda, extraer_forma_pago  # noqa: E402
 from api.models.db_models import (  # noqa: E402
-    Compania, Ramo, Subramo, ReglaExtraccion, CampoExtraido, Extraccion, PolizaEntrenamiento, UsoIA,
+    Compania, Ramo, Subramo, ReglaExtraccion, CampoExtraido, CampoDefinido, Extraccion, PolizaEntrenamiento, UsoIA,
 )
 from api.routers import entrenamiento, metricas  # noqa: E402
 from api.services.ai_utils import ClienteMedido, parse_claude_json  # noqa: E402
@@ -47,6 +47,11 @@ class Puros(unittest.TestCase):
         self.assertEqual((extraer_moneda(t), extraer_forma_pago(t)), ("Nacional", "Contado"))
         self.assertIsNone(extraer_moneda("Moneda: Inicial: $0.00"))
         self.assertIsNone(extraer_finanzas("sin montos")["sub_total"])
+
+    def test_agente_ana_clave_y_nombre_pegados(self):
+        t = "x\nCanal de Venta, Agente: 17719JIRO Y ASOCIADOS AGENTE DE SEGUROS Tel.5555669566\n"
+        self.assertEqual(extraer_agente(t), {"agente_clave": "17719", "agente_nombre": "JIRO Y ASOCIADOS AGENTE DE SEGUROS"})
+        self.assertEqual(extraer_agente("Agente: Tel.55"), {})
 
     def test_regex_exige_el_valor_correcto(self):
         ps = [SimpleNamespace(id=1, nombre_archivo="a", texto_pdf="Poliza: 123"),
@@ -100,6 +105,16 @@ class Api(unittest.TestCase):
         ClienteMedido(Fake, "prueba").messages.create(model="m")
         fila = [f for f in self.c.get("/metricas/ia").json() if f["origen"] == "prueba"][0]
         self.assertEqual((fila["llamadas"], fila["tokens_in"], fila["tokens_out"]), (1, 10, 5))
+
+    def test_agente_ana_se_da_de_alta_una_sola_vez(self):
+        from api.seed.campos_globales import sembrar_agente_ana
+        with SessionLocal() as db:
+            co = Compania(nombre="ANA Seguros"); db.add(co); db.flush()
+            ra = Ramo(nombre="Vehículos", compania_id=co.id); db.add(ra); db.flush()
+            sub = Subramo(nombre="Automóviles", ramo_id=ra.id); db.add(sub); db.commit()
+            sembrar_agente_ana(db); sembrar_agente_ana(db)
+            nombres = sorted(n for (n,) in db.query(CampoDefinido.nombre).filter_by(subramo_id=sub.id))
+        self.assertEqual(nombres, ["agente_clave", "agente_nombre"])
 
     def test_duplicados_protege_trabajo_del_usuario(self):
         with SessionLocal() as db:

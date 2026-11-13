@@ -13,7 +13,7 @@ from .seed.data import sembrar
 from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador, metricas
 from .routers.auth import verificar_sesion
 from .routers.integraciones import movi_beta
-from .seed.campos_globales import sembrar_campos_globales
+from .seed.campos_globales import sembrar_campos_globales, sembrar_agente_ana
 from .services.folder_watcher import iniciar_watcher, detener_watcher
 from .extractores_especializados.registry import combinaciones_sin_catalogo
 
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     try:
         sembrar(db)
         sembrar_campos_globales(db)
+        sembrar_agente_ana(db)
         faltan = combinaciones_sin_catalogo(db)
         if faltan:
             logging.getLogger("uvicorn.error").warning(

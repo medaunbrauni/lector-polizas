@@ -3,7 +3,7 @@ Campos globales estándar para exportación a mesa de control (Sicas).
 Se insertan en todos los subramos como base común de extracción.
 """
 from sqlalchemy.orm import Session
-from ..models.db_models import CampoGlobal
+from ..models.db_models import CampoGlobal, CampoDefinido, Subramo, Ramo, Compania
 
 
 CAMPOS = [
@@ -61,4 +61,20 @@ def sembrar_campos_globales(db: Session) -> None:
                 setattr(existente, k, v)
         else:
             db.add(CampoGlobal(**datos))
+    db.commit()
+
+
+def sembrar_agente_ana(db: Session) -> None:
+    """Da de alta agente_clave/agente_nombre en los subramos de ANA Seguros (el extractor ya
+    los entrega; sin el CampoDefinido no aparecen en el Entrenador). Idempotente."""
+    subramos = (
+        db.query(Subramo.id).join(Ramo, Ramo.id == Subramo.ramo_id).join(Compania, Compania.id == Ramo.compania_id)
+        .filter(Compania.nombre == "ANA Seguros").all()
+    )
+    campos = (("agente_clave", "Clave del Agente", 24), ("agente_nombre", "Nombre del Agente", 25))
+    for (sid,) in subramos:
+        tiene = {n for (n,) in db.query(CampoDefinido.nombre).filter(CampoDefinido.subramo_id == sid)}
+        for nombre, label, orden in campos:
+            if nombre not in tiene:
+                db.add(CampoDefinido(subramo_id=sid, nombre=nombre, label=label, orden=orden))
     db.commit()
