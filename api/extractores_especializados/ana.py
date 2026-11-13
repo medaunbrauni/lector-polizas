@@ -166,6 +166,42 @@ def extraer_datos_vehiculo(texto: str) -> dict[str, str | None]:
     }
 
 
+def _monto(texto: str, etiqueta: str) -> str | None:
+    """Monto sin '$' ni comas, como GNP y El Potosí ("10103.82"). Las etiquetas de la
+    carátula van pegadas ("Prima Neta: $10,103.82Prima Total:"), por eso se toma solo el monto."""
+    m = re.search(rf"{etiqueta}:[ \t]*\$?\s*([\d,]+\.\d{{2}})", texto)
+    return m.group(1).replace(",", "") if m else None
+
+
+def extraer_subtotal(prima_total: str | None, iva: str | None) -> str | None:
+    """No viene impreso: Sub Total = Prima Total - I.V.A. (regla acordada para ANA)."""
+    if not prima_total or not iva:
+        return None
+    return f"{float(prima_total) - float(iva):.2f}"
+
+
+def extraer_finanzas(texto: str) -> dict[str, str | None]:
+    prima_total, iva = _monto(texto, r"Prima\s+Total"), _monto(texto, r"I\.V\.A\.")
+    return {
+        "prima_neta": _monto(texto, r"Prima\s+Neta"),
+        "recargos": _monto(texto, "Recargos"),
+        "derechos": _monto(texto, "Gastos"),  # "Gastos" de la carátula = Derechos del esquema
+        "iva": iva,
+        "prima_total": prima_total,
+        "sub_total": extraer_subtotal(prima_total, iva),
+    }
+
+
+def extraer_moneda(texto: str) -> str | None:
+    v = _valor_etiqueta(texto, "Moneda")
+    return v.title() if v else None
+
+
+def extraer_forma_pago(texto: str) -> str | None:
+    v = _valor_etiqueta(texto, "Forma de pago")
+    return v.capitalize() if v else None
+
+
 def detectar_subramo_por_tipo_ana(tipo: str | None) -> str | None:
     """Subramo del catálogo según el 'Tipo:' de la carátula, o None si no se reconoce."""
     t = (tipo or "").upper().strip()
@@ -187,6 +223,9 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "tipo_vehiculo": extraer_tipo_vehiculo(texto),
         **extraer_vigencia(texto),
         **extraer_datos_vehiculo(texto),
+        **extraer_finanzas(texto),
+        "moneda": extraer_moneda(texto),
+        "forma_pago": extraer_forma_pago(texto),
         **extraer_colonia_municipio_cp(direccion),
     }
     return {k: v for k, v in candidatos.items() if v}

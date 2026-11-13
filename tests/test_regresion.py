@@ -12,7 +12,7 @@ from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from api.database import SessionLocal, init_db  # noqa: E402
-from api.extractores_especializados.ana import extraer_datos_vehiculo, extraer_vigencia  # noqa: E402
+from api.extractores_especializados.ana import extraer_datos_vehiculo, extraer_vigencia, extraer_finanzas, extraer_moneda, extraer_forma_pago  # noqa: E402
 from api.models.db_models import (  # noqa: E402
     Compania, Ramo, Subramo, ReglaExtraccion, CampoExtraido, Extraccion, PolizaEntrenamiento, UsoIA,
 )
@@ -35,6 +35,18 @@ class Puros(unittest.TestCase):
             "descripcion_veh": "FORD ESCAPE TITANIUM", "motor": None, "serie": "1FMCU0J92LUA88671", "modelo": "2020", "placas": None})
         v = extraer_datos_vehiculo("No.Motor:SN Capacidad:05 Placas: S/N")
         self.assertEqual((v["motor"], v["placas"]), ("SN", "S/N"))
+
+    def test_finanzas_ana(self):
+        t = ("Solicitud: NUEVA Cobertura: AMPLIA Pagos Subsecuentes Recargos: $1,489.53\n"
+             "Uso: PARTICULAR Moneda: NACIONAL Inicial: $0.00Gastos: $750.00\n"
+             "Servicio:PARTICULAR Forma de pago:Contado Subsecuente $0.00I.V.A.: $1,736.61\n"
+             "Bonificación : $0.00 Prima Neta: $10,103.82Prima Total: $12,590.43\n")
+        self.assertEqual(extraer_finanzas(t), {
+            "prima_neta": "10103.82", "recargos": "1489.53", "derechos": "750.00", "iva": "1736.61",
+            "prima_total": "12590.43", "sub_total": "10853.82"})
+        self.assertEqual((extraer_moneda(t), extraer_forma_pago(t)), ("Nacional", "Contado"))
+        self.assertIsNone(extraer_moneda("Moneda: Inicial: $0.00"))
+        self.assertIsNone(extraer_finanzas("sin montos")["sub_total"])
 
     def test_regex_exige_el_valor_correcto(self):
         ps = [SimpleNamespace(id=1, nombre_archivo="a", texto_pdf="Poliza: 123"),
