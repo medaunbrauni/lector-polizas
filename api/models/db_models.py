@@ -49,6 +49,9 @@ class Subramo(Base):
     activo = Column(Boolean, default=True)
     prioridad = Column(Integer, nullable=True)
     porcentaje_docs = Column(Float, nullable=True)
+    # Activado desde el Entrenador: /extraer procesa este subramo con las reglas entrenadas
+    # aunque no tenga extractor dedicado (ver registry.SOPORTE para los que sí lo tienen).
+    habilitado_produccion = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ramo = relationship("Ramo", back_populates="subramos")

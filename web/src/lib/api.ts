@@ -617,9 +617,18 @@ export const restaurarRegla = (reglaId: number) =>
   fetch(`${ENT}/reglas-lote/${reglaId}/restaurar`, { method: 'POST' }).then((r) => jsonOk<{ ok: boolean }>(r));
 
 export interface UsoIAFila { origen: string; modelo: string | null; llamadas: number; tokens_in: number; tokens_out: number }
-export interface ReglaProduccion { regla_id: number; subramo: string | null; campo: string; intentos: number; aciertos: number; tasa: number }
+export interface ReglaProduccion { regla_id: number; compania: string | null; ramo: string | null; subramo: string | null; campo: string; intentos: number; aciertos: number; tasa: number }
 
 export const getMetricasIA = (dias: number) =>
   fetch(`${BASE}/metricas/ia?dias=${dias}`, { credentials: 'include' }).then((r) => jsonOk<UsoIAFila[]>(r));
 export const getMetricasReglas = () =>
   fetch(`${BASE}/metricas/reglas`, { credentials: 'include' }).then((r) => jsonOk<ReglaProduccion[]>(r));
+
+export interface EstadoProduccion { dedicado: boolean; habilitado: boolean; puede: boolean; razones: string[] }
+
+export const getProduccion = (subramoId: number) =>
+  fetch(`${ENT}/subramos/${subramoId}/produccion`).then((r) => jsonOk<EstadoProduccion>(r));
+export const setProduccion = (subramoId: number, habilitado: boolean) =>
+  fetch(`${ENT}/subramos/${subramoId}/produccion`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ habilitado }),
+  }).then((r) => jsonOk<EstadoProduccion>(r));

@@ -49,16 +49,17 @@ def reglas_produccion(minimo: int = 5, db: Session = Depends(get_db)):
     ).all()
     stats = stats_reglas_produccion(db, [r.id for r in reglas])
     nombres = {
-        s.id: f"{c.nombre} / {s.nombre}"
-        for s, c in db.query(Subramo, Compania).join(Ramo, Ramo.id == Subramo.ramo_id).join(Compania, Compania.id == Ramo.compania_id)
+        s.id: (c.nombre, r.nombre, s.nombre)
+        for s, r, c in db.query(Subramo, Ramo, Compania).join(Ramo, Ramo.id == Subramo.ramo_id).join(Compania, Compania.id == Ramo.compania_id)
     }
     filas = []
     for r in reglas:
         s = stats.get(r.id)
         if not s or s["intentos"] < minimo:
             continue
+        compania, ramo, subramo = nombres.get(r.subramo_id, (None, None, None))
         filas.append({
-            "regla_id": r.id, "subramo": nombres.get(r.subramo_id), "campo": r.nombre_campo,
+            "regla_id": r.id, "compania": compania, "ramo": ramo, "subramo": subramo, "campo": r.nombre_campo,
             "intentos": s["intentos"], "aciertos": s["aciertos"],
             "tasa": round(s["aciertos"] / s["intentos"], 3),
         })

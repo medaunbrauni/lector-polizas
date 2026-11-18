@@ -23,10 +23,14 @@ from ..models.db_models import (
     Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion, ClasificacionCola,
 )
 from ..services.batch_trainer import (
+    _norm,
     generar_regex_lote, probar_regex_en_lote, cobertura_lote, auto_detectar_en_lote,
 )
 from ..services.rule_engine import _aplicar_patron, aplicar_reglas
-from ..services.extractor import clave_contenido, sembrar_selecciones_auto, procesar_pdf
+from collections import Counter
+from ..services.extractor import CAMPOS_BASICOS, _derivar_campos, clave_contenido, sembrar_selecciones_auto, procesar_pdf
+from ..services.detector import detectar_con_score
+from ..extractores_especializados.registry import esta_soportado
 from .catalogos import listar_campos
 from .metricas import stats_reglas_produccion
 
@@ -899,3 +903,83 @@ def restaurar_regla(regla_id: int, db: Session = Depends(get_db)):
     r.activo = True
     db.commit()
     return {"ok": True}
+
+
+MIN_ENTRENADAS_PRODUCCION = 5
+_LABEL_BASICO = {"documento": "Documento", "desde": "Desde", "hasta": "Hasta", "prima_total": "Prima Total"}
+
+
+def _razones_simulacion(subramo_id: int, entrenadas: list[PolizaEntrenamiento], db: Session) -> list[str]:
+    """
+    Simula producción sobre las pólizas entrenadas: reglas + derivados, igual que /extraer.
+    Exige que salgan todos los campos requeridos, que coincidan con lo que el usuario confirmó
+    y que el detector ubique cada PDF en este subramo con confianza alta (sin IA).
+    """
+    requeridos = {c["nombre"]: c["label"] for c in listar_campos(subramo_id, db)
+                  if c.get("requerido") and not c.get("valor_fijo") and c["nombre"] != "sub_ramo_sicas"}
+    for n in CAMPOS_BASICOS:
+        requeridos.setdefault(n, _LABEL_BASICO[n])
+    faltan, difieren, mal_detectadas = Counter(), Counter(), 0
+    for p in entrenadas:
+        texto = p.texto_pdf or ""
+        pdf = Path(p.ruta_archivo).read_bytes() if os.path.exists(p.ruta_archivo) else None
+        datos = aplicar_reglas(texto, subramo_id, db, pdf_bytes=pdf)
+        _derivar_campos(datos)
+        for n in requeridos:
+            if not (datos.get(n) or {}).get("valor"):
+                faltan[n] += 1
+        for s in db.query(SeleccionCampo).filter(SeleccionCampo.poliza_id == p.id, SeleccionCampo.es_auto == False):  # noqa: E712
+            v = (datos.get(s.nombre_campo) or {}).get("valor")
+            if v and _norm(v) != _norm(s.texto_seleccionado):
+                difieren[s.nombre_campo] += 1
+        det = detectar_con_score(texto, db)
+        if det["subramo_id"] != subramo_id or det["confianza"] != "alta":
+            mal_detectadas += 1
+    total = len(entrenadas)
+    razones = [f"«{requeridos[n]}» no sale en {k} de {total} pólizas entrenadas." for n, k in faltan.items()]
+    razones += [f"«{n}» sale distinto a lo que confirmaste en {k} de {total} pólizas." for n, k in difieren.items()]
+    if mal_detectadas:
+        razones.append(f"{mal_detectadas} de {total} pólizas entrenadas no se detectan como este subramo con confianza alta.")
+    return razones
+
+
+def _estado_produccion(subramo_id: int, db: Session) -> dict:
+    """
+    Un subramo sin extractor dedicado puede activarse en producción cuando una simulación sobre
+    sus pólizas entrenadas (mínimo MIN_ENTRENADAS_PRODUCCION) sale limpia. Ver _razones_simulacion.
+    """
+    sub = db.get(Subramo, subramo_id)
+    if not sub:
+        raise HTTPException(404, "Subramo no encontrado")
+    ramo = db.get(Ramo, sub.ramo_id)
+    comp = db.get(Compania, ramo.compania_id)
+    dedicado = esta_soportado(comp.nombre, ramo.nombre, sub.nombre)
+
+    entrenadas = db.query(PolizaEntrenamiento).filter(
+        PolizaEntrenamiento.subramo_id == subramo_id, PolizaEntrenamiento.entrenado == True,  # noqa: E712
+    ).all()
+    if len(entrenadas) < MIN_ENTRENADAS_PRODUCCION:
+        razones = [f"Faltan pólizas entrenadas: hay {len(entrenadas)} y se necesitan {MIN_ENTRENADAS_PRODUCCION}."]
+    else:
+        razones = _razones_simulacion(subramo_id, entrenadas, db)
+    return {"dedicado": dedicado, "habilitado": bool(sub.habilitado_produccion), "puede": not razones, "razones": razones}
+
+
+@router.get("/subramos/{subramo_id}/produccion")
+def ver_produccion(subramo_id: int, db: Session = Depends(get_db)):
+    return _estado_produccion(subramo_id, db)
+
+
+class ProduccionIn(BaseModel):
+    habilitado: bool
+
+
+@router.post("/subramos/{subramo_id}/produccion")
+def cambiar_produccion(subramo_id: int, data: ProduccionIn, db: Session = Depends(get_db)):
+    """Activar exige el entrenamiento mínimo; desactivar siempre se permite."""
+    estado = _estado_produccion(subramo_id, db)
+    if data.habilitado and not estado["puede"]:
+        raise HTTPException(400, detail={"error": "Entrenamiento insuficiente", "razones": estado["razones"]})
+    db.get(Subramo, subramo_id).habilitado_produccion = data.habilitado
+    db.commit()
+    return _estado_produccion(subramo_id, db)

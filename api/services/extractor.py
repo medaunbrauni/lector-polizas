@@ -534,11 +534,14 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session, actualizar:
     # aunque el detector lo haya clasificado como autos; como ese subramo no es
     # confiable, el PDF no se manda a ningún lote del Entrenador.
     producto_ajeno = titulo_no_soportado_gnp(texto) if compania and compania.nombre == "GNP Seguros" else None
-    if producto_ajeno or not esta_soportado(
+    # Un subramo activado desde el Entrenador solo cuenta si la detección es confiable (alta);
+    # con menos, el PDF podría ser de otro subramo y se aplicarían reglas ajenas.
+    habilitado = bool(subramo and subramo.habilitado_produccion and det["confianza"] == "alta")
+    if producto_ajeno or not (habilitado or esta_soportado(
         compania.nombre if compania else None,
         ramo.nombre if ramo else None,
         subramo.nombre if subramo else None,
-    ):
+    )):
         if not compania:
             return rechazar("no_reconocida", MSG_NO_RECONOCIDA, det, None, None, None,
                              contenido, nombre_archivo, texto, None, db)
@@ -555,7 +558,7 @@ def procesar_pdf(contenido: bytes, nombre_archivo: str, db: Session, actualizar:
                          contenido, nombre_archivo, texto, None, db)
 
     patrones_generados: dict = {}
-    if compania and ramo and actualizar is None and _necesita_patrones(compania, ramo, subramo):
+    if compania and ramo and actualizar is None and not habilitado and _necesita_patrones(compania, ramo, subramo):
         patrones_generados = _generar_y_guardar_patrones(compania, ramo, subramo, texto, db)
         if patrones_generados:
             det = detectar_con_score(texto, db)

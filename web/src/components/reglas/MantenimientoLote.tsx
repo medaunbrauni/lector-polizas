@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import ConfirmDialog from '../ui/ConfirmDialog';
 import Cargando from '../ui/Cargando';
+import ProduccionSubramo from './ProduccionSubramo';
 import {
   actualizarAutomaticos, getCoberturaSubramo, getDuplicados, limpiarDuplicados,
   getHistorialReglas, restaurarRegla,
@@ -69,6 +70,7 @@ export default function MantenimientoLote({ subramoId, onCambio }: { subramoId: 
         <button className={BTN} onClick={abrirCobertura}>Cobertura</button>
         <button className={BTN} onClick={abrirDuplicados}>Quitar copias</button>
       </div>
+      <ProduccionSubramo subramoId={subramoId} />
       {trabajando && <Cargando texto="Procesando el lote…" tamano={28} className="py-1" />}
       {msg && <p className="text-[10px] text-[var(--color-text-secondary)]">{msg}</p>}
 

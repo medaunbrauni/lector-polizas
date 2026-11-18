@@ -116,6 +116,36 @@ class Api(unittest.TestCase):
             nombres = sorted(n for (n,) in db.query(CampoDefinido.nombre).filter_by(subramo_id=sub.id))
         self.assertEqual(nombres, ["agente_clave", "agente_nombre"])
 
+    def test_produccion_simula_el_lote_antes_de_activar(self):
+        from unittest import mock
+        reglas = {"documento": r"documento: (\d)", "desde": r"desde: (\d)", "hasta": r"hasta: (\d)", "prima_total": r"total: (\d)"}
+        with SessionLocal() as db:
+            co = Compania(nombre="Otra Aseguradora"); db.add(co); db.flush()
+            ra = Ramo(nombre="Daños", compania_id=co.id); db.add(ra); db.flush()
+            sub = Subramo(nombre="Hogar", ramo_id=ra.id); db.add(sub); db.flush()
+            sid = sub.id
+            db.add_all([PolizaEntrenamiento(subramo_id=sid, nombre_archivo=f"p{i}", ruta_archivo="/x", entrenado=True,
+                                            texto_pdf=f"documento: {i} desde: 1 hasta: 2 total: 3") for i in range(5)])
+            db.add_all([ReglaExtraccion(subramo_id=sid, nombre_campo=c, patron_regex=r, activo=True) for c, r in reglas.items()])
+            db.commit()
+        url = f"/entrenamiento/subramos/{sid}/produccion"
+        alta = {"subramo_id": sid, "confianza": "alta"}
+        with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value=alta):
+            self.assertTrue(self.c.post(url, json={"habilitado": True}).json()["habilitado"])
+            self.c.post(url, json={"habilitado": False})
+            with SessionLocal() as db:   # una regla deja de funcionar: no se puede activar
+                db.query(ReglaExtraccion).filter_by(subramo_id=sid, nombre_campo="hasta").update({"patron_regex": r"zzz (\d)"})
+                db.commit()
+            r = self.c.post(url, json={"habilitado": True})
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("Hasta", r.json()["detail"]["razones"][0])
+        with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value={"subramo_id": sid, "confianza": "media"}):
+            with SessionLocal() as db:
+                db.query(ReglaExtraccion).filter_by(subramo_id=sid, nombre_campo="hasta").update({"patron_regex": r"hasta: (\d)"})
+                db.commit()
+            r = self.c.post(url, json={"habilitado": True})
+            self.assertIn("confianza alta", r.json()["detail"]["razones"][0])
+
     def test_duplicados_protege_trabajo_del_usuario(self):
         with SessionLocal() as db:
             for i, ent in enumerate((True, False, False)):
