@@ -87,7 +87,6 @@ def _patron_de_llamada(nodo: ast.Call, constantes: dict[str, str]) -> str | None
     if not isinstance(f.value, ast.Name):
         return None
     if f.value.id == "re":
-        # re.search(patron, texto, ...) -- el patrón es el primer argumento.
         if not nodo.args:
             return None
         return _resolver_valor_estatico(nodo.args[0], constantes)
@@ -304,7 +303,6 @@ def _resolver_nombre_funcion(valor: ast.expr, asignaciones: dict[str, str]) -> s
     if isinstance(valor, ast.Name):
         return asignaciones.get(valor.id)
     if isinstance(valor, ast.Attribute) and isinstance(valor.value, ast.Name):
-        # ej. vigencia.get("Inicio Vigencia") -> valor.value es "vigencia"
         return asignaciones.get(valor.value.id)
     if isinstance(valor, ast.Call) and isinstance(valor.func, ast.Attribute):
         base = valor.func.value

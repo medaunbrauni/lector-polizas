@@ -1,3 +1,5 @@
+import EstadoVacio from '../components/ui/EstadoVacio';
+import { SkeletonFilas } from '../components/ui/Skeleton';
 /**
  * TicketsMovi — cola de PDFs que llegan agrupados por ticket desde un CRM
  * externo (hoy solo MOVI BETA). Vista separada de la cola manual: aquí un
@@ -26,9 +28,9 @@ function TicketCard({ ticket, companias, onEliminar }: {
   };
 
   const {
-    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion,
+    overrides, overrideActivo, patronesAbiertos, patronesSeleccionados, guardandoPatrones, reenviando, guardandoCorreccion, reprocesando,
     abrirOverride, onCompaniaChange, onRamoChange, onSubramoChange,
-    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar,
+    confirmarItem, guardarCorreccion, descartar, togglePatrones, togglePatron, guardarPatrones, reenviar, reprocesar,
   } = useColaAcciones(setItems);
 
   const toggle = async () => {
@@ -118,6 +120,8 @@ function TicketCard({ ticket, companias, onEliminar }: {
               reenviando={reenviando === item.id}
               onGuardarCorreccion={() => guardarCorreccion(item)}
               guardandoCorreccion={guardandoCorreccion === item.id}
+              onReprocesar={() => reprocesar(item)}
+              reprocesando={reprocesando === item.id}
             />
           ))}
         </div>
@@ -206,11 +210,10 @@ export default function TicketsMovi() {
       />
 
       {!cargando && tickets.length === 0 && (
-        <div className="text-center py-12 text-[var(--color-text-secondary)]">
-          <Inbox className="w-10 h-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">No hay tickets recibidos todavía.</p>
-        </div>
+        <EstadoVacio icono={Inbox} texto="No hay tickets recibidos todavía." />
       )}
+
+      {cargando && tickets.length === 0 && <SkeletonFilas filas={4} alto="h-20" />}
 
       <div className="space-y-3">
         {tickets.map((t) => (

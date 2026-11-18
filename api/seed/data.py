@@ -25,20 +25,16 @@ from .._catalogo_generado_ref import COMPANIAS_CON_PRIORIDAD
 # se mantienen aquí porque no existen en los globales.
 
 CAMPOS_VEHICULOS = [
-    # — Identificación —
     {"nombre": "documento",        "label": "N° de Póliza",           "tipo": "texto",  "requerido": True,  "orden": 1},
     {"nombre": "nombre_cliente",   "label": "Nombre / Razón Social",   "tipo": "texto",  "requerido": True,  "orden": 2},
     {"nombre": "rfc",              "label": "RFC",                     "tipo": "texto",  "requerido": False, "orden": 3},
-    # — Vehículo —
     {"nombre": "descripcion_veh",  "label": "Descripción Vehículo",    "tipo": "texto",  "requerido": True,  "orden": 4},
     {"nombre": "placas",           "label": "Placas",                  "tipo": "texto",  "requerido": False, "orden": 5},
     {"nombre": "serie",            "label": "N° de Serie",             "tipo": "texto",  "requerido": False, "orden": 6},
     {"nombre": "motor",            "label": "N° de Motor",             "tipo": "texto",  "requerido": False, "orden": 7},
     {"nombre": "tipo_vehiculo",    "label": "Tipo de Vehículo",        "tipo": "texto",  "requerido": False, "orden": 8},
-    # — Pago —
     {"nombre": "forma_pago",       "label": "Forma de Pago",           "tipo": "texto",  "requerido": False, "orden": 10},
     {"nombre": "moneda",           "label": "Moneda",                  "tipo": "texto",  "requerido": False, "orden": 11},
-    # — Primas —
     {"nombre": "prima_neta",       "label": "Prima Neta",              "tipo": "moneda", "requerido": True,  "orden": 12},
     {"nombre": "derechos",         "label": "Derechos / Gastos Exp.",  "tipo": "moneda", "requerido": False, "orden": 13},
     # "subtotal" (específico) fue duplicado del global "sub_total" — se
@@ -46,10 +42,8 @@ CAMPOS_VEHICULOS = [
     # extractores). No agregar de nuevo aquí.
     {"nombre": "iva",              "label": "IVA",                     "tipo": "moneda", "requerido": False, "orden": 15},
     {"nombre": "prima_total",      "label": "Prima Total",             "tipo": "moneda", "requerido": True,  "orden": 16},
-    # — Vigencia —
     {"nombre": "desde",            "label": "Inicio de Vigencia",      "tipo": "fecha",  "requerido": True,  "orden": 17},
     {"nombre": "hasta",            "label": "Fin de Vigencia",         "tipo": "fecha",  "requerido": True,  "orden": 18},
-    # — Dirección —
     {"nombre": "colonia",          "label": "Colonia",                 "tipo": "texto",  "requerido": False, "orden": 19},
     {"nombre": "municipio",        "label": "Municipio / Alcaldía",    "tipo": "texto",  "requerido": False, "orden": 20},
     {"nombre": "cp",               "label": "C.P.",                    "tipo": "texto",  "requerido": False, "orden": 21},
@@ -186,14 +180,12 @@ def sembrar(db: Session) -> None:
                     subramo.activo          = True
                     db.flush()
 
-            # Desactivar subramos que ya no están en el catálogo para este ramo
             db.query(Subramo).filter(
                 Subramo.ramo_id == ramo.id,
                 Subramo.nombre.notin_(nombres_subs_validos),
             ).update({"activo": False}, synchronize_session=False)
             db.flush()
 
-        # Desactivar ramos que ya no están en el catálogo para esta compañía
         db.query(Ramo).filter(
             Ramo.compania_id == compania.id,
             Ramo.nombre.notin_(nombres_ramos_validos),

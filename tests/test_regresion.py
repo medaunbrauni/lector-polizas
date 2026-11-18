@@ -1,0 +1,160 @@
+"""Pruebas de regresión (unittest, sin dependencias nuevas): python -m unittest discover tests"""
+import os
+import tempfile
+import unittest
+from types import SimpleNamespace
+
+_dir = tempfile.mkdtemp()
+os.environ["DATABASE_URL"] = f"sqlite:///{_dir}/t.db"
+os.environ["STORAGE_PATH"] = _dir
+
+from fastapi import FastAPI  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
+
+from api.database import SessionLocal, init_db  # noqa: E402
+from api.extractores_especializados.ana import extraer_agente, extraer_datos_vehiculo, extraer_vigencia, extraer_finanzas, extraer_moneda, extraer_forma_pago  # noqa: E402
+from api.models.db_models import (  # noqa: E402
+    Compania, Ramo, Subramo, ReglaExtraccion, CampoExtraido, CampoDefinido, Extraccion, PolizaEntrenamiento, UsoIA,
+)
+from api.routers import entrenamiento, metricas  # noqa: E402
+from api.services.ai_utils import ClienteMedido, parse_claude_json  # noqa: E402
+from api.services.batch_trainer import cobertura_lote, probar_regex_en_lote  # noqa: E402
+
+
+class Puros(unittest.TestCase):
+    def test_vigencia_ana(self):
+        r = extraer_vigencia("x\nD10 M03 A2026 D10 M03 A2026 D10 M03 A2027\ny")
+        self.assertEqual(r, {"desde": "10/MAR/2026", "hasta": "10/MAR/2027"})
+        self.assertEqual(extraer_vigencia("sin fechas"), {})
+
+    def test_vehiculo_ana_con_vacios_y_sn(self):
+        t = ("Tipo:AUTOS Descripción: FORD ESCAPE TITANIUM .\n"
+             "Carga:NO PELIG. No.Motor: Capacidad:05 PASAJEROS Modelo: 2020\n"
+             "Clave: M1 Color: Serie: 1FMCU0J92LUA88671 Placas:\n")
+        self.assertEqual(extraer_datos_vehiculo(t), {
+            "descripcion_veh": "FORD ESCAPE TITANIUM", "motor": None, "serie": "1FMCU0J92LUA88671", "modelo": "2020", "placas": None})
+        v = extraer_datos_vehiculo("No.Motor:SN Capacidad:05 Placas: S/N")
+        self.assertEqual((v["motor"], v["placas"]), ("SN", "S/N"))
+
+    def test_finanzas_ana(self):
+        t = ("Solicitud: NUEVA Cobertura: AMPLIA Pagos Subsecuentes Recargos: $1,489.53\n"
+             "Uso: PARTICULAR Moneda: NACIONAL Inicial: $0.00Gastos: $750.00\n"
+             "Servicio:PARTICULAR Forma de pago:Contado Subsecuente $0.00I.V.A.: $1,736.61\n"
+             "Bonificación : $0.00 Prima Neta: $10,103.82Prima Total: $12,590.43\n")
+        self.assertEqual(extraer_finanzas(t), {
+            "prima_neta": "10103.82", "recargos": "1489.53", "derechos": "750.00", "iva": "1736.61",
+            "prima_total": "12590.43", "sub_total": "10853.82"})
+        self.assertEqual((extraer_moneda(t), extraer_forma_pago(t)), ("Nacional", "Contado"))
+        self.assertIsNone(extraer_moneda("Moneda: Inicial: $0.00"))
+        self.assertIsNone(extraer_finanzas("sin montos")["sub_total"])
+
+    def test_agente_ana_clave_y_nombre_pegados(self):
+        t = "x\nCanal de Venta, Agente: 17719JIRO Y ASOCIADOS AGENTE DE SEGUROS Tel.5555669566\n"
+        self.assertEqual(extraer_agente(t), {"agente_clave": "17719", "agente_nombre": "JIRO Y ASOCIADOS AGENTE DE SEGUROS"})
+        self.assertEqual(extraer_agente("Agente: Tel.55"), {})
+
+    def test_regex_exige_el_valor_correcto(self):
+        ps = [SimpleNamespace(id=1, nombre_archivo="a", texto_pdf="Poliza: 123"),
+              SimpleNamespace(id=2, nombre_archivo="b", texto_pdf="Poliza: 999")]
+        m = probar_regex_en_lote(r"Poliza:\s*(\d+)", ps, {1: "123", 2: "000"})
+        self.assertEqual([x["coincide"] for x in m], [True, False])
+        self.assertEqual(cobertura_lote(m), 1)
+
+    def test_parse_json_con_fences(self):
+        self.assertEqual(parse_claude_json('```json\n{"a": 1}\n```'), {"a": 1})
+
+
+class Api(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        init_db()
+        app = FastAPI()
+        app.include_router(entrenamiento.router)
+        app.include_router(metricas.router)
+        cls.c = TestClient(app)
+        with SessionLocal() as db:
+            co = Compania(nombre="Test"); db.add(co); db.flush()
+            ra = Ramo(nombre="Autos", compania_id=co.id); db.add(ra); db.flush()
+            sub = Subramo(nombre="Individual", ramo_id=ra.id); db.add(sub); db.flush()
+            cls.sub = sub.id
+            r1 = ReglaExtraccion(subramo_id=sub.id, nombre_campo="rfc", patron_regex="a", activo=False)
+            r2 = ReglaExtraccion(subramo_id=sub.id, nombre_campo="rfc", patron_regex="b", activo=True)
+            db.add_all([r1, r2]); db.flush()
+            cls.vieja, cls.activa = r1.id, r2.id
+            ex = Extraccion(nombre_archivo="x.pdf", exitoso=True); db.add(ex); db.flush()
+            for m in ("regla", "regla", "no_encontrado"):
+                db.add(CampoExtraido(extraccion_id=ex.id, nombre_campo="rfc", metodo=m, regla_id=r2.id))
+            db.commit()
+
+    def test_restaurar_deja_una_sola_activa(self):
+        self.assertTrue(self.c.post(f"/entrenamiento/reglas-lote/{self.vieja}/restaurar").json()["ok"])
+        with SessionLocal() as db:
+            act = [r.id for r in db.query(ReglaExtraccion).filter_by(subramo_id=self.sub, nombre_campo="rfc", activo=True)]
+        self.assertEqual(act, [self.vieja])
+
+    def test_metricas_reglas_produccion(self):
+        filas = self.c.get("/metricas/reglas?minimo=3").json()
+        self.assertEqual((filas[0]["aciertos"], filas[0]["intentos"]), (2, 3))
+
+    def test_uso_ia_se_registra(self):
+        class Fake:
+            class messages:
+                @staticmethod
+                def create(**kw):
+                    return SimpleNamespace(usage=SimpleNamespace(input_tokens=10, output_tokens=5))
+        ClienteMedido(Fake, "prueba").messages.create(model="m")
+        fila = [f for f in self.c.get("/metricas/ia").json() if f["origen"] == "prueba"][0]
+        self.assertEqual((fila["llamadas"], fila["tokens_in"], fila["tokens_out"]), (1, 10, 5))
+
+    def test_agente_ana_se_da_de_alta_una_sola_vez(self):
+        from api.seed.campos_globales import sembrar_agente_ana
+        with SessionLocal() as db:
+            co = Compania(nombre="ANA Seguros"); db.add(co); db.flush()
+            ra = Ramo(nombre="Vehículos", compania_id=co.id); db.add(ra); db.flush()
+            sub = Subramo(nombre="Automóviles", ramo_id=ra.id); db.add(sub); db.commit()
+            sembrar_agente_ana(db); sembrar_agente_ana(db)
+            nombres = sorted(n for (n,) in db.query(CampoDefinido.nombre).filter_by(subramo_id=sub.id))
+        self.assertEqual(nombres, ["agente_clave", "agente_nombre"])
+
+    def test_produccion_simula_el_lote_antes_de_activar(self):
+        from unittest import mock
+        reglas = {"documento": r"documento: (\d)", "desde": r"desde: (\d)", "hasta": r"hasta: (\d)", "prima_total": r"total: (\d)"}
+        with SessionLocal() as db:
+            co = Compania(nombre="Otra Aseguradora"); db.add(co); db.flush()
+            ra = Ramo(nombre="Daños", compania_id=co.id); db.add(ra); db.flush()
+            sub = Subramo(nombre="Hogar", ramo_id=ra.id); db.add(sub); db.flush()
+            sid = sub.id
+            db.add_all([PolizaEntrenamiento(subramo_id=sid, nombre_archivo=f"p{i}", ruta_archivo="/x", entrenado=True,
+                                            texto_pdf=f"documento: {i} desde: 1 hasta: 2 total: 3") for i in range(5)])
+            db.add_all([ReglaExtraccion(subramo_id=sid, nombre_campo=c, patron_regex=r, activo=True) for c, r in reglas.items()])
+            db.commit()
+        url = f"/entrenamiento/subramos/{sid}/produccion"
+        alta = {"subramo_id": sid, "confianza": "alta"}
+        with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value=alta):
+            self.assertTrue(self.c.post(url, json={"habilitado": True}).json()["habilitado"])
+            self.c.post(url, json={"habilitado": False})
+            with SessionLocal() as db:   # una regla deja de funcionar: no se puede activar
+                db.query(ReglaExtraccion).filter_by(subramo_id=sid, nombre_campo="hasta").update({"patron_regex": r"zzz (\d)"})
+                db.commit()
+            r = self.c.post(url, json={"habilitado": True})
+            self.assertEqual(r.status_code, 400)
+            self.assertIn("Hasta", r.json()["detail"]["razones"][0])
+        with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value={"subramo_id": sid, "confianza": "media"}):
+            with SessionLocal() as db:
+                db.query(ReglaExtraccion).filter_by(subramo_id=sid, nombre_campo="hasta").update({"patron_regex": r"hasta: (\d)"})
+                db.commit()
+            r = self.c.post(url, json={"habilitado": True})
+            self.assertIn("confianza alta", r.json()["detail"]["razones"][0])
+
+    def test_duplicados_protege_trabajo_del_usuario(self):
+        with SessionLocal() as db:
+            for i, ent in enumerate((True, False, False)):
+                db.add(PolizaEntrenamiento(subramo_id=self.sub, nombre_archivo=f"d{i}", ruta_archivo="/no/existe",
+                                           texto_pdf="mismo", sha256="h", entrenado=ent))
+            db.commit()
+        r = self.c.post(f"/entrenamiento/subramos/{self.sub}/limpiar-duplicados").json()
+        self.assertEqual(r, {"borradas": 1, "requieren_revision": 1})
+
+
+if __name__ == "__main__":
+    unittest.main()

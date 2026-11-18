@@ -163,8 +163,6 @@ export interface Regla {
   bbox: BBox | null;
 }
 
-// ── Entrenamiento por lotes ───────────────────────────────────────────────────
-
 export interface PolizaEntrenamiento {
   id: number;
   subramo_id: number;
@@ -197,6 +195,10 @@ export interface MatchLote {
   nombre_archivo: string;
   encontrado: boolean;
   valor_extraido: string | null;
+  /** Valor seleccionado/confirmado por el usuario en esa póliza, si lo hay. */
+  valor_esperado?: string | null;
+  /** El regex extrae exactamente el valor esperado (null si no hay esperado). */
+  coincide?: boolean | null;
   error: string | null;
 }
 
@@ -208,6 +210,11 @@ export interface ResultadoRegexLote {
   cobertura: number;
   total: number;
   pasa_lote: boolean;
+  /** Cómo se obtuvo: regla_existente y heuristica no usan IA. */
+  origen?: 'regla_existente' | 'heuristica' | 'ia';
+  ejemplos_usados?: number;
+  ejemplos_total?: number;
+  llamadas_ia?: number;
 }
 
 export interface ReglaResumen {
@@ -232,8 +239,6 @@ export interface AutoDeteccion {
   contexto: string | null;
 }
 
-// ── Detección automática ──────────────────────────────────────────────────────
-
 export interface CandidatoCompania {
   id: number;
   nombre: string;
@@ -256,8 +261,6 @@ export interface ResultadoDeteccion {
   candidatos_compania: CandidatoCompania[];
   texto_pdf?: string;
 }
-
-// ── Clasificador ──────────────────────────────────────────────────────────────
 
 export type EstadoCola =
   | 'pendiente'
@@ -330,8 +333,6 @@ export interface PatronesGenerados {
   ramo_patrones_total?: number;
   subramo_patrones_total?: number;
 }
-
-// ── Tickets externos (MOVI y futuros CRMs) ─────────────────────────────────────
 
 export interface TicketExterno {
   id: number;

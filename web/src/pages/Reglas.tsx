@@ -1,16 +1,19 @@
+import EstadoVacio from '../components/ui/EstadoVacio';
+import { SkeletonFilas } from '../components/ui/Skeleton';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { invalidarPdf } from '../lib/pdfCache';
 import { agruparCampos, labelCampo } from '../lib/fieldGroups';
 import Clasificador from '../components/reglas/Clasificador';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import MantenimientoLote, { HistorialReglasModal } from '../components/reglas/MantenimientoLote';
 import DismissibleAlert from '../components/ui/DismissibleAlert';
 import PdfVisor, { PdfVisorErrorBoundary } from '../components/reglas/PdfVisor';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
   subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza, reentrenarPoliza,
-  urlPdfEntrenamiento, urlImagenPagina, getTextoPdf, getTextoZona,
+  urlPdfEntrenamiento, urlImagenPagina, getTextoPdf, getTextoZona, confirmarSelecciones,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
   probarDeteccion, generarYGuardarPatrones,
@@ -26,7 +29,7 @@ import {
   Zap, CheckCircle2, XCircle, AlertCircle, RefreshCw,
   FileText, MousePointer2, Sparkles, Save, Image,
   Target, ChevronDown, ChevronUp, Shield, ShieldAlert, ShieldCheck, ShieldOff,
-  ZoomIn, ZoomOut, RotateCcw,
+  ZoomIn, ZoomOut, RotateCcw, FileStack,
 } from 'lucide-react';
 
 // Mismo bucket de 3 que clasificar_metodo_campo en api/services/extractor.py
@@ -40,8 +43,29 @@ function badgeMetodo(metodo: string | null): { label: string; cls: string } {
   if (metodo === 'ia') {
     return { label: 'IA', cls: 'bg-purple-100 text-purple-700' };
   }
+  if (metodo === 'pdf' || metodo === 'texto_extraido' || metodo === 'imagen' || metodo === 'busqueda_lote') {
+    return { label: 'MANUAL', cls: 'bg-blue-100 text-blue-700' };
+  }
   return { label: 'NO ENC.', cls: 'bg-gray-100 text-gray-500' };
 }
+
+const METODO_LABEL: Record<string, string> = {
+  pdf: 'PDF', imagen: 'Imagen', texto_extraido: 'Texto extraído', busqueda_lote: 'Búsqueda en lote',
+  regla: 'Regla', extractor_dedicado: 'Extractor', derivado: 'Derivado', valor_fijo: 'Valor fijo', ia: 'IA',
+};
+
+/** Cómo llegó el valor de una póliza: método de captura o, si es antiguo, "Automático"/"Manual". */
+function etiquetaMetodo(sel: { metodo: string | null; es_auto: boolean }): string {
+  const base = (sel.metodo && METODO_LABEL[sel.metodo]) || (sel.es_auto ? 'Automático' : 'Manual');
+  // Un valor del extractor que el usuario ya confirmó lleva ✓ (las capturas manuales ya son suyas).
+  const capturaManual = sel.metodo === 'pdf' || sel.metodo === 'imagen' || sel.metodo === 'texto_extraido';
+  return !sel.es_auto && sel.metodo && !capturaManual ? `${base} ✓` : base;
+}
+
+/** Máximo de segmentos de la barra de un campo; el resto se resume como "+N". */
+const MAX_SEGMENTOS = 10;
+
+const normTexto = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 
 // Texto de los <option> de Compañía/Ramo/Subramo: entrenadas / universo
 // total de PolizaEntrenamiento (Lote de Pólizas + PDFs Entrenados
@@ -52,10 +76,7 @@ function formatConteos(nombre: string, totalEntrenadas: number, totalLote: numbe
   return `${nombre} (${totalEntrenadas}/${totalLote} entrenadas)`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 export default function Reglas() {
-  // ── Catálogos ──────────────────────────────────────────────────────────────
   const [companias, setCompanias] = useState<Compania[]>([]);
   const [ramos, setRamos] = useState<Ramo[]>([]);
   const [subramos, setSubramos] = useState<Subramo[]>([]);
@@ -65,7 +86,6 @@ export default function Reglas() {
   const [selRamo, setSelRamo] = useState('');
   const [selSubramo, setSelSubramo] = useState('');
 
-  // ── Lote de pólizas ────────────────────────────────────────────────────────
   const [polizas, setPolizas] = useState<PolizaEntrenamiento[]>([]);
   const [polizaIdx, setPolizaIdx] = useState(0);
   const [subiendo, setSubiendo] = useState(false);
@@ -79,24 +99,27 @@ export default function Reglas() {
   // que se vea de entrada; "PDFs Entrenados" es más una bandeja de consulta.
   const [mostrarLote, setMostrarLote] = useState(true);
 
-  // ── Selecciones y reglas ───────────────────────────────────────────────────
   const [selecciones, setSelecciones] = useState<MapaSelecciones>({});
   const [reglas, setReglas] = useState<Record<string, { id: number; patron_regex: string; cobertura_lote: number | null; total_lote: number | null; creado_por: string }>>({});
 
-  // ── Estado del campo activo ────────────────────────────────────────────────
   const [campoActivo, setCampoActivo] = useState('');
   const [textoSeleccionado, setTextoSeleccionado] = useState('');
   const [bboxCapturado, setBboxCapturado] = useState<BBox | null>(null);
+  // Cómo se capturó el valor actual (pdf | texto_extraido | imagen); se guarda con la selección.
+  const [metodoCaptura, setMetodoCaptura] = useState<string | null>(null);
 
-  // ── Regex y resultados ─────────────────────────────────────────────────────
   const [resultados, setResultados] = useState<Record<string, ResultadoRegexLote>>({});
   const [regexEditado, setRegexEditado] = useState<Record<string, string>>({});
   const [generando, setGenerando] = useState<string | null>(null);  // nombre_campo en proceso
+  const [historialCampo, setHistorialCampo] = useState<string | null>(null);
+  const [cargandoLote, setCargandoLote] = useState(false);
+  // Por campo: pólizas que el usuario sacó como ejemplos del regex, y si su lista está contraída.
+  const [ejemplosExcluidos, setEjemplosExcluidos] = useState<Record<string, Set<number>>>({});
+  const [listasContraidas, setListasContraidas] = useState<Set<string>>(new Set());
   const [probando, setProbando] = useState<string | null>(null);
   const [guardando, setGuardando] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // ── Auto-detección ─────────────────────────────────────────────────────────
   const [autoDeteccion, setAutoDeteccion] = useState<AutoDeteccion[]>([]);
   // Qué coincidencias auto-detectadas (encontrado=true) quedan marcadas para
   // agregarse como selección real al hacer clic en "Agregar seleccionadas" —
@@ -108,12 +131,10 @@ export default function Reglas() {
   const [autoDeteccionAbierta, setAutoDeteccionAbierta] = useState(true);
   const [agregandoAutoDeteccion, setAgregandoAutoDeteccion] = useState(false);
 
-  // ── Detección por PDF (identificar módulo) ─────────────────────────────────
   const [detectando, setDetectando] = useState(false);
   const [detectMsg, setDetectMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const pendingAutoSelect = useRef<{ ramo_id: number; subramo_id: number } | null>(null);
 
-  // ── Llegada desde Historial ("Ver/Reentrenar" de una extracción puntual) ───
   const [searchParams] = useSearchParams();
   const pendingPolizaId = useRef<number | null>(null);
   const [avisoSinArchivo, setAvisoSinArchivo] = useState(false);
@@ -130,7 +151,6 @@ export default function Reglas() {
   const [modoVistaExtraida, setModoVistaExtraida] = useState(false);
   const [panelDerechoTab, setPanelDerechoTab] = useState<'campos' | 'entrenar'>('campos');
 
-  // ── Modo imagen / OCR ──────────────────────────────────────────────────────
   const [modoImagen, setModoImagen] = useState(false);
   const [paginaImagen, setPaginaImagen] = useState(1);
   const [textoPdfActivo, setTextoPdfActivo] = useState('');
@@ -142,16 +162,13 @@ export default function Reglas() {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // ── Refs ───────────────────────────────────────────────────────────────────
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loteInputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pageWidth, setPageWidth] = useState(520);
 
-  // ── Tab activo ─────────────────────────────────────────────────────────────
   const [tabActivo, setTabActivo] = useState<'reglas' | 'clasificador'>('reglas');
 
-  // ── Paneles redimensionables ─────────────────────────────────────────────────
   const [anchoIzquierdo, setAnchoIzquierdo] = useState<number>(
     Number(localStorage.getItem('reglas-ancho-izq')) || 256
   );
@@ -200,7 +217,6 @@ export default function Reglas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [redimensionando]);
 
-  // ── Alto del panel de texto extraído (redimensionable verticalmente) ────────
   const [altoTextoExtraido, setAltoTextoExtraido] = useState<number>(
     Number(localStorage.getItem('reglas-alto-texto')) || 240
   );
@@ -237,7 +253,6 @@ export default function Reglas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [redimensionandoAlto]);
 
-  // ── Carga inicial ──────────────────────────────────────────────────────────
   useEffect(() => { getCompanias().then(setCompanias); }, []);
 
   // Llegada desde Historial vía "Ver/Reentrenar" (?companiaId=&ramoId=&
@@ -309,7 +324,8 @@ export default function Reglas() {
     pendingAutoSelect.current = null;
     const sid = Number(selSubramo);
     getCampos(sid).then(setCampos);
-    cargarEstado(sid);
+    setCargandoLote(true);
+    cargarEstado(sid).finally(() => setCargandoLote(false));
     setCampoActivo('');
     setTextoSeleccionado('');
     setBboxCapturado(null);
@@ -334,7 +350,6 @@ export default function Reglas() {
     }
   }
 
-  // ── ResizeObserver para el ancho del visor PDF ─────────────────────────────
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -344,10 +359,8 @@ export default function Reglas() {
     });
     ro.observe(el);
     return () => ro.disconnect();
-    // El contenedor del visor solo existe una vez elegido el subramo.
   }, [selSubramo]);
 
-  // ── Auto-scroll al highlight del texto extraído ────────────────────────────
   useEffect(() => {
     if (!textoSeleccionado) return;
     const t = setTimeout(() => {
@@ -358,7 +371,6 @@ export default function Reglas() {
     return () => clearTimeout(t);
   }, [textoSeleccionado]);
 
-  // ── Póliza activa ──────────────────────────────────────────────────────────
   const polizaActiva = polizas[polizaIdx] ?? null;
   const pdfUrl = polizaActiva ? urlPdfEntrenamiento(polizaActiva.id) : null;
 
@@ -369,7 +381,6 @@ export default function Reglas() {
   const mostrarSwitcherCampos = modoVistaExtraida || tienePolizaSeleccionesReales;
   const mostrarVistaSimple = mostrarSwitcherCampos && panelDerechoTab === 'campos';
 
-  // Cargar texto extraído cuando cambia la póliza activa
   useEffect(() => {
     if (!polizaActiva) { setTextoPdfActivo(''); return; }
     getTextoPdf(polizaActiva.id)
@@ -377,7 +388,6 @@ export default function Reglas() {
       .catch(() => setTextoPdfActivo(''));
   }, [polizaActiva?.id]);
 
-  // ── Subir pólizas al lote ──────────────────────────────────────────────────
   async function handleSubirPolizas(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
     if (!files.length || !selSubramo) return;
@@ -403,7 +413,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Detectar módulo desde PDF ──────────────────────────────────────────────
   async function handleDetectarPDF(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -452,7 +461,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Eliminar póliza del lote ───────────────────────────────────────────────
   async function handleEliminarPoliza(id: number) {
     await eliminarPolizaEntrenamiento(id);
     // El id se puede reutilizar en una póliza futura (SQLite reasigna el más
@@ -472,7 +480,6 @@ export default function Reglas() {
     ajustarContador('total_lote', -1);
   }
 
-  // ── Vaciar lote completo ────────────────────────────────────────────────────
   const [mostrarConfirmVaciar, setMostrarConfirmVaciar] = useState(false);
   const [vaciandoLote, setVaciandoLote] = useState(false);
 
@@ -526,9 +533,8 @@ export default function Reglas() {
     setSubramos((prev) => prev.map((s) => (s.id === subramoId ? { ...s, [campo]: Math.max(0, s[campo] + delta) } : s)));
   }
 
-  // ── "Terminar" (marcar póliza como entrenada) ──────────────────────────────
   const [terminando, setTerminando] = useState(false);
-  const [terminarError, setTerminarError] = useState<string[] | null>(null);
+  const [terminarError, setTerminarError] = useState<{ faltan: string[]; sinConfirmar: string[] } | null>(null);
 
   async function handleTerminarPoliza() {
     if (!polizaActiva) return;
@@ -543,14 +549,13 @@ export default function Reglas() {
         // re-clic sobre una ya entrenada no debe volver a sumar.
         if (!yaEstabaEntrenada) ajustarContador('total_entrenadas', 1);
       } else {
-        setTerminarError(res.camposFaltantes);
+        setTerminarError({ faltan: res.camposFaltantes, sinConfirmar: res.camposSinConfirmar });
       }
     } finally {
       setTerminando(false);
     }
   }
 
-  // ── "Corregir/Reentrenar" (revierte entrenado=false) ───────────────────────
   const [reentrenando, setReentrenando] = useState(false);
 
   async function handleReentrenarPoliza(poliza: PolizaEntrenamiento) {
@@ -569,7 +574,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Captura de selección desde el visor PDF ────────────────────────────────
   const handleSeleccion = useCallback(() => {
     if (!campoActivo || !polizaActiva) return;
     const sel = window.getSelection();
@@ -603,10 +607,10 @@ export default function Reglas() {
 
     setTextoSeleccionado(txt);
     setBboxCapturado(bbox);
+    setMetodoCaptura('pdf');
     setAutoDeteccion([]);
   }, [campoActivo, polizaActiva]);
 
-  // ── Guardar selección ──────────────────────────────────────────────────────
   async function handleGuardarSeleccion() {
     if (!polizaActiva || !campoActivo || !textoSeleccionado) return;
     const res = await guardarSeleccion({
@@ -615,6 +619,7 @@ export default function Reglas() {
       texto_seleccionado: textoSeleccionado,
       bbox: bboxCapturado,
       es_auto: false,
+      metodo: metodoCaptura ?? 'pdf',
     });
     setSelecciones((prev) => ({
       ...prev,
@@ -623,7 +628,6 @@ export default function Reglas() {
         [polizaActiva.id]: res.seleccion,
       },
     }));
-    // Actualizar contador en la lista de pólizas
     setPolizas((prev) =>
       prev.map((p) =>
         p.id === polizaActiva.id
@@ -666,6 +670,29 @@ export default function Reglas() {
   /** Guarda como selección real (es_auto=true) solo las coincidencias
    * auto-detectadas que el usuario dejó marcadas — nunca agrega todas de
    * forma automática (punto 4). */
+  /** Confirma valores automáticos de un campo: pasan de ámbar a verde y quedan como del usuario. */
+  async function handleConfirmarAuto(nombreCampo: string, ids: number[]) {
+    if (ids.length === 0) return;
+    const res = await confirmarSelecciones(ids);
+    setSelecciones((prev) => {
+      const campo = { ...(prev[nombreCampo] ?? {}) };
+      for (const s of res.selecciones) campo[s.poliza_id] = s;
+      return { ...prev, [nombreCampo]: campo };
+    });
+  }
+
+  /** Confirma de una vez todos los valores automáticos de la póliza activa (todos los campos). */
+  async function handleConfirmarPoliza() {
+    const ids = autosActiva.map((s) => s.id);
+    if (ids.length === 0) return;
+    const res = await confirmarSelecciones(ids);
+    setSelecciones((prev) => {
+      const sig = { ...prev };
+      for (const s of res.selecciones) sig[s.nombre_campo] = { ...(sig[s.nombre_campo] ?? {}), [s.poliza_id]: s };
+      return sig;
+    });
+  }
+
   async function handleAgregarAutoDeteccion() {
     if (!campoActivo || autoDeteccionSel.size === 0) return;
     setAgregandoAutoDeteccion(true);
@@ -678,6 +705,7 @@ export default function Reglas() {
           texto_seleccionado: ad.texto_encontrado ?? '',
           contexto: ad.contexto ?? undefined,
           es_auto: true,
+          metodo: 'busqueda_lote',
         });
         setSelecciones((prev) => ({
           ...prev,
@@ -698,13 +726,16 @@ export default function Reglas() {
     }
   }
 
-  // ── Generar regex ──────────────────────────────────────────────────────────
   async function handleGenerarRegex(nombreCampo: string) {
     const campoObj = campos.find((c) => c.nombre === nombreCampo);
     setGenerando(nombreCampo);
     setErrorMsg(null);
     try {
-      const res = await generarRegexLote(Number(selSubramo), nombreCampo, campoObj?.label ?? nombreCampo);
+      const excluidos = ejemplosExcluidos[nombreCampo];
+      const ids = excluidos?.size
+        ? Object.values(selecciones[nombreCampo] ?? {}).map((s) => s.poliza_id).filter((id) => !excluidos.has(id))
+        : undefined;
+      const res = await generarRegexLote(Number(selSubramo), nombreCampo, campoObj?.label ?? nombreCampo, ids);
       setResultados((prev) => ({ ...prev, [nombreCampo]: res }));
       setRegexEditado((prev) => ({ ...prev, [nombreCampo]: res.patron_regex }));
     } catch (e) {
@@ -714,7 +745,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Reintentar con regex editado ───────────────────────────────────────────
   async function handleProbarRegex(nombreCampo: string) {
     const patron = regexEditado[nombreCampo];
     if (!patron) return;
@@ -730,7 +760,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Guardar regla ──────────────────────────────────────────────────────────
   async function handleGuardarRegla(nombreCampo: string) {
     const resultado = resultados[nombreCampo];
     const patron = regexEditado[nombreCampo];
@@ -752,7 +781,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Estado panel detección ────────────────────────────────────────────────
   const [panelDeteccionAbierto, setPanelDeteccionAbierto] = useState(false);
   const [deteccionActual, setDeteccionActual] = useState<ResultadoDeteccion | null>(null);
   const [probandoDeteccion, setProbandoDeteccion] = useState(false);
@@ -762,7 +790,6 @@ export default function Reglas() {
   const [guardandoPatrones, setGuardandoPatrones] = useState(false);
   const [msgPatrones, setMsgPatrones] = useState<{ok: boolean; texto: string} | null>(null);
 
-  // Auto-probar detección cuando cambia subramo y hay pólizas
   useEffect(() => {
     if (!selSubramo || polizas.length === 0) { setDeteccionActual(null); return; }
     const p = polizas[0];
@@ -806,7 +833,6 @@ export default function Reglas() {
     setGuardandoPatrones(true);
     setMsgPatrones(null);
     try {
-      // Guardar nivel por nivel con los valores editados
       await Promise.all([
         patchPatrones('companias', patronesPreview.compania_id, patronesEditados.compania),
         patchPatrones('ramos',     patronesPreview.ramo_id,     patronesEditados.ramo),
@@ -826,7 +852,6 @@ export default function Reglas() {
     }
   }
 
-  // ── Computed ───────────────────────────────────────────────────────────────
   const camposConRegla = new Set(Object.keys(reglas));
   // sub_ramo_sicas no tiene valor_fijo en catálogo (no es un texto estático):
   // su "valor de sistema" es el subramo actualmente seleccionado arriba, para
@@ -865,9 +890,15 @@ export default function Reglas() {
   // misma razón que camposVisibles: se deriva sola, no se edita aquí).
   // Sirve para deshabilitar el botón "Terminar" con un tooltip ANTES de
   // que el usuario haga clic, en vez de hacerlo esperar a un 400.
-  const camposFaltantesActivo = !polizaActiva ? [] : camposVisibles.filter((c) =>
-    c.requerido && !selecciones[c.nombre]?.[polizaActiva.id]?.texto_seleccionado
-  );
+  const camposFaltantesActivo = !polizaActiva ? [] : camposVisibles.filter((c) => {
+    const sel = selecciones[c.nombre]?.[polizaActiva.id];
+    return c.requerido && (!sel?.texto_seleccionado || sel.es_auto);   // sin valor o sin confirmar
+  });
+  const camposSinValorActivo = camposFaltantesActivo.filter((c) => !selecciones[c.nombre]?.[polizaActiva!.id]?.texto_seleccionado);
+  // Valores automáticos (de todos los campos) de la póliza activa que se pueden confirmar de una vez.
+  const autosActiva = !polizaActiva ? [] : Object.values(selecciones)
+    .map((m) => m[polizaActiva.id])
+    .filter((s) => s?.es_auto && s.texto_seleccionado);
 
   // Partición del lote para la sección "PDFs Entrenados": mismo array
   // `polizas`, mismo orden — se conserva el índice original de cada una
@@ -930,7 +961,6 @@ export default function Reglas() {
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-secondary)]">
 
@@ -946,6 +976,14 @@ export default function Reglas() {
         onCancel={() => setMostrarConfirmVaciar(false)}
       />
 
+      {historialCampo && selSubramo && (
+        <HistorialReglasModal
+          subramoId={Number(selSubramo)} campo={historialCampo}
+          onClose={() => setHistorialCampo(null)}
+          onRestaurada={() => cargarEstado(Number(selSubramo))}
+        />
+      )}
+
       {/* ── Aviso: se llegó desde Historial pero esa extracción no tiene PDF ──
           Auto-cierra a los 4s (o antes, con "Cerrar") — ver DismissibleAlert. */}
       <DismissibleAlert
@@ -960,7 +998,6 @@ export default function Reglas() {
         </p>
       </DismissibleAlert>
 
-      {/* ── Header ── */}
       <div className="px-6 py-4 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-4 flex-wrap">
         <div>
           <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Entrenador PDFs</h1>
@@ -971,7 +1008,6 @@ export default function Reglas() {
           </p>
         </div>
 
-        {/* ── Tabs ── */}
         <div className="flex items-center gap-1 bg-[var(--color-bg-secondary)] rounded-xl p-1">
           <button
             onClick={() => setTabActivo('clasificador')}
@@ -1015,17 +1051,14 @@ export default function Reglas() {
         )}
       </div>
 
-      {/* ── Tab Clasificador ── */}
       {tabActivo === 'clasificador' && (
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <Clasificador companias={companias} />
         </div>
       )}
 
-      {/* ── Tab Entrenamiento ── */}
       {tabActivo === 'reglas' && (<>
 
-      {/* ── Selector compañía / ramo / subramo ── */}
       <div className="px-6 py-3 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex gap-3">
         <select value={selCompania} onChange={(e) => setSelCompania(e.target.value)}
           className="flex-1 border border-[var(--color-border)] rounded-lg px-3 py-1.5 text-sm bg-[var(--color-bg-primary)] text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -1044,7 +1077,6 @@ export default function Reglas() {
         </select>
       </div>
 
-      {/* ── Panel de Detección Automática ── */}
       {selSubramo && (
         <PanelDeteccion
           abierto={panelDeteccionAbierto}
@@ -1078,7 +1110,6 @@ export default function Reglas() {
       ) : (
         <div ref={filaPanelesRef} className="flex flex-1 min-h-0 overflow-hidden">
 
-          {/* ══ Panel izquierdo: Lote de pólizas ══ */}
           <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
             <div className="px-3 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
               <button
@@ -1125,13 +1156,16 @@ export default function Reglas() {
               </button>
             </div>
 
+            {polizas.length > 0 && selSubramo && (
+              <MantenimientoLote subramoId={Number(selSubramo)} onCambio={() => cargarEstado(Number(selSubramo))} />
+            )}
+
             <div className="flex-1 overflow-y-auto">
               {mostrarLote && (
                 <div className="divide-y divide-[var(--color-border)]">
-                  {polizasPendientes.length === 0 && (
-                    <div className="p-4 text-center text-xs text-[var(--color-text-secondary)]">
-                      Sin pólizas. Agrega al menos una para empezar.
-                    </div>
+                  {cargandoLote && <SkeletonFilas filas={4} alto="h-12" />}
+                  {!cargandoLote && polizasPendientes.length === 0 && (
+                    <EstadoVacio icono={FileStack} texto="Sin pólizas. Agrega al menos una para empezar." className="py-6" />
                   )}
                   {polizasPendientes.map(({ p, idx }) => renderFilaPoliza(p, idx))}
                 </div>
@@ -1173,7 +1207,6 @@ export default function Reglas() {
             className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           />
 
-          {/* ══ Centro: Visor PDF ══ */}
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
             {polizaActiva && (
@@ -1229,7 +1262,6 @@ export default function Reglas() {
               </div>
             )}
 
-            {/* Visor principal — flex-1 para ocupar espacio restante */}
             <div
               ref={containerRef}
               className="flex-1 min-h-[240px] relative overflow-hidden"
@@ -1254,6 +1286,7 @@ export default function Reglas() {
                       // Mismo camino que el modo PDF: queda "Capturado" y se guarda con el botón.
                       setTextoSeleccionado(texto);
                       setBboxCapturado({ page: b.page, x0: b.x0, top: b.y0, x1: b.x1, bottom: b.y1 });
+                      setMetodoCaptura('imagen');
                       setAutoDeteccion([]);
                     }}
                   />
@@ -1269,10 +1302,8 @@ export default function Reglas() {
               )}
             </div>
 
-            {/* Panel texto extraído — debajo del visor, alto ajustable */}
             {mostrarTexto && polizaActiva && (
               <>
-                {/* Handle de arrastre — alto del panel de texto extraído */}
                 <div
                   onMouseDown={(e) => {
                     altoDragRef.current = { startY: e.clientY, startAlto: altoTextoExtraido };
@@ -1288,6 +1319,7 @@ export default function Reglas() {
                   onCapturarTexto={(texto) => {
                     setTextoSeleccionado(texto);
                     setBboxCapturado(null); // no hay bbox porque no viene del PDF visual
+                    setMetodoCaptura('texto_extraido');
                   }}
                 />
                 </div>
@@ -1410,7 +1442,6 @@ export default function Reglas() {
             className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           />
 
-          {/* ══ Panel derecho: Campos ══ */}
           <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
             {/* Pestañas: cuando se llegó desde Historial, o cuando la
                 póliza activa ya tiene al menos un dato real sembrado
@@ -1453,6 +1484,14 @@ export default function Reglas() {
                 </span>
               )}
             </div>
+
+            {!mostrarVistaSimple && (
+              <div className="px-4 py-1.5 border-b border-[var(--color-border)] flex items-center gap-3 flex-wrap text-[10px] text-[var(--color-text-secondary)]">
+                <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded-full bg-emerald-500" />Seleccionado a mano</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded-full bg-amber-400" />Automático (sin confirmar)</span>
+                <span className="flex items-center gap-1"><span className="w-3 h-1.5 rounded-full bg-[var(--color-border)]" />Sin valor</span>
+              </div>
+            )}
 
             {/* Póliza ya entrenada: campos bloqueados por defecto (ver
                 `bloqueada` más arriba). Este botón es la única forma de
@@ -1592,6 +1631,15 @@ export default function Reglas() {
                         </div>
                         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                           {tieneRegla && (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setHistorialCampo(campo.nombre); }}
+                              className="text-[10px] text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] underline"
+                            >
+                              Historial
+                            </button>
+                          )}
+                          {tieneRegla && (
                             <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-full font-medium flex items-center gap-0.5">
                               <CheckCircle2 className="w-2.5 h-2.5" />
                               {reglas[campo.nombre]?.cobertura_lote != null
@@ -1613,14 +1661,14 @@ export default function Reglas() {
                       </div>
 
                       {!esValorFijo && polizas.length > 0 && (
-                        <div className="flex gap-0.5 mt-1.5">
-                          {polizas.map((p, i) => {
+                        <div className="flex gap-0.5 mt-1.5 items-center">
+                          {polizas.slice(0, MAX_SEGMENTOS).map((p, i) => {
                             const sel = sels[p.id];
                             return (
                               <div
                                 key={p.id}
                                 title={sel ? `"${sel.texto_seleccionado}"` : p.nombre_archivo}
-                                className={`flex-1 h-1.5 rounded-full ${
+                                className={`flex-1 h-1.5 rounded-full transition-colors duration-200 ${
                                   sel ? (sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-[var(--color-border)]'
                                 }`}
                               />
@@ -1629,6 +1677,9 @@ export default function Reglas() {
                           {Array.from({ length: Math.max(0, 5 - polizas.length) }).map((_, i) => (
                             <div key={`empty-${i}`} className="flex-1 h-1.5 rounded-full bg-[var(--color-bg-secondary)]" />
                           ))}
+                          {polizas.length > MAX_SEGMENTOS && (
+                            <span className="text-[9px] text-[var(--color-text-secondary)] flex-shrink-0 ml-0.5">+{polizas.length - MAX_SEGMENTOS}</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1636,6 +1687,20 @@ export default function Reglas() {
                     {esActivo && !esValorFijo && (
                       <div className="bg-blue-50 border-b border-blue-100 px-4 py-3 space-y-2">
                         {numSels > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setListasContraidas((prev) => {
+                              const n = new Set(prev); if (n.has(campo.nombre)) n.delete(campo.nombre); else n.add(campo.nombre); return n;
+                            })}
+                            aria-expanded={!listasContraidas.has(campo.nombre)}
+                            className="w-full flex items-center gap-1 text-left text-[10px] font-semibold text-gray-600 hover:text-gray-800"
+                          >
+                            {listasContraidas.has(campo.nombre) ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            Pólizas del lote ({polizas.length}) · {numSels} con valor
+                          </button>
+                        )}
+
+                        {numSels > 0 && !listasContraidas.has(campo.nombre) && (
                           <div className="space-y-1">
                             {polizas.map((p) => {
                               const sel = sels[p.id];
@@ -1647,14 +1712,56 @@ export default function Reglas() {
                               );
                               return (
                                 <div key={p.id} className="flex items-center gap-1.5 text-[10px]">
-                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500'}`} />
+                                  <input
+                                    type="checkbox"
+                                    checked={!ejemplosExcluidos[campo.nombre]?.has(p.id)}
+                                    onChange={() => setEjemplosExcluidos((prev) => {
+                                      const n = new Set(prev[campo.nombre] ?? []);
+                                      if (n.has(p.id)) n.delete(p.id); else n.add(p.id);
+                                      return { ...prev, [campo.nombre]: n };
+                                    })}
+                                    title="Usar esta póliza como ejemplo para el regex"
+                                    className="w-3 h-3 flex-shrink-0"
+                                  />
+                                  <div className={`w-2 h-2 rounded-full flex-shrink-0 transition-colors duration-200 ${sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500'}`} />
                                   <span className="text-gray-600 truncate">{p.nombre_archivo.substring(0, 20)}</span>
                                   <code className="font-mono text-blue-700 truncate flex-1">"{sel.texto_seleccionado.substring(0, 20)}"</code>
-                                  {sel.es_auto && <span className="text-amber-600 flex-shrink-0">auto</span>}
+                                  <span className="text-gray-500 flex-shrink-0">{etiquetaMetodo(sel)}</span>
+                                  {sel.es_auto && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleConfirmarAuto(campo.nombre, [sel.id])}
+                                      title="Confirmar este valor (pasa a verde)"
+                                      className="flex-shrink-0 px-1.5 py-0.5 rounded border border-[var(--color-border)] text-[var(--color-success-text)] font-semibold hover:bg-[var(--color-bg-secondary)]"
+                                    >
+                                      Confirmar
+                                    </button>
+                                  )}
                                 </div>
                               );
                             })}
                           </div>
+                        )}
+
+                        {numSels > 0 && (
+                          <p className="text-[10px] text-gray-600">
+                            <span className="font-semibold">Extraído por:</span>{' '}
+                            {Object.entries(
+                              Object.values(sels).reduce<Record<string, number>>((acc, s) => {
+                                const l = etiquetaMetodo(s); acc[l] = (acc[l] ?? 0) + 1; return acc;
+                              }, {}),
+                            ).map(([l, n]) => `${l} ×${n}`).join(' · ')}
+                          </p>
+                        )}
+
+                        {Object.values(sels).some((s) => s.es_auto) && (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmarAuto(campo.nombre, Object.values(sels).filter((s) => s.es_auto).map((s) => s.id))}
+                            className="w-full py-1 border border-[var(--color-border)] text-[var(--color-success-text)] hover:bg-[var(--color-bg-secondary)] rounded-lg text-[10px] font-semibold transition-colors"
+                          >
+                            Confirmar {Object.values(sels).filter((s) => s.es_auto).length} automático{Object.values(sels).filter((s) => s.es_auto).length === 1 ? '' : 's'} de este campo
+                          </button>
                         )}
 
                         {numSels > 0 && (
@@ -1665,7 +1772,10 @@ export default function Reglas() {
                           >
                             {generando === campo.nombre
                               ? <><SpinIcon />Generando…</>
-                              : <><Sparkles className="w-3.5 h-3.5" />{numSels === 1 ? 'Generar regex (1 ejemplo)' : `Generar regex (${numSels} ejemplos)`}</>
+                              : <><Sparkles className="w-3.5 h-3.5" />{(() => {
+                                  const n = numSels - Object.values(sels).filter((s) => ejemplosExcluidos[campo.nombre]?.has(s.poliza_id)).length;
+                                  return n === 1 ? 'Generar regex (1 ejemplo)' : `Generar regex (${n} ejemplos)`;
+                                })()}</>
                             }
                           </button>
                         )}
@@ -1680,6 +1790,8 @@ export default function Reglas() {
                           <ResultadoPanel
                             campo={campo.nombre}
                             resultado={resultados[campo.nombre]}
+                            polizaActivaId={polizaActiva?.id}
+                            seleccionActiva={polizaActiva ? sels[polizaActiva.id] : undefined}
                             regexEditado={regexEditado[campo.nombre] ?? ''}
                             probando={probando === campo.nombre}
                             guardando={guardando === campo.nombre}
@@ -1712,18 +1824,34 @@ export default function Reglas() {
                   algo), se muestra la lista debajo del botón. */}
               {polizaActiva && (
                 <div className="p-4 border-t border-[var(--color-border)]">
-                  {terminarError && terminarError.length > 0 && (
+                  {terminarError && (terminarError.faltan.length > 0 || terminarError.sinConfirmar.length > 0) && (
                     <div className="mb-2 flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800">
                       <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                      <span>Faltan campos requeridos: {terminarError.join(', ')}</span>
+                      <span>
+                        {terminarError.faltan.length > 0 && <>Faltan campos requeridos: {terminarError.faltan.join(', ')}. </>}
+                        {terminarError.sinConfirmar.length > 0 && <>Sin confirmar: {terminarError.sinConfirmar.join(', ')}.</>}
+                      </span>
                     </div>
+                  )}
+                  {!polizaActiva.entrenado && autosActiva.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={handleConfirmarPoliza}
+                      className="mb-2 w-full py-1.5 border border-[var(--color-border)] text-[var(--color-success-text)] hover:bg-[var(--color-bg-secondary)] rounded-lg text-xs font-semibold transition-colors"
+                    >
+                      Confirmar {autosActiva.length} automático{autosActiva.length === 1 ? '' : 's'} de esta póliza
+                    </button>
                   )}
                   <button
                     onClick={handleTerminarPoliza}
                     disabled={terminando || camposFaltantesActivo.length > 0}
                     title={
                       camposFaltantesActivo.length > 0
-                        ? `Faltan: ${camposFaltantesActivo.map((c) => c.label).join(', ')}`
+                        ? [
+                            camposSinValorActivo.length > 0 && `Faltan: ${camposSinValorActivo.map((c) => c.label).join(', ')}`,
+                            camposFaltantesActivo.length > camposSinValorActivo.length
+                              && `Sin confirmar: ${camposFaltantesActivo.filter((c) => !camposSinValorActivo.includes(c)).map((c) => c.label).join(', ')}`,
+                          ].filter(Boolean).join(' · ')
                         : undefined
                     }
                     className={`w-full py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -1746,10 +1874,6 @@ export default function Reglas() {
     </div>
   );
 }
-
-// ── Subcomponentes ─────────────────────────────────────────────────────────────
-
-// ── Visor de imagen (modo OCR) ─────────────────────────────────────────────────
 
 function VisorImagen({
   polizaId, page, totalPages, onPageChange, ocrBbox, onBboxChange, campoActivo, textoSeleccionado, onTextoZona,
@@ -1790,13 +1914,11 @@ function VisorImagen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polizaId, page, campoActivo]);
 
-  // Imagen ya completa antes de que React enganchara onLoad (caché).
   useEffect(() => {
     const img = imgRef.current;
     if (img?.complete && img.naturalWidth) setLoadedUrl(imgUrl);
   }, [imgUrl]);
 
-  // Al guardar o descartar el valor capturado, el recuadro ya no aplica.
   const habiaTexto = useRef(false);
   useEffect(() => {
     if (habiaTexto.current && !textoSeleccionado) limpiarRecuadro();
@@ -1817,7 +1939,6 @@ function VisorImagen({
     setLoadedUrl(imgUrl);
   }
 
-  // Redibujar rect cuando cambia o imagen carga
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !imgLoaded) return;
@@ -1944,8 +2065,6 @@ function VisorImagen({
   );
 }
 
-// ── Panel de texto extraído con highlight ─────────────────────────────────────
-
 function TextoExtraido({
   texto, highlight, alto = 384, onCapturarTexto,
 }: {
@@ -1964,7 +2083,6 @@ function TextoExtraido({
 
   const lineas = texto.split('\n');
 
-  // ── Ubicar la línea que contiene el highlight (primera coincidencia) ────────
   let lineaHighlightIdx = -1;
   let localIdx = -1;
   if (highlight) {
@@ -2077,11 +2195,13 @@ function TextoExtraido({
 }
 
 function ResultadoPanel({
-  campo, resultado, regexEditado, probando, guardando,
+  campo, resultado, polizaActivaId, seleccionActiva, regexEditado, probando, guardando,
   onChangeRegex, onProbar, onGuardar,
 }: {
   campo: string;
   resultado: ResultadoRegexLote;
+  polizaActivaId?: number;
+  seleccionActiva?: { texto_seleccionado: string; metodo: string | null; es_auto: boolean };
   regexEditado: string;
   probando: boolean;
   guardando: boolean;
@@ -2092,6 +2212,16 @@ function ResultadoPanel({
   const pasaLote = resultado.pasa_lote;
   const encontrados = resultado.cobertura;
   const total = resultado.total;
+  const [verOtras, setVerOtras] = useState(false);
+
+  // La póliza que se está entrenando es la que se muestra; las demás van en una lista de texto.
+  const activa = resultado.matches.find((m) => m.poliza_id === polizaActivaId) ?? resultado.matches[0];
+  const otras = resultado.matches.filter((m) => m !== activa);
+  const coinciden = otras.filter((m) => m.encontrado && m.coincide !== false);
+  const difieren = otras.filter((m) => m.encontrado && m.coincide === false);
+  const fallan = otras.filter((m) => !m.encontrado);
+  const igualAlSeleccionado = !!(activa?.encontrado && seleccionActiva
+    && normTexto(activa.valor_extraido ?? '') === normTexto(seleccionActiva.texto_seleccionado));
 
   return (
     <div className="space-y-2 pt-1">
@@ -2105,23 +2235,64 @@ function ResultadoPanel({
       </div>
 
       <p className="text-[10px] text-purple-800 leading-relaxed">{resultado.explicacion}</p>
+      {resultado.origen && (
+        <p className="text-[10px] text-[var(--color-text-secondary)]">
+          Origen: {resultado.origen === 'ia'
+            ? `IA (${resultado.llamadas_ia} llamada${resultado.llamadas_ia === 1 ? '' : 's'}, ${resultado.ejemplos_usados} de ${resultado.ejemplos_total} ejemplos)`
+            : resultado.origen === 'heuristica' ? 'cálculo local, sin IA' : 'regla ya guardada, sin IA'}
+        </p>
+      )}
 
-      <div className="space-y-0.5">
-        {resultado.matches.map((m) => (
-          <div key={m.poliza_id} className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] ${
-            m.encontrado ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'
-          }`}>
-            {m.encontrado
-              ? <CheckCircle2 className="w-3 h-3 flex-shrink-0" />
-              : <XCircle className="w-3 h-3 flex-shrink-0" />
-            }
-            <span className="truncate flex-1">{m.nombre_archivo.substring(0, 22)}</span>
-            {m.encontrado && (
-              <code className="font-mono truncate max-w-[80px]">"{m.valor_extraido}"</code>
-            )}
-          </div>
-        ))}
-      </div>
+      {activa && (
+        <div className="px-2 py-1.5 rounded bg-[var(--color-bg-secondary)] border border-[var(--color-border)] text-[10px] space-y-0.5">
+          <p className="text-[var(--color-text-secondary)] truncate" title={activa.nombre_archivo}>
+            <span className="font-semibold">{campo}</span> en {activa.nombre_archivo}
+            {seleccionActiva && <> · capturado por <span className="font-semibold">{etiquetaMetodo(seleccionActiva)}</span></>}
+          </p>
+          {igualAlSeleccionado ? (
+            <p className="text-[var(--color-success-text)] font-semibold flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3 flex-shrink-0" />OK: el regex extrae lo mismo que seleccionaste ("{activa.valor_extraido}")
+            </p>
+          ) : activa.encontrado ? (
+            <p className="text-[var(--color-warning-text)] font-semibold">
+              Difiere: seleccionaste "{seleccionActiva?.texto_seleccionado}", el regex extrae "{activa.valor_extraido}"
+            </p>
+          ) : (
+            <p className="text-[var(--color-error-text)] font-semibold flex items-center gap-1">
+              <XCircle className="w-3 h-3 flex-shrink-0" />El regex no encuentra el valor en esta póliza
+            </p>
+          )}
+        </div>
+      )}
+
+      {otras.length > 0 && (
+        <div className="text-[10px] text-[var(--color-text-secondary)]">
+          <button
+            type="button"
+            onClick={() => setVerOtras((v) => !v)}
+            aria-expanded={verOtras}
+            className="flex items-center gap-1 font-medium hover:text-[var(--color-text-primary)]"
+          >
+            {verOtras ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            Otras {otras.length} pólizas: coincide en {coinciden.length}{difieren.length > 0 ? `, difiere en ${difieren.length}` : ''}{fallan.length > 0 ? `, no encuentra en ${fallan.length}` : ''}
+          </button>
+          {verOtras && (
+            <div className="mt-1 pl-4 space-y-1 leading-snug">
+              {coinciden.length > 0 && (
+                <p>También coincide en: {coinciden.map((m) => m.nombre_archivo).join(', ')}.</p>
+              )}
+              {difieren.length > 0 && (
+                <p className="text-[var(--color-warning-text)]">
+                  Extrae un valor distinto al seleccionado en: {difieren.map((m) => `${m.nombre_archivo} (regex "${m.valor_extraido}", esperado "${m.valor_esperado}")`).join('; ')}.
+                </p>
+              )}
+              {fallan.length > 0 && (
+                <p className="text-[var(--color-warning-text)]">No encuentra el valor en: {fallan.map((m) => m.nombre_archivo).join(', ')}.</p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className={`text-center text-[10px] font-semibold py-1 rounded-lg ${
         pasaLote ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
@@ -2163,8 +2334,6 @@ function SpinIcon() {
     </svg>
   );
 }
-
-// ── Panel de Detección Automática ─────────────────────────────────────────────
 
 const CONFIANZA_CONFIG: Record<NivelConfianza, { label: string; cls: string; icon: React.ReactNode }> = {
   alta:      { label: 'Alta',      cls: 'bg-emerald-50 border-emerald-200 text-emerald-700', icon: <ShieldCheck className="w-3.5 h-3.5" /> },
@@ -2251,7 +2420,6 @@ function PanelDeteccion({
 
   return (
     <div className={`bg-[var(--color-bg-primary)] border-b flex-shrink-0 ${alertar && !abierto ? 'border-amber-200' : 'border-[var(--color-border)]'}`}>
-      {/* ── Cabecera colapsable ── */}
       <button
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 py-2 hover:bg-[var(--color-bg-secondary)] transition-colors text-left"
@@ -2283,7 +2451,6 @@ function PanelDeteccion({
         </span>
       </button>
 
-      {/* ── Contenido expandido ── */}
       {abierto && (
         <div className="px-4 pb-4 space-y-4">
 
@@ -2301,7 +2468,6 @@ function PanelDeteccion({
             </div>
           )}
 
-          {/* ── Resultado de la última prueba ── */}
           {deteccion && (
             <div className="grid grid-cols-3 gap-3">
               {([
@@ -2326,7 +2492,6 @@ function PanelDeteccion({
             </div>
           )}
 
-          {/* ── Botones de acción ── */}
           {!preview && (
             <div className="flex gap-2">
               <button
@@ -2348,7 +2513,6 @@ function PanelDeteccion({
             </div>
           )}
 
-          {/* ── Preview de patrones generados ── */}
           {preview && (
             <div className="border border-purple-200 rounded-lg bg-purple-50 p-3 space-y-3">
               <div className="flex items-center justify-between">

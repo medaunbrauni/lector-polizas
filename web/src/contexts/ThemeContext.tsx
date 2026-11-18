@@ -9,7 +9,6 @@ function getInitialTheme(): Theme {
     const saved = localStorage.getItem(THEME_KEY);
     if (saved === 'light' || saved === 'dark') return saved;
   } catch {
-    // localStorage no disponible (modo privado, etc.) — sigue con el default.
   }
   return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }

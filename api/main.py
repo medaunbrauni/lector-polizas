@@ -10,22 +10,22 @@ load_dotenv()
 from .config import ALLOWED_ORIGINS, UPLOAD_FOLDER
 from .database import init_db, SessionLocal
 from .seed.data import sembrar
-from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador
+from .routers import auth, extraccion, catalogos, reglas, entrenamiento, clasificador, metricas
 from .routers.auth import verificar_sesion
 from .routers.integraciones import movi_beta
-from .seed.campos_globales import sembrar_campos_globales
+from .seed.campos_globales import sembrar_campos_globales, sembrar_agente_ana
 from .services.folder_watcher import iniciar_watcher, detener_watcher
 from .extractores_especializados.registry import combinaciones_sin_catalogo
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ── Inicializar BD y datos semilla ─────────────────────────────────────
     init_db()
     db = SessionLocal()
     try:
         sembrar(db)
         sembrar_campos_globales(db)
+        sembrar_agente_ana(db)
         faltan = combinaciones_sin_catalogo(db)
         if faltan:
             logging.getLogger("uvicorn.error").warning(
@@ -35,12 +35,10 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
-    # ── Iniciar watchdog sobre la carpeta de entrada ───────────────────────
     iniciar_watcher(UPLOAD_FOLDER)
 
     yield
 
-    # ── Limpieza al apagar ─────────────────────────────────────────────────
     detener_watcher()
 
 
@@ -88,6 +86,7 @@ api_router.include_router(catalogos.router, dependencies=[Depends(verificar_sesi
 api_router.include_router(reglas.router, dependencies=[Depends(verificar_sesion)])
 api_router.include_router(entrenamiento.router, dependencies=[Depends(verificar_sesion)])
 api_router.include_router(clasificador.router, dependencies=[Depends(verificar_sesion)])
+api_router.include_router(metricas.router, dependencies=[Depends(verificar_sesion)])
 
 app.include_router(api_router)
 

@@ -54,6 +54,7 @@ def _migrate_add_columns():
         ("subramos",         "porcentaje_docs",      "REAL"),
         ("subramos",         "nombre_exportacion",   "VARCHAR(120)"),
         ("subramos",         "patrones_deteccion",   "JSON"),
+        ("subramos",         "habilitado_produccion", "BOOLEAN DEFAULT 0"),
         ("reglas_extraccion","es_borrador",          "BOOLEAN DEFAULT 0"),
         ("reglas_extraccion","bbox",                 "JSON"),
         ("reglas_extraccion","ocr_bbox",             "JSON"),

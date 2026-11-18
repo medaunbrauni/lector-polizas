@@ -18,7 +18,6 @@ import unicodedata
 # normalizado (mayúsculas, sin acentos, sin puntos). Escrito sin
 # puntuación porque _normalizar() la elimina antes de comparar.
 _FIGURAS_JURIDICAS_MORALES = [
-    # ── Privadas con actividad empresarial / mercantil ──────────────────────
     r"SA(?:\s+DE\s+CV)?",                  # S.A. / SA / S.A. DE C.V. / SA DE CV
     r"S\s+DE\s+RL(?:\s+DE\s+CV)?",         # S. de R.L. / S DE RL / ... DE C.V.
     r"SAS",                                # S.A.S. / SAS
@@ -27,19 +26,16 @@ _FIGURAS_JURIDICAS_MORALES = [
     r"S\s+EN\s+C\s+POR\s+A",               # Sociedad en Comandita por Acciones
     r"SOCIEDAD\s+COOPERATIVA",
     r"SC\s+DE\s+RL",                       # S.C. de R.L.
-    # ── Privadas civiles / no mercantiles ────────────────────────────────────
     r"SC",                                 # Sociedad Civil
     r"AC",                                 # Asociación Civil
     r"IAP",                                # Institución de Asistencia Privada
     r"IBP",                                # Institución de Beneficencia Privada
-    # ── Organizaciones sociales ──────────────────────────────────────────────
     r"SINDICATO(?:\s+DE)?",
     r"ASOCIACION\s+PROFESIONAL",
     r"COLEGIO\s+DE",
     r"ASOCIACION\s+RELIGIOSA",
     r"AR",
     r"PARTIDO\s+POLITICO",
-    # ── Personas morales públicas ────────────────────────────────────────────
     r"GOBIERNO\s+FEDERAL",
     r"GOBIERNO\s+DEL\s+ESTADO",
     r"GOBIERNO\s+MUNICIPAL",

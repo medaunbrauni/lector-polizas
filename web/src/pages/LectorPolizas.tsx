@@ -1,3 +1,5 @@
+import { useToast } from '../contexts/ToastContext';
+import Cargando from '../components/ui/Cargando';
 import { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import {
@@ -33,6 +35,7 @@ const BADGE_COMPANIA: Record<string, string> = {
   'hdi':        'bg-orange-100 text-orange-700',
   'banorte':    'bg-purple-100 text-purple-700',
   'el potosí':  'bg-yellow-100 text-yellow-700',
+  'seguros el potosí': 'bg-yellow-100 text-yellow-700',
 };
 
 const CONFIANZA_BADGE: Record<NivelConfianza, { cls: string; icon: React.ReactNode; label: string }> = {
@@ -47,7 +50,6 @@ function badgeCompania(compania?: string) {
   return BADGE_COMPANIA[compania.toLowerCase()] ?? 'bg-gray-100 text-gray-600';
 }
 
-/* ── Correction state per fila (clave = `${tandaId}:${indice}`) ── */
 interface CorrRowState {
   companiaId: number | null;
   ramoId: number | null;
@@ -109,7 +111,6 @@ export default function LectorPolizas() {
       const tIdx = tandas.findIndex((t) => t.id === sel.tandaId);
       if (tIdx === -1) return sel;
       if (sel.index > 0) return { tandaId: sel.tandaId, index: sel.index - 1 };
-      // Cruzar a la tanda anterior (si hay una), a su última póliza.
       for (let j = tIdx - 1; j >= 0; j--) {
         if (tandas[j].resultados.length > 0) {
           return { tandaId: tandas[j].id, index: tandas[j].resultados.length - 1 };
@@ -126,7 +127,6 @@ export default function LectorPolizas() {
       if (tIdx === -1) return sel;
       const tandaActual = tandas[tIdx];
       if (sel.index < tandaActual.resultados.length - 1) return { tandaId: sel.tandaId, index: sel.index + 1 };
-      // Cruzar a la siguiente tanda (si hay una), a su primera póliza.
       for (let j = tIdx + 1; j < tandas.length; j++) {
         if (tandas[j].resultados.length > 0) {
           return { tandaId: tandas[j].id, index: 0 };
@@ -148,7 +148,8 @@ export default function LectorPolizas() {
      en package.json — se revisó antes de escribir esto — así que se
      construye una discreta reusando el mismo estilo de tarjeta/alerta que
      ya usa el resto de esta página). */
-  const [toast, setToast] = useState<string | null>(null);
+  const toast = useToast();
+  const setToast = (m: string | null) => { if (m) toast(m, 'aviso'); };
 
   // Persiste cada vez que cambian las tandas (nueva extracción, corrección
   // aplicada, expiración, o "Limpiar interfaz" dejándolas en []).
@@ -169,12 +170,6 @@ export default function LectorPolizas() {
     return () => clearInterval(iv);
   }, []);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 6000);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   const totalAcumulado = tandas.reduce((acc, t) => acc + t.resultados.length, 0);
   const limiteAlcanzado = totalAcumulado >= MAX_PDFS_ACUMULADOS;
 
@@ -184,7 +179,7 @@ export default function LectorPolizas() {
       return;
     }
     setProcesando(true);
-    setProcesandoMsg('Analizando PDFs…');
+    setProcesandoMsg(`Analizando ${files.length} PDF${files.length === 1 ? '' : 's'}…`);
     setError(null);
     try {
       const formData = new FormData();
@@ -314,7 +309,6 @@ export default function LectorPolizas() {
     if (e.dataTransfer.files?.length) procesar(e.dataTransfer.files);
   }
 
-  /* ── Correction helpers (por tanda + índice local) ── */
   async function entrarCorreccion(tandaId: string, i: number, r: ResultadoPDF) {
     const key = corrKey(tandaId, i);
     if (corrMode.has(key)) {
@@ -458,7 +452,6 @@ export default function LectorPolizas() {
       return k === 'entidad' && v !== null ? formatEntidad(v) : v;
     };
 
-    // Cabeceras: metadatos fijos + todas las columnas de fieldConfig
     const metaHeaders  = ['Archivo', 'Compañía', 'Ramo', 'Subramo'];
     const campoHeaders = EXCEL_COLS.map((col) => col.header);
     const extraHeaders = ['Confianza detección', 'Error', 'Método'];
@@ -466,7 +459,6 @@ export default function LectorPolizas() {
 
     const filas = todosResultados.map((r) => [
       r.archivo, r.compania, r.ramo, r.subramo,
-      // Campos dinámicos (usa fieldConfig para el orden y nombres)
       ...EXCEL_COLS.map(({ campo }) => c(r, campo)),
       r.deteccion?.confianza ?? '—',
       r.error ?? r.rechazo?.mensaje ?? '',
@@ -486,7 +478,6 @@ export default function LectorPolizas() {
 
   return (
     <div className="min-h-screen bg-[var(--color-bg-secondary)]">
-      {/* ── Header ── */}
       <header className="bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] px-6 h-[88px] flex items-center justify-between">
         <div className="flex items-center gap-3.5">
           <div className="p-2.5 bg-[var(--color-brand-blue)] rounded-xl">
@@ -510,7 +501,6 @@ export default function LectorPolizas() {
 
       <main className="max-w-[1600px] mx-auto px-6 py-8 space-y-5">
 
-        {/* ── Drop zone ── */}
         <div
           onDragEnter={handleDrag} onDragLeave={handleDrag}
           onDragOver={handleDrag} onDrop={handleDrop}
@@ -526,8 +516,11 @@ export default function LectorPolizas() {
 
           {procesando ? (
             <div className="flex flex-col items-center gap-3">
-              <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+              <Cargando tamano={72} />
               <p className="font-semibold text-[var(--color-text-primary)]">{procesandoMsg}</p>
+              <div className="w-48 h-1 rounded-full bg-[var(--color-bg-secondary)] overflow-hidden" aria-hidden="true">
+                <div className="h-full w-1/4 rounded-full bg-[var(--color-brand-blue)] barra-indeterminada" />
+              </div>
               <p className="text-xs text-[var(--color-text-secondary)]">
                 El sistema detecta compañía · ramo · subramo y genera reglas si son necesarias
               </p>
@@ -556,7 +549,6 @@ export default function LectorPolizas() {
           )}
         </div>
 
-        {/* ── Error global ── */}
         {error && (
           <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-xl">
             <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
@@ -567,7 +559,6 @@ export default function LectorPolizas() {
 
         {tandas.length > 0 && (
           <>
-            {/* ── Barra global: totales acumulados + Limpiar interfaz ── */}
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex gap-3 flex-wrap">
                 <Chip icon={<FileText className="w-4 h-4" />}
@@ -597,7 +588,6 @@ export default function LectorPolizas() {
               </div>
             </div>
 
-            {/* ── Una sección independiente por tanda ── */}
             {tandas.map((tanda, tIdx) => (
               <TandaSeccion
                 key={tanda.id}
@@ -632,19 +622,6 @@ export default function LectorPolizas() {
           indiceActual={indiceGlobalActual}
           totalPolizas={totalPolizasGlobal}
         />
-      )}
-
-      {/* ── Toast: informativo, no bloqueante ── */}
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 max-w-sm">
-          <div className="flex items-start gap-3 p-4 bg-gray-900 border border-[var(--color-border)] text-white rounded-xl shadow-lg">
-            <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-            <p className="text-sm flex-1">{toast}</p>
-            <button onClick={() => setToast(null)} className="flex-shrink-0">
-              <X className="w-4 h-4 text-gray-400 hover:text-white" />
-            </button>
-          </div>
-        </div>
       )}
 
       {modalExportAbierto && (
@@ -774,7 +751,6 @@ function TandaSeccion({
 
   return (
     <div className="space-y-3 pt-2 border-t border-[var(--color-border)] first:border-t-0 first:pt-0">
-      {/* ── Encabezado de la tanda ── */}
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-sm font-semibold text-[var(--color-text-secondary)]">
           Tanda {numero} · {new Date(tanda.timestamp).toLocaleTimeString('es-MX')}
@@ -809,7 +785,6 @@ function TandaSeccion({
         </div>
       </div>
 
-      {/* ── Notificación: patrones generados ── */}
       {conPatrones.length > 0 && (
         <div className="flex items-start gap-3 p-4 bg-purple-50 border border-purple-200 rounded-xl">
           <Sparkles className="w-5 h-5 text-purple-500 flex-shrink-0 mt-0.5" />
@@ -840,7 +815,6 @@ function TandaSeccion({
         </div>
       )}
 
-      {/* ── Alerta: subramo no detectado ── */}
       {sinSubramo.length > 0 && (
         <div className="flex items-start gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl">
           <PenLine className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
@@ -857,7 +831,6 @@ function TandaSeccion({
         </div>
       )}
 
-      {/* ── Alerta: pólizas no reconocidas ── */}
       {noReconocidas.length > 0 && (
         <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
           <ShieldAlert className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
@@ -881,7 +854,6 @@ function TandaSeccion({
         </div>
       )}
 
-      {/* ── Alerta: detección con confianza baja ── */}
       {confianzaBaja.length > 0 && (
         <div className="flex items-start gap-3 p-4 bg-orange-50 border border-orange-200 rounded-xl">
           <Shield className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
@@ -901,7 +873,6 @@ function TandaSeccion({
         </div>
       )}
 
-      {/* ── Tabla de resultados de esta tanda ── */}
       <div className="bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-2xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -938,7 +909,6 @@ function TandaSeccion({
 
                 return (
                   <>
-                    {/* ── Main row ── */}
                     <tr key={`row-${i}`} className={`hover:bg-[var(--color-bg-secondary)] transition-colors ${enCorr ? 'bg-blue-50/40' : ''}`}>
                       <td className="px-3 py-2.5">
                         <input
@@ -952,7 +922,6 @@ function TandaSeccion({
                         <p className="truncate">{r.archivo}</p>
                       </td>
 
-                      {/* Compañía + ramo + subramo + badge confianza */}
                       <td className="px-3 py-2.5">
                         <div className="flex flex-col gap-0.5">
                           {r.compania
@@ -1028,7 +997,6 @@ function TandaSeccion({
                       </td>
                     </tr>
 
-                    {/* ── Leyenda: PDF no procesado ── */}
                     {r.rechazo && (
                       <tr key={`rech-${i}`} className="bg-[var(--color-bg-secondary)]">
                         <td colSpan={11} className="px-4 py-2 text-xs text-[var(--color-text-secondary)]">
@@ -1046,7 +1014,6 @@ function TandaSeccion({
                       </tr>
                     )}
 
-                    {/* ── Inline correction panel ── */}
                     {enCorr && cs && (
                       <tr key={`corr-${i}`} className="bg-blue-50/60 border-b border-blue-100">
                         <td colSpan={11} className="px-4 py-3">

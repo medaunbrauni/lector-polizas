@@ -37,6 +37,14 @@ _SENALES_DANOS = [
 ]
 
 
+# La razón social impresa en la póliza identifica a la aseguradora mejor que los
+# keywords sueltos ("ana seguros" no aparece en los PDFs de ANA, que dicen
+# "A.N.A. Compañía de Seguros" y se detectaban como Banorte, HDI o El Potosí).
+FIRMAS_COMPANIA = {
+    "ANA Seguros": [r"A\.N\.A\.\s*Compa[ñn][ií]a\s*de\s*Seguros", r"anaseguros\.com\.mx"],
+}
+
+
 def _sin_acentos(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFD", s.lower()) if unicodedata.category(c) != "Mn")
 
@@ -72,8 +80,6 @@ def _score(texto: str, keywords: list, patrones: list) -> int:
     return score
 
 
-# ── API pública ───────────────────────────────────────────────────────────────
-
 def detectar_jerarquia(
     texto: str, db: Session
 ) -> tuple[Compania | None, Ramo | None, Subramo | None]:
@@ -101,7 +107,6 @@ def detectar_con_score(texto: str, db: Session) -> dict:
     """
     texto_lower = texto.lower()
 
-    # ── Compañía ──────────────────────────────────────────────────────────────
     companias = (
         db.query(Compania)
         .filter(Compania.activo == True)
@@ -122,13 +127,19 @@ def detectar_con_score(texto: str, db: Session) -> dict:
         key=lambda x: x["score"],
         reverse=True,
     )
+    firma = next(
+        (c for c in comp_scores if any(re.search(p, texto, re.IGNORECASE) for p in FIRMAS_COMPANIA.get(c["nombre"], []))),
+        None,
+    )
+    if firma:
+        firma["score"] = max(firma["score"], UMBRAL_ALTA)
+        comp_scores.sort(key=lambda x: x["score"], reverse=True)
     mejor_comp = comp_scores[0] if comp_scores and comp_scores[0]["score"] > 0 else None
     score_comp = mejor_comp["score"] if mejor_comp else 0
 
     compania_id = mejor_comp["id"] if mejor_comp else None
     compania_nombre = mejor_comp["nombre"] if mejor_comp else None
 
-    # ── Ramo ──────────────────────────────────────────────────────────────────
     ramo_id, ramo_nombre, score_ramo = None, None, 0
     if compania_id:
         ramos = (
@@ -158,7 +169,6 @@ def detectar_con_score(texto: str, db: Session) -> dict:
                 ramo_id, ramo_nombre = corregido.id, corregido.nombre
                 score_ramo = next(r["score"] for r in ramo_scores if r["id"] == corregido.id)
 
-    # ── Subramo ───────────────────────────────────────────────────────────────
     subramo_id, subramo_nombre, score_sub = None, None, 0
     if ramo_id:
         subramos = (
@@ -185,7 +195,6 @@ def detectar_con_score(texto: str, db: Session) -> dict:
             subramo_nombre = mejor_sub["nombre"]
             score_sub = mejor_sub["score"]
 
-    # ── Confianza ─────────────────────────────────────────────────────────────
     total = score_comp + score_ramo + score_sub
     if subramo_id and total >= UMBRAL_ALTA:
         confianza = "alta"

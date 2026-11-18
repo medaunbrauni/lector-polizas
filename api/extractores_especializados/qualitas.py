@@ -22,6 +22,7 @@ from collections import Counter
 
 import fitz  # PyMuPDF
 
+from .catalogo_cp import validar_direccion_cp
 from .figuras_juridicas import es_persona_moral_por_nombre, normalizar_siglas_razon_social
 
 
@@ -52,17 +53,16 @@ def es_poliza_auto_qualitas(texto: str) -> bool:
         "GNP", "AXA", "MAPFRE", "CHUBB", "ZURICH", "ANA SEGUROS", "HDI", "AFIRME", "BANORTE", "BBVA SEGUROS"
     ]
 
-    palabras_clave_auto = ["VEHÍCULO", "COBERTURA", "AUTOMÓVIL", "USO PARTICULAR", "PLACAS"]
+    # "COBERTURA" salía en cualquier póliza; se piden 2 señales propias de autos.
+    # Validado contra 519 extracciones de Quálitas: las pasan todas.
+    palabras_clave_auto = ["VEHÍCULO", "AUTOMÓVIL", "USO PARTICULAR", "PLACAS"]
 
     if "QUALITAS" not in texto_upper:
         if any(aseg in texto_upper for aseg in otras_aseguradoras):
             return False
         return False
 
-    if any(p in texto_upper for p in palabras_clave_auto):
-        return True
-
-    return False
+    return sum(p in texto_upper for p in palabras_clave_auto) >= 2
 
 
 def extraer_tipo_poliza(texto: str) -> str:
@@ -1395,10 +1395,6 @@ def validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva):
     return subtotal_calculado
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Punto de entrada usado por el pipeline (nivel 1)
-# ────────────────────────────────────────────────────────────────────────────
-
 _SENTINELS_NO_ENCONTRADO = {
     "", "no encontrado", "s/n",
     "no se encontraron rfcs válidos",
@@ -1485,5 +1481,8 @@ def extraer(texto: str, pdf_bytes: bytes | None = None) -> dict[str, str]:
         "modelo":          extraer_modelo(texto),
         "descuento":       descuento,
     }
+    candidatos.update(validar_direccion_cp(
+        candidatos.get("cp"), candidatos.get("colonia"), candidatos.get("municipio"),
+    ))
 
     return {campo: valor for campo, valor in candidatos.items() if _valido(valor)}

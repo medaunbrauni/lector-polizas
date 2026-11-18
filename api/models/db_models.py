@@ -49,6 +49,9 @@ class Subramo(Base):
     activo = Column(Boolean, default=True)
     prioridad = Column(Integer, nullable=True)
     porcentaje_docs = Column(Float, nullable=True)
+    # Activado desde el Entrenador: /extraer procesa este subramo con las reglas entrenadas
+    # aunque no tenga extractor dedicado (ver registry.SOPORTE para los que sí lo tienen).
+    habilitado_produccion = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     ramo = relationship("Ramo", back_populates="subramos")
@@ -194,11 +197,9 @@ class ClasificacionCola(Base):
     ramo_id_final = Column(Integer, ForeignKey("ramos.id"), nullable=True)
     subramo_id_final = Column(Integer, ForeignKey("subramos.id"), nullable=True)
 
-    # Patrones de detección generados por IA (para revisión)
     patrones_generados = Column(JSON, nullable=True)
     patrones_guardados = Column(Boolean, default=False)
 
-    # Referencia al entrenamiento al que fue enviado
     poliza_entrenamiento_id = Column(Integer, ForeignKey("polizas_entrenamiento.id"), nullable=True)
 
     # Procedencia: "manual" (subida/carpeta vigilada interna) o el nombre de
@@ -292,3 +293,14 @@ class SesionAuth(Base):
     token = Column(String(64), unique=True, index=True, nullable=False)
     creado_en = Column(DateTime, default=datetime.utcnow)
     expira_en = Column(DateTime, nullable=False)
+
+
+class UsoIA(Base):
+    """Una llamada a la API de Anthropic (tokens por origen y modelo) para controlar el gasto."""
+    __tablename__ = "uso_ia"
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    origen = Column(String(40), nullable=False)
+    modelo = Column(String(80))
+    tokens_in = Column(Integer, default=0)
+    tokens_out = Column(Integer, default=0)

@@ -11,11 +11,11 @@ from ..config import MODEL_PATTERN_GEN
 from ..database import get_db
 from ..models.db_models import Compania, Ramo, Subramo, CampoDefinido, CampoGlobal, Extraccion, PolizaEntrenamiento
 from ..services.rule_engine import cobertura_subramo, _es_vehiculo, _ramo_de_subramo
+from ..services.extractor import clave_contenido
+from ..services.ai_utils import ClienteMedido
 
 router = APIRouter(prefix="/catalogos", tags=["Catálogos"])
 
-
-# ── Schemas ──────────────────────────────────────────────────────────────────
 
 class CompaniaIn(BaseModel):
     nombre: str
@@ -115,7 +115,7 @@ def _polizas_visibles_por_subramo(db: Session) -> dict[int, list[PolizaEntrenami
     parten de aquí, para que nunca puedan divergir en su definición.
 
     Mismo criterio que _polizas_visibles en entrenamiento.py: se excluyen
-    filas sin archivo físico en disco, y se dedupea por nombre_archivo
+    filas sin archivo físico en disco, y se dedupea por contenido del PDF
     quedándose con la más reciente. No se importa esa función directamente
     para evitar un import circular (entrenamiento.py ya importa de este
     módulo) — es la misma lógica, reimplementada aquí.
@@ -134,8 +134,8 @@ def _polizas_visibles_por_subramo(db: Session) -> dict[int, list[PolizaEntrenami
     for p in filas:
         if not os.path.exists(p.ruta_archivo):
             continue
-        por_subramo.setdefault(p.subramo_id, {})[p.nombre_archivo] = p
-    return {sid: list(nombres.values()) for sid, nombres in por_subramo.items()}
+        por_subramo.setdefault(p.subramo_id, {})[clave_contenido(p)] = p
+    return {sid: list(claves.values()) for sid, claves in por_subramo.items()}
 
 
 def _rollup_ramo_y_compania(db: Session, por_subramo: dict[int, int]) -> tuple[dict[int, int], dict[int, int]]:
@@ -183,8 +183,6 @@ def _conteos_lote_y_entrenadas(db: Session) -> ConteosLoteEntrenadas:
         entrenadas_subramo, entrenadas_ramo, entrenadas_compania,
     )
 
-
-# ── Compañías ────────────────────────────────────────────────────────────────
 
 @router.get("/companias")
 def listar_companias(db: Session = Depends(get_db)):
@@ -244,8 +242,6 @@ def eliminar_compania(id: int, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
-# ── Ramos ────────────────────────────────────────────────────────────────────
-
 @router.get("/ramos")
 def listar_ramos(compania_id: int | None = None, db: Session = Depends(get_db)):
     q = db.query(Ramo).filter(Ramo.activo == True)
@@ -291,8 +287,6 @@ def patrones_ramo(id: int, data: PatronesIn, db: Session = Depends(get_db)):
     db.commit()
     return _ramo_dict(r)
 
-
-# ── Subramos ─────────────────────────────────────────────────────────────────
 
 @router.get("/subramos")
 def listar_subramos(ramo_id: int | None = None, db: Session = Depends(get_db)):
@@ -340,8 +334,6 @@ def patrones_subramo(id: int, data: PatronesIn, db: Session = Depends(get_db)):
     db.commit()
     return _subramo_dict(s, db)
 
-
-# ── Código de detección ───────────────────────────────────────────────────────
 
 @router.get("/codigo-deteccion")
 def codigo_deteccion(db: Session = Depends(get_db)):
@@ -418,8 +410,6 @@ def _campo_def_dict(c: CampoDefinido) -> dict:
     }
 
 
-# ── Campos definidos ──────────────────────────────────────────────────────────
-
 @router.get("/subramos/{subramo_id}/campos")
 def listar_campos(subramo_id: int, db: Session = Depends(get_db)):
     ramo = _ramo_de_subramo(subramo_id, db)
@@ -456,8 +446,6 @@ def crear_campo(subramo_id: int, data: CampoIn, db: Session = Depends(get_db)):
     db.refresh(c)
     return _campo_def_dict(c)
 
-
-# ── Detección automática ──────────────────────────────────────────────────────
 
 class ProbarDeteccionIn(BaseModel):
     texto_pdf: str
@@ -500,7 +488,7 @@ def generar_y_guardar_patrones(
     compania = db.query(Compania).filter(Compania.id == ramo.compania_id).first()
 
     import anthropic
-    client = anthropic.Anthropic(api_key=api_key)
+    client = ClienteMedido(anthropic.Anthropic(api_key=api_key), "patrones_deteccion")
 
     prompt = f"""Eres un experto en pólizas de seguros mexicanas.
 
@@ -562,7 +550,6 @@ Responde ÚNICAMENTE con JSON válido, sin texto adicional:
     resultado["subramo_id"]  = subramo.id
     resultado["guardado"]    = False
 
-    # Guardar en BD (merge — no duplicar)
     if data.guardar:
         def _merge(existing: list, nuevos: list) -> list:
             existentes_set = set(existing or [])

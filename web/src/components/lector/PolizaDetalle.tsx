@@ -29,7 +29,6 @@ const ALIAS_CANONICO: Record<string, string> = {
   fin_vigencia: 'hasta',
 };
 
-// Campos cuyo valor se muestra en fuente monoespaciada (identificadores).
 const CAMPOS_MONO = new Set(['documento', 'rfc', 'placas', 'serie', 'motor', 'cp']);
 
 const ICONOS_GRUPO: Record<string, React.ReactNode> = {

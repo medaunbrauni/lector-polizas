@@ -50,11 +50,13 @@ def _leer_con_fitz(pdf_bytes: bytes) -> tuple[str, list[dict]]:
 
 def es_poliza_auto_el_potosi(texto: str) -> bool:
     t = texto.lower()
-    palabras_clave = [
-        "datos del riesgo asegurado", "no. de serie", "no. de motor",
-        "tipo vehículo", "seguro de automóviles", "seguro de autos",
+    # "datos del riesgo asegurado" lo traen también las pólizas de otros ramos
+    # (ej. transporte de carga): se exige además un campo/título de vehículo.
+    # Validado contra 83 pólizas de El Potosí: rechaza solo la de transporte.
+    palabras_vehiculo = [
+        "no. de serie", "no. de motor", "tipo vehículo", "seguro de automóviles", "seguro de autos",
     ]
-    return any(p in t for p in palabras_clave)
+    return "datos del riesgo asegurado" in t and any(p in t for p in palabras_vehiculo)
 
 
 def _sin_acentos(valor: str) -> str:
@@ -89,10 +91,6 @@ def detectar_subramo_por_titulo_el_potosi(texto: str) -> str | None:
             return subramo
     return None
 
-
-# ════════════════════════════════════════════════════════════════════════
-# UTILIDADES DE POSICIONAMIENTO (BBOX) — portadas de gnp.py
-# ════════════════════════════════════════════════════════════════════════
 
 def _spans_pagina(pagina_dict):
     spans = []
@@ -230,10 +228,6 @@ def buscar_valor_monetario(paginas_dict, etiqueta):
     return ""
 
 
-# ════════════════════════════════════════════════════════════════════════
-# SECCIONES DE LA PÁGINA
-# ════════════════════════════════════════════════════════════════════════
-
 def _spans_seccion_movimiento(paginas_dict):
     """Página con la tabla "DETALLES DE MOVIMIENTO" (Prima, Gastos de
     expedición, Tasa de financiamiento por pago fraccionado, Subtotal,
@@ -256,10 +250,6 @@ def _spans_seccion_agente(paginas_dict):
             return [s for s in spans if y0 < s["y0"] <= y0 + 60]
     return []
 
-
-# ════════════════════════════════════════════════════════════════════════
-# ENCABEZADO / NO. DE PÓLIZA / VIGENCIA / FORMA DE PAGO
-# ════════════════════════════════════════════════════════════════════════
 
 def extraer_numero_poliza(texto, paginas_dict):
     # "AUIN-020626-37", "AUIN-045550-86", etc. — letras, bloque numérico
@@ -300,7 +290,6 @@ _VALORES_MONEDA = r'(Nacional|Extranjera|D[oó]lares|USD|MXN|Pesos)'
 
 
 def extraer_forma_pago(texto, paginas_dict):
-    # "Plan de pago" imprime "(000250) ANUAL" — se extrae solo la palabra.
     if not paginas_dict:
         return ""
     spans = _spans_pagina(paginas_dict[0])
@@ -319,10 +308,6 @@ def extraer_moneda(texto, paginas_dict):
     match = re.search(_VALORES_MONEDA, valor, re.IGNORECASE)
     return match.group(1) if match else valor
 
-
-# ════════════════════════════════════════════════════════════════════════
-# CONTRATANTE
-# ════════════════════════════════════════════════════════════════════════
 
 _ETIQUETAS_CONTRATANTE = {
     "nombre o razón social:", "dirección:", "r.f.c.:",
@@ -453,17 +438,12 @@ def extraer_rfc(texto, paginas_dict):
         if _RFC_VALIDO_RE.fullmatch(sin_guiones):
             return sin_guiones
     else:
-        # Fallback por regex sobre el texto completo
         match = re.search(r'R\.?F\.?C\.?\s*[:\-]?\s*([A-ZÑ&]{3,4})-?(\d{6})-?([A-Z0-9]{0,3})', texto, re.IGNORECASE)
         if match:
             return f"{match.group(1)}{match.group(2)}{match.group(3)}".upper()
 
     return _RFC_GENERICO_NACIONAL
 
-
-# ════════════════════════════════════════════════════════════════════════
-# VEHÍCULO ASEGURADO
-# ════════════════════════════════════════════════════════════════════════
 
 _ETIQUETAS_RIESGO = {
     "vehículo:", "no. de serie:", "transmisión:", "uso:", "carga:",
@@ -586,7 +566,6 @@ def extraer_prima_neta(texto, paginas_dict):
 
 
 def extraer_derecho_poliza(texto, paginas_dict):
-    # "Gastos de expedición" == "Derecho de Póliza" del esquema.
     valor = _extraer_monto_movimiento(paginas_dict, "expedición", coincidencia_exacta=False)
     return valor or buscar_valor_monetario(paginas_dict, "expedición")
 
@@ -604,7 +583,6 @@ def extraer_iva(texto, paginas_dict):
 
 
 def extraer_importe_pagar(texto, paginas_dict):
-    # "Total" == "Importe por Pagar" del esquema (campo "prima_total").
     valor = _extraer_monto_movimiento(paginas_dict, "Total")
     return valor or buscar_valor_monetario(paginas_dict, "total")
 
@@ -660,10 +638,6 @@ def validar_subtotal(subtotal_calculado, subtotal_pdf, prima_total, iva):
     return subtotal_calculado
 
 
-# ════════════════════════════════════════════════════════════════════════
-# AGENTE
-# ════════════════════════════════════════════════════════════════════════
-
 def extraer_clave_agente(texto, paginas_dict):
     spans = _spans_seccion_agente(paginas_dict)
     etiqueta = _encontrar_etiqueta(spans, "Clave", coincidencia_exacta=True)
@@ -675,10 +649,6 @@ def extraer_nombre_agente(texto, paginas_dict):
     etiqueta = _encontrar_etiqueta(spans, "Nombre", coincidencia_exacta=True)
     return _valor_por_columna(spans, etiqueta)
 
-
-# ────────────────────────────────────────────────────────────────────────────
-# Punto de entrada usado por el pipeline (nivel 1)
-# ────────────────────────────────────────────────────────────────────────────
 
 _SENTINELS_NO_ENCONTRADO = {"", "no encontrado", "no encontrada"}
 

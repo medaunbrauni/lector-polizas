@@ -1,3 +1,4 @@
+import Cargando from '../ui/Cargando';
 /**
  * PdfVisor — mini-visor de PDF con paginación y zoom, más su error boundary.
  *
@@ -11,7 +12,7 @@
  * completo la instancia anterior de pdf.js en vez de reutilizarla (ver
  * comentario junto al <Document key={...}> más abajo).
  */
-import { useEffect, useState, useMemo, Component } from 'react';
+import { useEffect, useRef, useState, useMemo, Component } from 'react';
 import type { ReactNode } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -59,7 +60,6 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
   // Render de la página: si pdf.js carga el documento pero nunca pinta el
   // canvas (se vio una página en blanco tras alternar PDF/Imagen), se
   // reintenta una vez solo y, si persiste, se ofrece "Reintentar".
-  const [renderListo, setRenderListo] = useState(false);
   const [falloRender, setFalloRender] = useState(false);
   const [intento, setIntento] = useState(0);
 
@@ -67,8 +67,13 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
   // (de la caché en memoria si ya se vio antes en esta sesión, o del
   // servidor si no) — nunca se precargan los PDFs de las demás pólizas.
   useEffect(() => {
-    setPagina(1); setZoom(1.0); setRenderListo(false); setFalloRender(false); setIntento(0);
+    setPagina(1); setZoom(1.0); setFalloRender(false); setIntento(0);
   }, [polizaId, url]);
+
+  // El reintento suelta los bytes en el MISMO paso que cambia `intento`: si el <Document>
+  // se remontara (key nueva) con el buffer anterior ya vaciado por pdf.js, react-pdf truena
+  // con "Cannot perform Construct on a detached ArrayBuffer".
+  const reintentar = () => { setBytes(null); setNumPages(0); setIntento((i) => i + 1); };
 
   // También al reintentar (`intento`): pdf.js vacía el ArrayBuffer que recibe,
   // así que un reintento necesita una copia nueva (obtenerPdf devuelve slice).
@@ -81,16 +86,18 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
     return () => { cancelado = true; };
   }, [polizaId, url, intento]);
 
-  useEffect(() => { setRenderListo(false); }, [pagina, zoom, width]);
-
+  // Se mira el DOM, no onRenderSuccess (no siempre se dispara aunque la página ya se dibujó):
+  // sin <canvas> a los 5 s de cargar el documento, se reintenta una vez y luego se avisa.
+  const areaRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    if (numPages === 0 || renderListo || falloRender) return;
+    if (numPages === 0 || falloRender) return;
     const t = setTimeout(() => {
-      if (intento < 1) setIntento((i) => i + 1);
+      if (areaRef.current?.querySelector('.react-pdf__Page canvas')) return;
+      if (intento < 1) reintentar();
       else setFalloRender(true);
     }, 5000);
     return () => clearTimeout(t);
-  }, [numPages, renderListo, falloRender, intento, pagina, zoom, width]);
+  }, [numPages, falloRender, intento, pagina, zoom, width]);
 
   // Memoizado: react-pdf recarga el documento si la referencia de `file`
   // cambia, así que no se debe reconstruir este objeto en cada render.
@@ -102,7 +109,6 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden">
 
-      {/* ── Barra de navegación + zoom ── */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0 select-none">
 
         <button
@@ -140,8 +146,7 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
         >+</button>
       </div>
 
-      {/* ── Página actual — scroll dentro del visor ── */}
-      <div className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-[var(--color-bg-secondary)]">
+      <div ref={areaRef} className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-[var(--color-bg-secondary)]">
         {noDisponible ? (
           <div className="absolute inset-0 flex items-center justify-center p-6">
             <p className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm text-center max-w-sm">
@@ -152,7 +157,7 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
           <>
             {cargando && (
               <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
-                <span className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-3 py-2 rounded-lg shadow-sm">Cargando PDF…</span>
+                <span className="bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm"><Cargando texto="Cargando PDF…" tamano={36} /></span>
               </div>
             )}
             {falloRender && (
@@ -160,7 +165,7 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
                 <div className="text-sm text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm text-center max-w-sm space-y-2">
                   <p>No se pudo dibujar la página del PDF.</p>
                   <button
-                    onClick={() => { setFalloRender(false); setIntento((i) => i + 1); }}
+                    onClick={() => { setFalloRender(false); reintentar(); }}
                     className="px-3 py-1 text-xs font-semibold text-white bg-[var(--color-brand-blue)] rounded-lg hover:opacity-90"
                   >Reintentar</button>
                 </div>
@@ -188,7 +193,6 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
                   width={Math.round((width || 700) * zoom)}
                   renderTextLayer
                   renderAnnotationLayer={false}
-                  onRenderSuccess={() => setRenderListo(true)}
                   onRenderError={() => setFalloRender(true)}
                 />
               </Document>
