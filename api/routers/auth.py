@@ -33,7 +33,7 @@ if not PASSWORD:
         "AUTH_PASSWORD no está definido en el entorno (.env). "
         "Define una contraseña fuerte antes de iniciar la API."
     )
-SESSION_COOKIE = "lector_session"
+from ..services.usuario import SESSION_COOKIE
 SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 días
 
 
@@ -42,16 +42,22 @@ async def login(request: Request, db: Session = Depends(get_db)):
     try:
         body = await request.json()
         password = body.get("password", "")
+        usuario = (body.get("usuario") or "").strip()[:60]
     except Exception:
         form = await request.form()
         password = form.get("password", "")
+        usuario = (form.get("usuario") or "").strip()[:60]
 
     if not secrets.compare_digest(password, PASSWORD):
         return JSONResponse({"ok": False, "error": "Contrasena incorrecta"}, status_code=401)
 
+    if not usuario:
+        return JSONResponse({"ok": False, "error": "Escribe tu nombre"}, status_code=400)
+
     token = secrets.token_hex(32)
     sesion = SesionAuth(
         token=token,
+        usuario=usuario,
         expira_en=datetime.utcnow() + timedelta(seconds=SESSION_MAX_AGE),
     )
     db.add(sesion)
@@ -77,7 +83,7 @@ async def verify(request: Request, db: Session = Depends(get_db)):
             db.commit()
         return Response(status_code=401)
 
-    return Response(status_code=200)
+    return JSONResponse({"usuario": sesion.usuario})
 
 
 @router.post("/logout")

@@ -18,7 +18,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [colapsado, setColapsado] = useState<boolean>(
     () => localStorage.getItem('sidebar-colapsado') === 'true' || window.innerWidth < 768
   );
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, logout, usuario } = useAuth();
   const { pathname } = useLocation();
 
   // En ventanas angostas el menú se contrae solo para dejar espacio al contenido.
@@ -114,6 +114,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         {textosMontados && (
           <div className={`px-4 py-3 border-t border-[var(--color-border)] whitespace-nowrap ${fade}`}>
+            {usuario && <p className="text-[11px] font-medium text-[var(--color-text-primary)] truncate mb-0.5" title="Sesión iniciada como">{usuario}</p>}
             <p className="text-[10px] text-[var(--color-text-secondary)]">v2.0 · Multi-compañía</p>
           </div>
         )}

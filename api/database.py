@@ -66,6 +66,11 @@ def _migrate_add_columns():
         ("clasificacion_cola", "ticket_externo_id",     "INTEGER"),
         ("polizas_entrenamiento", "entrenado",          "BOOLEAN DEFAULT 0"),
         ("polizas_entrenamiento", "sha256",             "VARCHAR(64)"),
+        ("polizas_entrenamiento", "terminado_por",      "VARCHAR(60)"),
+        ("polizas_entrenamiento", "terminado_en",       "DATETIME"),
+        ("selecciones_campo", "usuario",               "VARCHAR(60)"),
+        ("reglas_extraccion", "usuario",               "VARCHAR(60)"),
+        ("sesiones_auth",     "usuario",               "VARCHAR(60)"),
     ]
     with engine.connect() as conn:
         for table, col, col_type in migrations:

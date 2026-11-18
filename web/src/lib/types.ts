@@ -170,6 +170,10 @@ export interface PolizaEntrenamiento {
   paginas: number | null;
   num_selecciones: number;
   entrenado: boolean;
+  /** Quién le dio "Terminar". */
+  terminado_por?: string | null;
+  /** Solo al subir: pista de que el PDF parece de otra aseguradora o subramo. */
+  aviso?: string | null;
   created_at: string | null;
 }
 
@@ -185,6 +189,8 @@ export interface SeleccionCampo {
    * extracción real (regla/extractor_dedicado/valor_fijo/derivado/
    * no_encontrado). null en selecciones manuales de entrenamiento clásicas. */
   metodo: string | null;
+  /** Quién la capturó o confirmó por última vez. */
+  usuario?: string | null;
 }
 
 /** {campo: {poliza_id: SeleccionCampo}} */
@@ -223,6 +229,8 @@ export interface ReglaResumen {
   cobertura_lote: number | null;
   total_lote: number | null;
   creado_por: string;
+  usuario?: string | null;
+  fecha?: string | null;
 }
 
 export interface EstadoLote {

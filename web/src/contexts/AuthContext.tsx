@@ -7,8 +7,10 @@ import TransicionSesion, { TRANSICION_FADE_MS, TRANSICION_MIN_MS } from '../comp
 interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Nombre que escribió al entrar (queda registrado en lo que entrena). */
+  usuario: string | null;
   checkSession: () => Promise<void>;
-  login: (password: string) => Promise<{ ok: boolean; error?: string }>;
+  login: (password: string, usuario: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   /** Login: la página ya navegó a la app; arranca el fade-out del overlay. */
   finTransicion: () => Promise<void>;
@@ -24,12 +26,15 @@ const WATCHDOG_MS = 8000;
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [usuario, setUsuario] = useState<string | null>(null);
   const [transicion, setTransicion] = useState<{ texto: string; activa: boolean } | null>(null);
   const watchdog = useRef<ReturnType<typeof setTimeout>>();
   const ocupado = useRef(false); // evita doble disparo (doble clic) mientras dura la transición
 
   const checkSession = async () => {
-    setIsAuthenticated(await verifySession());
+    const sesion = await verifySession();
+    setIsAuthenticated(sesion.ok);
+    setUsuario(sesion.usuario);
   };
 
   useEffect(() => {
@@ -43,15 +48,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTransicion((t) => (t ? { ...t, activa: false } : t));
   }, []);
 
-  const login = async (password: string) => {
+  const login = async (password: string, nombre: string) => {
     if (ocupado.current) return { ok: false, error: 'Ya se está iniciando sesión' };
     ocupado.current = true;
     setTransicion({ texto: 'Iniciando sesión…', activa: true });
     const t0 = Date.now();
     try {
-      const [res] = await Promise.all([loginRequest(password), sleep(TRANSICION_FADE_MS)]);
+      const [res] = await Promise.all([loginRequest(password, nombre), sleep(TRANSICION_FADE_MS)]);
       if (!res.ok) { cerrarOverlay(); return res; }
       await sleep(Math.max(0, TRANSICION_MIN_MS - (Date.now() - t0)));
+      setUsuario(nombre);
       setIsAuthenticated(true);
       watchdog.current = setTimeout(cerrarOverlay, WATCHDOG_MS);
       return res;
@@ -80,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, checkSession, login, logout, finTransicion }}>
+    <AuthContext.Provider value={{ isAuthenticated, isLoading, usuario, checkSession, login, logout, finTransicion }}>
       {children}
       {transicion && (
         <TransicionSesion texto={transicion.texto} activa={transicion.activa} onFin={() => setTransicion(null)} />

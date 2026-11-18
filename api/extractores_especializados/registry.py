@@ -30,10 +30,9 @@ SOPORTE: dict[str, dict[str, set[str]]] = {
     "ANA Seguros": {"Vehículos": {"Automóviles", "Camiones", "Motocicletas", "Autobuses"}},
 }
 
-# ponytail: ANA va por fases (la 1 trae solo documento, rfc, cliente y dirección),
-# así que todavía no se le exige la completitud de campos básicos. Quitar de aquí
-# al terminar la fase 3.
-SIN_COMPLETITUD = {"ANA Seguros"}
+# Compañías a las que no se les exige la completitud de campos básicos (ninguna hoy:
+# ANA ya terminó sus 3 fases). Agregar aquí solo mientras un extractor esté a medias.
+SIN_COMPLETITUD: set[str] = set()
 
 
 def _norm(s: str | None) -> str:

@@ -107,6 +107,7 @@ class ReglaExtraccion(Base):
     cobertura_lote = Column(Integer, nullable=True)    # cuántos PDFs del lote matchean
     total_lote = Column(Integer, nullable=True)        # total PDFs en el lote de entrenamiento
     creado_por = Column(String(30), default="manual")  # manual | ia | lote
+    usuario = Column(String(60), nullable=True)        # persona que guardó la regla
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -135,6 +136,8 @@ class PolizaEntrenamiento(Base):
     # No se revierte automáticamente si luego se borra un valor — queda
     # marcada hasta que alguien vuelva a pedir "Terminar" explícitamente.
     entrenado = Column(Boolean, default=False, nullable=False)
+    terminado_por = Column(String(60), nullable=True)   # quién le dio "Terminar"
+    terminado_en = Column(DateTime, nullable=True)
     # Hash del PDF; solo lo llenan los envíos automáticos (extractor rechazado),
     # para no duplicar el mismo archivo si llega de nuevo (ej. reintentos de MOVI).
     sha256 = Column(String(64), nullable=True)
@@ -161,6 +164,7 @@ class SeleccionCampo(Base):
     # services/extractor.py). None para selecciones manuales de
     # entrenamiento clásicas, donde el concepto no aplica.
     metodo = Column(String(30), nullable=True)
+    usuario = Column(String(60), nullable=True)          # quién la capturó o confirmó por última vez
     created_at = Column(DateTime, default=datetime.utcnow)
 
     poliza = relationship("PolizaEntrenamiento", back_populates="selecciones")
@@ -293,6 +297,7 @@ class SesionAuth(Base):
     token = Column(String(64), unique=True, index=True, nullable=False)
     creado_en = Column(DateTime, default=datetime.utcnow)
     expira_en = Column(DateTime, nullable=False)
+    usuario = Column(String(60), nullable=True)   # nombre que escribió al entrar
 
 
 class UsoIA(Base):

@@ -7,17 +7,18 @@ const BASE = '/api';
 // viaja por default, pero así queda a prueba de un despliegue futuro donde
 // frontend y backend vivan en subdominios distintos).
 
-export async function verifySession(): Promise<boolean> {
+export async function verifySession(): Promise<{ ok: boolean; usuario: string | null }> {
   const res = await fetch(`${BASE}/auth/verify`, { credentials: 'include' });
-  return res.ok;
+  const data = res.ok ? await res.json().catch(() => ({})) : {};
+  return { ok: res.ok, usuario: data.usuario ?? null };
 }
 
-export async function loginRequest(password: string): Promise<{ ok: boolean; error?: string }> {
+export async function loginRequest(password: string, usuario: string): Promise<{ ok: boolean; error?: string }> {
   const res = await fetch(`${BASE}/auth/login`, {
     method: 'POST',
     credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
+    body: JSON.stringify({ password, usuario }),
   });
   const data = await res.json().catch(() => ({}));
   if (res.ok && data.ok) return { ok: true };
@@ -370,16 +371,29 @@ export async function probarRegexLote(subramoId: number, nombre_campo: string, p
   return res.json();
 }
 
+/** El servidor pide confirmar antes de guardar la regla (cubre menos, la vigente es mejor, alguien guardó antes). */
+export class ConfirmarError extends Error {
+  constructor(public motivos: string[]) { super(motivos.join(' ')); }
+}
+
 export async function guardarReglaLote(subramoId: number, data: {
-  nombre_campo: string; patron_regex: string; cobertura_lote: number; total_lote: number;
+  nombre_campo: string; patron_regex: string;
   bbox?: object | null; ocr_bbox?: object | null; confianza?: number;
+  regla_base_id?: number | null; forzar?: boolean;
 }) {
   const res = await fetch(`${BASE}/entrenamiento/subramos/${subramoId}/guardar-regla`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error(`Error ${res.status}`);
+  if (res.status === 409) {
+    const err = await res.json().catch(() => ({}));
+    throw new ConfirmarError(err.detail?.motivos ?? ['Confirma antes de guardar.']);
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(typeof err.detail === 'string' ? err.detail : `Error ${res.status}`);
+  }
   return res.json();
 }
 
