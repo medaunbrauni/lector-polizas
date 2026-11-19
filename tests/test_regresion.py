@@ -8,7 +8,7 @@ _dir = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_dir}/t.db"
 os.environ["STORAGE_PATH"] = _dir
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import Depends, FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from api.database import SessionLocal, init_db  # noqa: E402
@@ -89,6 +89,18 @@ class Api(unittest.TestCase):
             for m in ("regla", "regla", "no_encontrado"):
                 db.add(CampoExtraido(extraccion_id=ex.id, nombre_campo="rfc", metodo=m, regla_id=r2.id))
             db.commit()
+
+    def test_login_limita_intentos_y_rutas_piden_sesion(self):
+        os.environ.setdefault("AUTH_PASSWORD", "clave-de-prueba")
+        from api.routers import auth
+        app = FastAPI(); app.include_router(auth.router)
+        app.include_router(entrenamiento.router, dependencies=[Depends(auth.verificar_sesion)])
+        c = TestClient(app)
+        self.assertEqual(c.get("/entrenamiento/subramos/1/cobertura").status_code, 401)  # sin sesión
+        auth._fallos.clear()
+        codes = [c.post("/auth/login", json={"password": "mal", "usuario": "x"}).status_code for _ in range(6)]
+        self.assertEqual(codes, [401] * 5 + [429])
+        auth._fallos.clear()
 
     def test_restaurar_deja_una_sola_activa(self):
         self.assertTrue(self.c.post(f"/entrenamiento/reglas-lote/{self.vieja}/restaurar").json()["ok"])

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from fastapi.responses import JSONResponse
 import os
 import secrets
+import time
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -36,6 +37,16 @@ if not PASSWORD:
 from ..services.usuario import SESSION_COOKIE
 SESSION_MAX_AGE = 60 * 60 * 24 * 7  # 7 días
 
+# shortcut: contador en memoria por proceso; con varios workers cada uno cuenta aparte, subir a la BD si se escala.
+MAX_FALLOS, VENTANA_S = 5, 60
+_fallos: dict = {}
+
+
+def _bloqueado(ip: str) -> bool:
+    ahora = time.time()
+    _fallos[ip] = [t for t in _fallos.get(ip, []) if ahora - t < VENTANA_S]
+    return len(_fallos[ip]) >= MAX_FALLOS
+
 
 @router.post("/login")
 async def login(request: Request, db: Session = Depends(get_db)):
@@ -48,7 +59,12 @@ async def login(request: Request, db: Session = Depends(get_db)):
         password = form.get("password", "")
         usuario = (form.get("usuario") or "").strip()[:60]
 
+    ip = request.client.host if request.client else "?"
+    if _bloqueado(ip):
+        return JSONResponse({"ok": False, "error": "Demasiados intentos, espera un minuto"}, status_code=429)
+
     if not secrets.compare_digest(password, PASSWORD):
+        _fallos[ip].append(time.time())
         return JSONResponse({"ok": False, "error": "Contrasena incorrecta"}, status_code=401)
 
     if not usuario:

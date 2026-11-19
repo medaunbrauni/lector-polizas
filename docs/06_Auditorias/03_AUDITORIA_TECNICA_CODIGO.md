@@ -288,7 +288,7 @@ Claude genera regex nuevos           │
 
 ### 5.1 Seguridad (el hallazgo de mayor severidad de esta auditoría)
 
-- **Contraseña en texto plano hardcodeada en el código fuente**: `routers/auth.py` línea 8, `PASSWORD = "Marsella14"`. No viene de variable de entorno, no está hasheada, y queda expuesta a cualquiera con acceso al repositorio (incluyendo el propio historial de git). Cualquiera que lea el código conoce la contraseña de producción.
+- **Contraseña en texto plano hardcodeada en el código fuente**: `routers/auth.py` línea 8, `PASSWORD = "<contraseña retirada>"`. No viene de variable de entorno, no está hasheada, y queda expuesta a cualquiera con acceso al repositorio (incluyendo el propio historial de git). Cualquiera que lea el código conoce la contraseña de producción.
 - **Sesión en memoria de proceso**: `valid_tokens: set = set()` en `auth.py` vive en RAM del proceso Python. Se pierde en cada reinicio/deploy (todos los usuarios logueados quedan deslogueados sin aviso) y **no es compatible con más de un worker** (si se corre con `--workers N > 1` o múltiples réplicas, un token generado por el worker A no existe en el worker B → fallos de sesión intermitentes). No hay expiración activa de tokens (el `set` crece indefinidamente hasta el próximo reinicio; el único límite es la cookie `max_age` del lado del cliente).
 - `secure=True` en la cookie de sesión (`auth.py` línea 26) exige HTTPS — coherente si se sirve tras un proxy TLS, pero rompe silenciosamente en un `http://localhost` de desarrollo sin que el código lo señale.
 
