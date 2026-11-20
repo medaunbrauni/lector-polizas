@@ -102,6 +102,15 @@ class Api(unittest.TestCase):
         self.assertEqual(codes, [401] * 5 + [429])
         auth._fallos.clear()
 
+    def test_integracion_401_antes_que_422_y_rechaza_no_pdf(self):
+        from api.routers.integraciones.base import crear_router_integracion
+        app = FastAPI(); app.include_router(crear_router_integracion("t", "k"))
+        c = TestClient(app)
+        self.assertEqual(c.post("/integraciones/t/cola", data={}).status_code, 401)  # sin llave y sin cuerpo
+        r = c.post("/integraciones/t/cola", headers={"X-API-Key": "k"}, data={"ticket_id": "T1"},
+                   files=[("archivos", ("a.pdf", b"no soy pdf", "application/pdf"))])
+        self.assertEqual(r.status_code, 400)
+
     def test_restaurar_deja_una_sola_activa(self):
         self.assertTrue(self.c.post(f"/entrenamiento/reglas-lote/{self.vieja}/restaurar").json()["ok"])
         with SessionLocal() as db:
