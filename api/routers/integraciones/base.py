@@ -22,6 +22,11 @@ from ...services.rate_limiter import get_bucket
 MAX_SIZE = MAX_FILE_MB * 1024 * 1024
 
 
+def es_pdf(data: bytes) -> bool:
+    """Por contenido, no por extensión: un PDF real empieza con %PDF-."""
+    return data[:5] == b"%PDF-"
+
+
 def verificar_api_key(x_api_key: str | None, api_key_esperada: str | None, origen: str) -> None:
     """Chequeo compartido de X-API-Key -- usado por cada ruta de cada integración."""
     if not api_key_esperada:
@@ -32,18 +37,22 @@ def verificar_api_key(x_api_key: str | None, api_key_esperada: str | None, orige
 
 def crear_router_integracion(origen: str, api_key_esperada: str | None) -> APIRouter:
     """Arma el router de un CRM externo. `origen` debe ser único (ej. 'movi_beta')."""
-    router = APIRouter(prefix=f"/integraciones/{origen}", tags=[f"Integración {origen}"])
+    def exigir_api_key(x_api_key: str | None = Header(None, alias="X-API-Key")) -> None:
+        verificar_api_key(x_api_key, api_key_esperada, origen)
+
+    # Como dependencia del router: sin llave responde 401 antes de validar el cuerpo (no 422).
+    router = APIRouter(
+        prefix=f"/integraciones/{origen}", tags=[f"Integración {origen}"],
+        dependencies=[Depends(exigir_api_key)],
+    )
 
     @router.post("/cola", status_code=202)
     async def recibir_ticket(
         background_tasks: BackgroundTasks,
         ticket_id: str = Form(...),
         archivos: list[UploadFile] = File(...),
-        x_api_key: str | None = Header(None, alias="X-API-Key"),
         db: Session = Depends(get_db),
     ):
-        verificar_api_key(x_api_key, api_key_esperada, origen)
-
         ticket_id = ticket_id.strip()
         if not ticket_id:
             raise HTTPException(400, "ticket_id requerido")
@@ -66,6 +75,8 @@ def crear_router_integracion(origen: str, api_key_esperada: str | None) -> APIRo
             data = await archivo.read()
             if len(data) > MAX_SIZE:
                 raise HTTPException(400, f"'{nombre}' supera el límite de {MAX_FILE_MB} MB")
+            if not es_pdf(data):
+                raise HTTPException(400, f"'{nombre}' no es un PDF válido")
             contenidos.append((nombre, data))
 
         ticket = TicketExterno(origen=origen, folio=ticket_id, total_pdfs=len(contenidos))

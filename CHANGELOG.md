@@ -29,8 +29,8 @@ Implementados los 7 refactors clasificados como 🟢 en `PLAN_REFACTOR.md`. Ning
 
 ### Seguridad
 
-- **`api/routers/auth.py`**: la contraseña de login dejó de estar hardcodeada en el código (`PASSWORD = "Marsella14"`) y ahora se lee de la variable de entorno `AUTH_PASSWORD`, con el mismo valor como *default* si la variable no está configurada — por lo que el comportamiento no cambia en ningún ambiente existente que aún no la haya definido explícitamente.
-  - Se agregó `AUTH_PASSWORD=Marsella14` a `.env` (no versionado) y `AUTH_PASSWORD=changeme` como placeholder en `.env.example`.
+- **`api/routers/auth.py`**: la contraseña de login dejó de estar hardcodeada en el código (`PASSWORD = "<contraseña retirada>"`) y ahora se lee de la variable de entorno `AUTH_PASSWORD`, con el mismo valor como *default* si la variable no está configurada — por lo que el comportamiento no cambia en ningún ambiente existente que aún no la haya definido explícitamente.
+  - Se agregó `AUTH_PASSWORD=<valor definido en el servidor>` a `.env` (no versionado) y `AUTH_PASSWORD=changeme` como placeholder en `.env.example`.
   - **Verificado:** flujo completo `login` (correcto/incorrecto) → `verify` → `logout` → `verify` produce exactamente los mismos códigos de estado (200/401) que antes del cambio.
   - **Pendiente fuera de este alcance** (ya señalado como riesgo 🔴 en `PLAN_REFACTOR.md`): la contraseña anterior quedó expuesta en el historial de git y debería rotarse como acción operativa; el almacenamiento de sesión sigue en memoria de proceso (no apto para multi-worker).
 

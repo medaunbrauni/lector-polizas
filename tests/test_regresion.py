@@ -8,7 +8,7 @@ _dir = tempfile.mkdtemp()
 os.environ["DATABASE_URL"] = f"sqlite:///{_dir}/t.db"
 os.environ["STORAGE_PATH"] = _dir
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import Depends, FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from api.database import SessionLocal, init_db  # noqa: E402
@@ -53,6 +53,10 @@ class Puros(unittest.TestCase):
         self.assertEqual(extraer_agente(t), {"agente_clave": "17719", "agente_nombre": "JIRO Y ASOCIADOS AGENTE DE SEGUROS"})
         self.assertEqual(extraer_agente("Agente: Tel.55"), {})
 
+    def test_ana_exige_campos_basicos(self):
+        from api.extractores_especializados.registry import SIN_COMPLETITUD
+        self.assertNotIn("ANA Seguros", SIN_COMPLETITUD)
+
     def test_regex_exige_el_valor_correcto(self):
         ps = [SimpleNamespace(id=1, nombre_archivo="a", texto_pdf="Poliza: 123"),
               SimpleNamespace(id=2, nombre_archivo="b", texto_pdf="Poliza: 999")]
@@ -85,6 +89,27 @@ class Api(unittest.TestCase):
             for m in ("regla", "regla", "no_encontrado"):
                 db.add(CampoExtraido(extraccion_id=ex.id, nombre_campo="rfc", metodo=m, regla_id=r2.id))
             db.commit()
+
+    def test_login_limita_intentos_y_rutas_piden_sesion(self):
+        os.environ.setdefault("AUTH_PASSWORD", "clave-de-prueba")
+        from api.routers import auth
+        app = FastAPI(); app.include_router(auth.router)
+        app.include_router(entrenamiento.router, dependencies=[Depends(auth.verificar_sesion)])
+        c = TestClient(app)
+        self.assertEqual(c.get("/entrenamiento/subramos/1/cobertura").status_code, 401)  # sin sesión
+        auth._fallos.clear()
+        codes = [c.post("/auth/login", json={"password": "mal", "usuario": "x"}).status_code for _ in range(6)]
+        self.assertEqual(codes, [401] * 5 + [429])
+        auth._fallos.clear()
+
+    def test_integracion_401_antes_que_422_y_rechaza_no_pdf(self):
+        from api.routers.integraciones.base import crear_router_integracion
+        app = FastAPI(); app.include_router(crear_router_integracion("t", "k"))
+        c = TestClient(app)
+        self.assertEqual(c.post("/integraciones/t/cola", data={}).status_code, 401)  # sin llave y sin cuerpo
+        r = c.post("/integraciones/t/cola", headers={"X-API-Key": "k"}, data={"ticket_id": "T1"},
+                   files=[("archivos", ("a.pdf", b"no soy pdf", "application/pdf"))])
+        self.assertEqual(r.status_code, 400)
 
     def test_restaurar_deja_una_sola_activa(self):
         self.assertTrue(self.c.post(f"/entrenamiento/reglas-lote/{self.vieja}/restaurar").json()["ok"])
@@ -145,6 +170,84 @@ class Api(unittest.TestCase):
                 db.commit()
             r = self.c.post(url, json={"habilitado": True})
             self.assertIn("confianza alta", r.json()["detail"]["razones"][0])
+
+    def _lote(self, nombre, textos):
+        with SessionLocal() as db:
+            co = Compania(nombre=f"Aseg {nombre}"); db.add(co); db.flush()
+            ra = Ramo(nombre="Daños", compania_id=co.id); db.add(ra); db.flush()
+            sub = Subramo(nombre="Hogar", ramo_id=ra.id); db.add(sub); db.flush()
+            ids = []
+            for i, t in enumerate(textos):
+                pz = PolizaEntrenamiento(subramo_id=sub.id, nombre_archivo=f"{nombre}{i}", ruta_archivo=__file__, texto_pdf=t)
+                db.add(pz); db.flush(); ids.append(pz.id)
+            db.commit()
+            return sub.id, ids
+
+    def test_guardar_regla_valida_en_servidor(self):
+        sid, ids = self._lote("regla", ["doc: 1", "doc: 2", "otro: 3"])
+        url = f"/entrenamiento/subramos/{sid}/guardar-regla"
+        base = {"nombre_campo": "documento", "patron_regex": r"doc: (\d)"}
+        self.assertEqual(self.c.post(url, json={**base, "patron_regex": "("}).status_code, 400)
+        r = self.c.post(url, json=base)   # cubre 2 de 3: pide confirmar
+        self.assertEqual(r.status_code, 409)
+        self.assertIn("2 de 3", r.json()["detail"]["motivos"][0])
+        guardada = self.c.post(url, json={**base, "forzar": True}).json()   # la cobertura la calcula el servidor
+        self.assertEqual((guardada["cobertura"], guardada["total"]), (2, 3))
+        # sin regla_base_id (otra persona guardó mientras tanto) se avisa; con el id vigente, no
+        motivos = self.c.post(url, json=base).json()["detail"]["motivos"]
+        self.assertTrue(any("Otra persona" in m for m in motivos))
+        motivos = self.c.post(url, json={**base, "regla_base_id": guardada["regla_id"]}).json()["detail"]["motivos"]
+        self.assertFalse(any("Otra persona" in m for m in motivos))
+
+    def test_seleccion_y_terminar_guardan_quien_las_hizo(self):
+        import secrets
+        from datetime import datetime, timedelta
+        from api.models.db_models import SesionAuth, SeleccionCampo
+        sid, ids = self._lote("usuario", ["doc: 1"])
+        token = secrets.token_hex(8)
+        with SessionLocal() as db:
+            db.add(SesionAuth(token=token, usuario="Ana", expira_en=datetime.utcnow() + timedelta(days=1)))
+            db.commit()
+        self.c.cookies.set("lector_session", token)
+        try:
+            r = self.c.post("/entrenamiento/selecciones", json={"poliza_id": ids[0], "nombre_campo": "documento", "texto_seleccionado": "1"})
+            self.assertEqual(r.json()["seleccion"]["usuario"], "Ana")
+        finally:
+            self.c.cookies.clear()
+
+    def test_aviso_si_el_pdf_parece_de_otro_subramo(self):
+        from unittest import mock
+        from api.routers.entrenamiento import _aviso_subramo
+        with SessionLocal() as db:
+            co = Compania(nombre="Aseg aviso"); db.add(co); db.flush()
+            ra = Ramo(nombre="Daños", compania_id=co.id); db.add(ra); db.flush()
+            sub = Subramo(nombre="Hogar", ramo_id=ra.id); db.add(sub); db.flush()
+            det = lambda **k: {"confianza": "alta", "subramo_id": 999, "subramo_nombre": "Otro", "compania_id": co.id, "compania_nombre": "X", **k}
+            with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value=det()):
+                self.assertIn("subramo Otro", _aviso_subramo("texto", sub, db))
+            with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value=det(compania_id=-1)):
+                self.assertIn("otra aseguradora", _aviso_subramo("texto", sub, db))
+            with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value=det(subramo_id=sub.id)):
+                self.assertIsNone(_aviso_subramo("texto", sub, db))
+            with mock.patch("api.routers.entrenamiento.detectar_con_score", return_value=det(confianza="baja")):
+                self.assertIsNone(_aviso_subramo("texto", sub, db))
+
+    def test_limpieza_de_pdfs_respeta_las_entrenadas(self):
+        import sqlite3, tempfile
+        import limpiar_pdfs_entrenamiento as lim
+        d = tempfile.mkdtemp()
+        db = os.path.join(d, "l.db")
+        con = sqlite3.connect(db)
+        con.execute("create table polizas_entrenamiento (id integer primary key, ruta_archivo text, created_at text, entrenado integer)")
+        viejo = "2020-01-01T00:00:00"
+        for i, ent in enumerate((0, 1)):
+            ruta = os.path.join(d, f"{i}.pdf"); open(ruta, "wb").write(b"x")
+            con.execute("insert into polizas_entrenamiento values (?,?,?,?)", (i, ruta, viejo, ent))
+        con.commit(); con.close()
+        lim.DB_PATH, lim.LOG_PATH = db, os.path.join(d, "log.txt")
+        lim.limpiar()
+        self.assertFalse(os.path.exists(os.path.join(d, "0.pdf")))   # sin entrenar y vieja: se borra
+        self.assertTrue(os.path.exists(os.path.join(d, "1.pdf")))    # entrenada: se conserva
 
     def test_duplicados_protege_trabajo_del_usuario(self):
         with SessionLocal() as db:

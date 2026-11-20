@@ -1,4 +1,5 @@
 import EstadoVacio from '../components/ui/EstadoVacio';
+import { useToast } from '../contexts/ToastContext';
 import { SkeletonFilas } from '../components/ui/Skeleton';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -12,7 +13,7 @@ import PdfVisor, { PdfVisorErrorBoundary } from '../components/reglas/PdfVisor';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
-  subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza, reentrenarPoliza,
+  ConfirmarError, subirPolizasEntrenamiento, eliminarPolizaEntrenamiento, vaciarLoteEntrenamiento, terminarPoliza, reentrenarPoliza,
   urlPdfEntrenamiento, urlImagenPagina, getTextoPdf, getTextoZona, confirmarSelecciones,
   guardarSeleccion,
   getEstadoLote, generarRegexLote, probarRegexLote, guardarReglaLote,
@@ -113,6 +114,8 @@ export default function Reglas() {
   const [generando, setGenerando] = useState<string | null>(null);  // nombre_campo en proceso
   const [historialCampo, setHistorialCampo] = useState<string | null>(null);
   const [cargandoLote, setCargandoLote] = useState(false);
+  const toast = useToast();
+  const [confirmarRegla, setConfirmarRegla] = useState<{ campo: string; motivos: string[] } | null>(null);
   // Por campo: pólizas que el usuario sacó como ejemplos del regex, y si su lista está contraída.
   const [ejemplosExcluidos, setEjemplosExcluidos] = useState<Record<string, Set<number>>>({});
   const [listasContraidas, setListasContraidas] = useState<Set<string>>(new Set());
@@ -395,6 +398,7 @@ export default function Reglas() {
     setSubiendo(true);
     try {
       const nuevas = await subirPolizasEntrenamiento(Number(selSubramo), files);
+      nuevas.forEach((n: PolizaEntrenamiento) => n.aviso && toast(`${n.nombre_archivo}: ${n.aviso}`, 'aviso'));
       let agregadas = 0;
       setPolizas((prev) => {
         const merged = [...prev];
@@ -444,6 +448,7 @@ export default function Reglas() {
       // cascada de useEffect de los <select> de arriba).
       if (res.subramo_id) {
         const nuevas = await subirPolizasEntrenamiento(res.subramo_id, [file]);
+        nuevas.forEach((n: PolizaEntrenamiento) => n.aviso && toast(`${n.nombre_archivo}: ${n.aviso}`, 'aviso'));
         setPolizas((prev) => {
           const merged = [...prev];
           for (const n of nuevas) {
@@ -760,7 +765,7 @@ export default function Reglas() {
     }
   }
 
-  async function handleGuardarRegla(nombreCampo: string) {
+  async function handleGuardarRegla(nombreCampo: string, forzar = false) {
     const resultado = resultados[nombreCampo];
     const patron = regexEditado[nombreCampo];
     if (!resultado || !patron) return;
@@ -769,13 +774,17 @@ export default function Reglas() {
       await guardarReglaLote(Number(selSubramo), {
         nombre_campo: nombreCampo,
         patron_regex: patron,
-        cobertura_lote: resultado.cobertura,
-        total_lote: resultado.total,
         confianza: resultado.confianza,
+        regla_base_id: reglas[nombreCampo]?.id ?? null,
+        forzar,
       });
       const estado = await getEstadoLote(Number(selSubramo));
       setReglas(estado.reglas);
       setResultados((prev) => { const n = { ...prev }; delete n[nombreCampo]; return n; });
+    } catch (e) {
+      // El servidor valida la regla: si no es mejor, no cubre todo el lote o alguien guardó antes, pide confirmar.
+      if (e instanceof ConfirmarError && !forzar) setConfirmarRegla({ campo: nombreCampo, motivos: e.motivos });
+      else toast(e instanceof Error ? e.message : 'No se pudo guardar la regla.', 'aviso');
     } finally {
       setGuardando(null);
     }
@@ -928,7 +937,7 @@ export default function Reglas() {
           </p>
           <div className="flex items-center justify-between mt-0.5">
             <span className="text-[10px] text-[var(--color-text-secondary)]">
-              {p.paginas ? `${p.paginas} págs.` : '–'}
+              {p.paginas ? `${p.paginas} págs.` : '–'}{p.entrenado && p.terminado_por ? ` · ${p.terminado_por}` : ''}
             </span>
             <span className={`text-[10px] font-medium ${
               selCount === totalCampos && totalCampos > 0
@@ -974,6 +983,17 @@ export default function Reglas() {
         procesando={vaciandoLote}
         onConfirm={confirmarVaciarLote}
         onCancel={() => setMostrarConfirmVaciar(false)}
+      />
+
+      <ConfirmDialog
+        open={!!confirmarRegla}
+        variant="warning"
+        title="¿Guardar esta regla de todos modos?"
+        message={(confirmarRegla?.motivos ?? []).join(' ')}
+        confirmLabel="Guardar de todos modos"
+        procesando={!!guardando}
+        onConfirm={() => { const c = confirmarRegla?.campo; setConfirmarRegla(null); if (c) handleGuardarRegla(c, true); }}
+        onCancel={() => setConfirmarRegla(null)}
       />
 
       {historialCampo && selSubramo && (
@@ -1667,7 +1687,7 @@ export default function Reglas() {
                             return (
                               <div
                                 key={p.id}
-                                title={sel ? `"${sel.texto_seleccionado}"` : p.nombre_archivo}
+                                title={sel ? `"${sel.texto_seleccionado}"${sel.usuario ? ` · ${sel.usuario}` : ''}` : p.nombre_archivo}
                                 className={`flex-1 h-1.5 rounded-full transition-colors duration-200 ${
                                   sel ? (sel.es_auto ? 'bg-amber-400' : 'bg-emerald-500') : 'bg-[var(--color-border)]'
                                 }`}

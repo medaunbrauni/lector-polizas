@@ -5,6 +5,7 @@ Reglas:
   a) Borra archivos con más de LIMPIEZA_PDF_DIAS días de antigüedad,
      según la fecha de SUBIDA (polizas_entrenamiento.created_at en la
      BD) — NO la fecha de modificación del archivo en disco.
+  Las pólizas ya entrenadas ("Terminar") NO se tocan nunca: son trabajo del usuario.
   b) Si, después de (a), el total de archivos que quedan en disco sigue
      por encima de LIMPIEZA_PDF_TOPE, borra los más antiguos (por
      created_at) hasta bajar del tope — salvaguarda de emergencia por
@@ -64,6 +65,7 @@ def limpiar() -> None:
     cur.execute("""
         SELECT id, ruta_archivo, created_at
         FROM polizas_entrenamiento
+        WHERE COALESCE(entrenado, 0) = 0
         ORDER BY created_at ASC
     """)
     filas = cur.fetchall()

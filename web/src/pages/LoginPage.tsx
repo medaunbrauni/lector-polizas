@@ -56,6 +56,9 @@ export default function LoginPage() {
   const location = useLocation();
 
   const [password, setPassword] = useState('');
+  const [usuario, setUsuario] = useState(() => {
+    try { return localStorage.getItem('lector_usuario') ?? ''; } catch { return ''; }
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -76,8 +79,9 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await login(password);
+      const res = await login(password, usuario.trim());
       if (res.ok) {
+        try { localStorage.setItem('lector_usuario', usuario.trim()); } catch { /* sin persistencia */ }
         const from = (location.state as { from?: Location })?.from?.pathname || '/';
         navigate(from, { replace: true });
         finTransicion();
@@ -104,6 +108,23 @@ export default function LoginPage() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
+              <label htmlFor="usuario" className="block text-xs font-medium text-white/70 mb-1">
+                Tu nombre
+              </label>
+              <input
+                id="usuario"
+                type="text"
+                value={usuario}
+                onChange={(e) => setUsuario(e.target.value)}
+                autoFocus={!usuario}
+                required
+                maxLength={60}
+                placeholder="Para registrar quién entrena"
+                className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/15 text-white text-sm placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#1973B8] focus:border-transparent"
+              />
+            </div>
+
+            <div>
               <label htmlFor="password" className="block text-xs font-medium text-white/70 mb-1">
                 Contraseña
               </label>
@@ -112,7 +133,7 @@ export default function LoginPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                autoFocus
+                autoFocus={!!usuario}
                 required
                 placeholder="••••••••"
                 className="w-full px-3 py-2.5 rounded-lg bg-white/5 border border-white/15 text-white text-sm placeholder-white/30 focus:outline-none focus:ring-2 focus:ring-[#1973B8] focus:border-transparent"
@@ -123,7 +144,7 @@ export default function LoginPage() {
 
             <button
               type="submit"
-              disabled={loading || !password}
+              disabled={loading || !password || !usuario.trim()}
               className="w-full py-2.5 rounded-lg text-sm font-semibold text-white transition-opacity disabled:opacity-50"
               style={{ background: 'linear-gradient(135deg, #072146, #1973B8)' }}
             >

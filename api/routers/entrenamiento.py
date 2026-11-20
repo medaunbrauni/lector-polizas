@@ -5,13 +5,15 @@ Gestiona: PDFs de entrenamiento, selecciones de campo, generación y prueba de r
 from __future__ import annotations
 import io
 import os
+import re
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import base64
 import pdfplumber
 import pypdfium2
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -30,6 +32,7 @@ from ..services.rule_engine import _aplicar_patron, aplicar_reglas
 from collections import Counter
 from ..services.extractor import CAMPOS_BASICOS, _derivar_campos, clave_contenido, sembrar_selecciones_auto, procesar_pdf
 from ..services.detector import detectar_con_score
+from ..services.usuario import usuario_de_request
 from ..extractores_especializados.registry import esta_soportado
 from .catalogos import listar_campos
 from .metricas import stats_reglas_produccion
@@ -61,11 +64,13 @@ class ProbarRegexIn(BaseModel):
 class GuardarReglaIn(BaseModel):
     nombre_campo: str
     patron_regex: str
-    cobertura_lote: int
-    total_lote: int
+    cobertura_lote: int = 0   # compatibilidad: el servidor la recalcula
+    total_lote: int = 0       # compatibilidad: el servidor la recalcula
     bbox: dict | None = None
     ocr_bbox: dict | None = None
     confianza: float = 0.9
+    regla_base_id: int | None = None   # regla vigente que el usuario tenía en pantalla
+    forzar: bool = False               # confirma pese a los avisos
 
 
 def _extraer_texto_pdf(contenido: bytes) -> tuple[str, int]:
@@ -89,6 +94,7 @@ def _poliza_dict(p: PolizaEntrenamiento, db: Session) -> dict:
         "paginas": p.paginas,
         "num_selecciones": num_sel,
         "entrenado": p.entrenado,
+        "terminado_por": p.terminado_por,
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
 
@@ -168,7 +174,21 @@ def _sel_dict(s: SeleccionCampo) -> dict:
         "bbox": s.bbox,
         "es_auto": s.es_auto,
         "metodo": s.metodo,
+        "usuario": s.usuario,
     }
+
+
+def _aviso_subramo(texto: str, subramo: Subramo, db: Session) -> str | None:
+    """Pista (no bloqueo) de que el PDF subido parece de otra aseguradora o subramo."""
+    if not texto.strip():
+        return None
+    det = detectar_con_score(texto, db)
+    if det["confianza"] not in ("alta", "media") or det["subramo_id"] == subramo.id:
+        return None
+    ramo = db.get(Ramo, subramo.ramo_id)
+    if det["compania_id"] != ramo.compania_id:
+        return f"Parece de otra aseguradora ({det['compania_nombre']})."
+    return f"Parece del subramo {det['subramo_nombre']}, no de {subramo.nombre}." if det["subramo_id"] else None
 
 
 @router.post("/subramos/{subramo_id}/polizas")
@@ -228,7 +248,7 @@ async def subir_polizas(
         except Exception:
             pass
 
-        creados.append(_poliza_dict(poliza, db))
+        creados.append({**_poliza_dict(poliza, db), "aviso": _aviso_subramo(texto, subramo, db)})
 
     db.commit()
     return creados
@@ -270,7 +290,7 @@ def eliminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
 
 
 @router.patch("/polizas/{poliza_id}/terminar")
-def terminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
+def terminar_poliza(poliza_id: int, request: Request, db: Session = Depends(get_db)):
     """
     Marca una póliza del lote como entrenada ("Terminar" en el panel
     Entrenar/Corregir): exige que todos los campos requerido=True del
@@ -295,6 +315,8 @@ def terminar_poliza(poliza_id: int, db: Session = Depends(get_db)):
         })
 
     p.entrenado = True
+    p.terminado_por = usuario_de_request(request, db)
+    p.terminado_en = datetime.utcnow()
     db.commit()
     return _poliza_dict(p, db)
 
@@ -313,6 +335,8 @@ def reentrenar_poliza(poliza_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Póliza no encontrada")
 
     p.entrenado = False
+    p.terminado_por = None
+    p.terminado_en = None
     db.commit()
     return _poliza_dict(p, db)
 
@@ -365,7 +389,7 @@ def vaciar_lote(subramo_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/selecciones")
-def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
+def guardar_seleccion(data: SeleccionIn, request: Request, db: Session = Depends(get_db)):
     """
     Guarda (o actualiza) la selección de un campo en un PDF.
     Si ya existe selección para ese campo+poliza, la reemplaza.
@@ -401,6 +425,7 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
         existente.bbox = data.bbox
         existente.es_auto = data.es_auto
         existente.metodo = data.metodo
+        existente.usuario = usuario_de_request(request, db)
         sel = existente
     else:
         sel = SeleccionCampo(
@@ -411,6 +436,7 @@ def guardar_seleccion(data: SeleccionIn, db: Session = Depends(get_db)):
             bbox=data.bbox,
             es_auto=data.es_auto,
             metodo=data.metodo,
+            usuario=usuario_de_request(request, db),
         )
         db.add(sel)
 
@@ -464,11 +490,13 @@ class ConfirmarSeleccionesIn(BaseModel):
 
 
 @router.post("/selecciones/confirmar")
-def confirmar_selecciones(data: ConfirmarSeleccionesIn, db: Session = Depends(get_db)):
+def confirmar_selecciones(data: ConfirmarSeleccionesIn, request: Request, db: Session = Depends(get_db)):
     """Pasa valores automáticos (extractor/búsqueda en lote) a confirmados por el usuario."""
     sels = db.query(SeleccionCampo).filter(SeleccionCampo.id.in_(data.ids)).all()
+    usuario = usuario_de_request(request, db)
     for s in sels:
         s.es_auto = False
+        s.usuario = usuario
     db.commit()
     return {"selecciones": [_sel_dict(s) for s in sels]}
 
@@ -561,16 +589,49 @@ def probar_regex(subramo_id: int, data: ProbarRegexIn, db: Session = Depends(get
 
 
 @router.post("/subramos/{subramo_id}/guardar-regla")
-def guardar_regla(subramo_id: int, data: GuardarReglaIn, db: Session = Depends(get_db)):
+def guardar_regla(subramo_id: int, data: GuardarReglaIn, request: Request, db: Session = Depends(get_db)):
     """
-    Guarda (o reemplaza) la regla activa para el campo.
-    Registra cobertura del lote en la regla.
+    Guarda (o reemplaza) la regla activa del campo. La cobertura se calcula aquí contra el lote
+    y lo confirmado por el usuario. Si la regla no es mejor, no cubre todo el lote o alguien
+    guardó otra mientras tanto, responde 409 con los motivos hasta que se reenvíe con forzar.
     """
+    try:
+        re.compile(data.patron_regex)
+    except re.error as e:
+        raise HTTPException(400, f"El regex no es válido: {e}")
+
+    polizas = _polizas_visibles(subramo_id, db)
+    esperados = {
+        s.poliza_id: s.texto_seleccionado
+        for s in db.query(SeleccionCampo).filter(
+            SeleccionCampo.poliza_id.in_([p.id for p in polizas]),
+            SeleccionCampo.nombre_campo == data.nombre_campo, SeleccionCampo.es_auto == False,  # noqa: E712
+        )
+    } if polizas else {}
+    cobertura = cobertura_lote(probar_regex_en_lote(data.patron_regex, polizas, esperados))
+    total = len(polizas)
+
+    actual = db.query(ReglaExtraccion).filter(
+        ReglaExtraccion.subramo_id == subramo_id, ReglaExtraccion.nombre_campo == data.nombre_campo,
+        ReglaExtraccion.activo == True, ReglaExtraccion.es_borrador == False,  # noqa: E712
+    ).first()
+
+    motivos: list[str] = []
+    if actual and actual.id != data.regla_base_id:
+        quien = f" por {actual.usuario}" if actual.usuario else ""
+        motivos.append(f"Otra persona guardó una regla nueva para este campo{quien}. Si continúas, la reemplazas.")
+    if actual and cobertura < cobertura_lote(probar_regex_en_lote(actual.patron_regex, polizas, esperados)):
+        motivos.append("La regla vigente cubre más pólizas del lote que esta.")
+    if cobertura < total:
+        motivos.append(f"Esta regla cubre {cobertura} de {total} pólizas del lote.")
+    if motivos and not data.forzar:
+        raise HTTPException(409, detail={"error": "Confirma antes de guardar", "motivos": motivos})
+
     db.query(ReglaExtraccion).filter(
         ReglaExtraccion.subramo_id == subramo_id,
         ReglaExtraccion.nombre_campo == data.nombre_campo,
-        ReglaExtraccion.activo == True,
-        ReglaExtraccion.es_borrador == False,
+        ReglaExtraccion.activo == True,  # noqa: E712
+        ReglaExtraccion.es_borrador == False,  # noqa: E712
     ).update({"activo": False})
 
     regla = ReglaExtraccion(
@@ -579,17 +640,18 @@ def guardar_regla(subramo_id: int, data: GuardarReglaIn, db: Session = Depends(g
         patron_regex=data.patron_regex,
         confianza=data.confianza,
         creado_por="lote",
+        usuario=usuario_de_request(request, db),
         es_borrador=False,
         activo=True,
         bbox=data.bbox,
         ocr_bbox=data.ocr_bbox,
-        cobertura_lote=data.cobertura_lote,
-        total_lote=data.total_lote,
+        cobertura_lote=cobertura,
+        total_lote=total,
     )
     db.add(regla)
     db.commit()
     db.refresh(regla)
-    return {"ok": True, "regla_id": regla.id}
+    return {"ok": True, "regla_id": regla.id, "cobertura": cobertura, "total": total}
 
 
 @router.get("/polizas/{poliza_id}/texto")
@@ -746,6 +808,8 @@ def estado_lote(subramo_id: int, db: Session = Depends(get_db)):
             "cobertura_lote": r.cobertura_lote,
             "total_lote": r.total_lote,
             "creado_por": r.creado_por,
+            "usuario": r.usuario,
+            "fecha": r.created_at.isoformat() if r.created_at else None,
         }
         for r in reglas
     }

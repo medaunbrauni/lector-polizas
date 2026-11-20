@@ -13,7 +13,7 @@ Cambios mecánicos, sin ambigüedad de negocio, con efecto inmediato y fácil de
 
 ### 1. Sacar la contraseña hardcodeada a variable de entorno
 - **Archivos afectados:** `api/routers/auth.py` (línea 8), `.env`, `.env.example`.
-- **Complejidad:** Trivial — reemplazar el literal `PASSWORD = "Marsella14"` por `os.getenv("AUTH_PASSWORD")`.
+- **Complejidad:** Trivial — reemplazar el literal `PASSWORD = "<contraseña retirada>"` por `os.getenv("AUTH_PASSWORD")`.
 - **Tiempo estimado:** 10-15 minutos.
 - **Beneficios:** Elimina el hallazgo de seguridad más severo de la auditoría sin tocar el mecanismo de sesión. La contraseña deja de estar en el historial de git hacia adelante (el valor ya expuesto en commits pasados sigue comprometido y debería rotarse, pero eso es una acción operativa, no de código).
 - **Efectos secundarios posibles:** Ninguno funcional. Requiere coordinar que la variable exista en el entorno de producción antes del deploy (si no, el login queda inutilizable) — es el único riesgo real, puramente operativo, no de código.
