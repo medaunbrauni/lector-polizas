@@ -122,7 +122,8 @@ export default function Reglas() {
   const [confirmarRegla, setConfirmarRegla] = useState<{ campo: string; motivos: string[] } | null>(null);
   // Por campo: pólizas que el usuario sacó como ejemplos del regex, y si su lista está contraída.
   const [ejemplosExcluidos, setEjemplosExcluidos] = useState<Record<string, Set<number>>>({});
-  const [listasContraidas, setListasContraidas] = useState<Set<string>>(new Set());
+  // Por campo: listas de pólizas del lote que el usuario expandió (por defecto todas contraídas).
+  const [listasExpandidas, setListasExpandidas] = useState<Set<string>>(new Set());
   const [probando, setProbando] = useState<string | null>(null);
   const [guardando, setGuardando] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -1855,18 +1856,18 @@ export default function Reglas() {
                         {numSels > 0 && (
                           <button
                             type="button"
-                            onClick={() => setListasContraidas((prev) => {
+                            onClick={() => setListasExpandidas((prev) => {
                               const n = new Set(prev); if (n.has(campo.nombre)) n.delete(campo.nombre); else n.add(campo.nombre); return n;
                             })}
-                            aria-expanded={!listasContraidas.has(campo.nombre)}
+                            aria-expanded={listasExpandidas.has(campo.nombre)}
                             className="w-full flex items-center gap-1 text-left text-[10px] font-semibold text-gray-600 hover:text-gray-800"
                           >
-                            {listasContraidas.has(campo.nombre) ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            {listasExpandidas.has(campo.nombre) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                             Pólizas del lote ({polizas.length}) · {numSels} con valor
                           </button>
                         )}
 
-                        {numSels > 0 && !listasContraidas.has(campo.nombre) && (
+                        {numSels > 0 && listasExpandidas.has(campo.nombre) && (
                           <div className="space-y-1">
                             {polizas.map((p) => {
                               const sel = sels[p.id];
