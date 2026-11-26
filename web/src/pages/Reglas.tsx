@@ -10,6 +10,8 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import MantenimientoLote, { HistorialReglasModal } from '../components/reglas/MantenimientoLote';
 import DismissibleAlert from '../components/ui/DismissibleAlert';
 import PdfVisor, { PdfVisorErrorBoundary } from '../components/reglas/PdfVisor';
+import BarraVisor from '../components/reglas/BarraVisor';
+import Cargando from '../components/ui/Cargando';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
@@ -971,7 +973,7 @@ export default function Reglas() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-secondary)]">
+    <div className="flex flex-col h-screen min-h-[560px] overflow-hidden bg-[var(--color-bg-secondary)]">
 
       <ConfirmDialog
         open={mostrarConfirmVaciar}
@@ -1130,7 +1132,7 @@ export default function Reglas() {
       ) : (
         <div ref={filaPanelesRef} className="flex flex-1 min-h-0 overflow-hidden">
 
-          <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
+          <div style={{ width: anchoIzquierdo, maxWidth: '26%' }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
             <div className="px-3 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
               <button
                 onClick={() => setMostrarLote((v) => !v)}
@@ -1230,7 +1232,7 @@ export default function Reglas() {
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
             {polizaActiva && (
-              <div className="px-4 py-2 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-3">
+              <div className="px-4 py-2 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-x-3 gap-y-1.5 flex-wrap">
                 <button
                   onClick={() => setPolizaIdx((i) => Math.max(0, i - 1))}
                   disabled={polizaIdx === 0}
@@ -1238,7 +1240,7 @@ export default function Reglas() {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-xs font-medium text-[var(--color-text-primary)] flex-1 text-center truncate">
+                <span className="text-xs font-medium text-[var(--color-text-primary)] flex-1 min-w-[8rem] text-center truncate">
                   {polizaActiva.nombre_archivo}
                   <span className="text-[var(--color-text-secondary)] ml-2">({polizaIdx + 1} / {polizas.length})</span>
                 </span>
@@ -1284,7 +1286,7 @@ export default function Reglas() {
 
             <div
               ref={containerRef}
-              className="flex-1 min-h-[240px] relative overflow-hidden"
+              className="flex-1 min-h-[120px] relative overflow-hidden"
               onMouseUp={(!modoImagen && polizaActiva) ? handleSeleccion : undefined}
             >
               {!polizaActiva ? (
@@ -1292,7 +1294,7 @@ export default function Reglas() {
                   Agrega pólizas al lote para empezar
                 </div>
               ) : modoImagen ? (
-                <div className="absolute inset-0 overflow-y-auto bg-[var(--color-bg-secondary)]">
+                <div className="absolute inset-0">
                   <VisorImagen
                     polizaId={polizaActiva.id}
                     page={paginaImagen}
@@ -1331,7 +1333,7 @@ export default function Reglas() {
                   }}
                   className="h-1 flex-shrink-0 cursor-row-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
                 />
-                <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-primary)] flex-shrink-0">
+                <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-primary)] min-h-0 flex flex-col">
                 <TextoExtraido
                   texto={textoPdfActivo}
                   highlight={textoSeleccionado}
@@ -1348,7 +1350,7 @@ export default function Reglas() {
 
             {/* Botón guardar selección — SIEMPRE visible cuando hay campo activo */}
             {polizaActiva && campoActivo && (
-              <div className="flex-shrink-0 bg-[var(--color-bg-primary)] border-t border-[var(--color-border)] px-4 py-3 space-y-2">
+              <div className="flex-shrink-0 max-h-[42vh] overflow-y-auto bg-[var(--color-bg-primary)] border-t border-[var(--color-border)] px-4 py-3 space-y-2">
                 {textoSeleccionado ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -1412,7 +1414,7 @@ export default function Reglas() {
                       </p>
                     )}
                     {autoDeteccionAbierta && (
-                    <div className="space-y-1 max-h-[28vh] overflow-y-auto pr-1">
+                    <div className="space-y-1 max-h-[18vh] overflow-y-auto pr-1">
                       {[...autoDeteccion].sort((x, y) => Number(y.encontrado) - Number(x.encontrado)).map((ad) => (
                         <label
                           key={ad.poliza_id}
@@ -1462,7 +1464,7 @@ export default function Reglas() {
             className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           />
 
-          <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
+          <div style={{ width: anchoDerecho, maxWidth: '34%' }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
             {/* Pestañas: cuando se llegó desde Historial, o cuando la
                 póliza activa ya tiene al menos un dato real sembrado
                 (ej. al subir al lote se le aplicaron las reglas ya
@@ -1917,6 +1919,7 @@ function VisorImagen({
   const [rect, setRect] = useState<{x: number; y: number; w: number; h: number} | null>(null);
   const [leyendo, setLeyendo] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [zoom, setZoom] = useState(1.0);
   const peticionRef = useRef(0);   // descarta respuestas de recuadros ya reemplazados
   const imgUrl = urlImagenPagina(polizaId, page);
   const imgLoaded = loadedUrl === imgUrl;
@@ -1974,7 +1977,7 @@ function VisorImagen({
       ctx.fillStyle = 'rgba(37,99,235,0.10)';
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
-  }, [rect, imgLoaded]);
+  }, [rect, imgLoaded, zoom]);
 
   function getPt(e: React.MouseEvent<HTMLCanvasElement>) {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -2029,57 +2032,56 @@ function VisorImagen({
   }
 
   return (
-    <div className="flex flex-col items-center py-2 gap-2">
-      <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1 shadow-sm">
-        <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="disabled:opacity-30 hover:text-[var(--color-brand-blue)]">‹</button>
-        <span>Página {page} / {totalPages}</span>
-        <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="disabled:opacity-30 hover:text-[var(--color-brand-blue)]">›</button>
-      </div>
-
-      {!campoActivo && (
-        <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1">
-          Elige un campo en el panel derecho para empezar a dibujar el área
-        </div>
-      )}
-      {campoActivo && (
-        <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1">
-          Arrastra para marcar el área donde aparece el valor
-          {leyendo && <span className="ml-2 font-semibold">Leyendo zona…</span>}
-          {!leyendo && ocrBbox && textoSeleccionado && <span className="ml-2 font-semibold text-emerald-600">✓ Área capturada</span>}
-          {rect && (
-            <button type="button" onClick={limpiarRecuadro} className="ml-3 underline hover:opacity-80">
-              Limpiar recuadro
-            </button>
+    <div className="absolute inset-0 flex flex-col overflow-hidden">
+      <BarraVisor pagina={page} numPages={totalPages} onPagina={onPageChange} zoom={zoom} onZoom={setZoom}>
+        <div className="ml-auto min-w-0 truncate text-xs">
+          {!campoActivo ? (
+            <span className="text-amber-600">Elige un campo en el panel derecho para dibujar el área</span>
+          ) : (
+            <span className="text-blue-600">
+              Arrastra para marcar el área del valor
+              {leyendo && <span className="ml-2 font-semibold">Leyendo zona…</span>}
+              {!leyendo && ocrBbox && textoSeleccionado && <span className="ml-2 font-semibold text-emerald-600">✓ Área capturada</span>}
+              {rect && (
+                <button type="button" onClick={limpiarRecuadro} className="ml-3 underline hover:opacity-80">
+                  Limpiar recuadro
+                </button>
+              )}
+            </span>
           )}
         </div>
-      )}
+      </BarraVisor>
+
       {aviso && (
-        <div role="alert" className="text-xs font-medium text-[var(--color-warning-text)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1 max-w-xl text-center">
+        <div role="alert" className="px-3 py-1 text-xs font-medium text-[var(--color-warning-text)] bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0">
           {aviso}
         </div>
       )}
 
-      {!imgLoaded && (
-        <div className="text-xs text-[var(--color-text-secondary)] py-4">Cargando imagen…</div>
-      )}
-
-      <div className={`relative inline-block shadow-md rounded overflow-hidden ${!imgLoaded ? 'opacity-0 h-0' : ''}`}>
-        <img
-          ref={imgRef}
-          src={imgUrl}
-          alt={`Página ${page}`}
-          onLoad={handleImgLoad}
-          className="block max-w-full"
-          draggable={false}
-        />
-        <canvas
-          ref={canvasRef}
-          className={`absolute inset-0 w-full h-full ${campoActivo ? 'cursor-crosshair' : 'cursor-default'}`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-        />
+      <div className="flex-1 overflow-auto relative select-text bg-[var(--color-bg-secondary)]">
+        {!imgLoaded && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm"><Cargando texto="Cargando imagen…" tamano={36} /></span>
+          </div>
+        )}
+        <div className={`relative ${!imgLoaded ? 'opacity-0' : ''}`} style={{ width: `${zoom * 100}%` }}>
+          <img
+            ref={imgRef}
+            src={imgUrl}
+            alt={`Página ${page}`}
+            onLoad={handleImgLoad}
+            className="block w-full"
+            draggable={false}
+          />
+          <canvas
+            ref={canvasRef}
+            className={`absolute inset-0 w-full h-full ${campoActivo ? 'cursor-crosshair' : 'cursor-default'}`}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          />
+        </div>
       </div>
     </div>
   );
@@ -2137,8 +2139,8 @@ function TextoExtraido({
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between px-4 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
+    <div className="flex flex-col min-h-0">
+      <div className="flex items-center justify-between px-4 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0">
         <span className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide flex items-center gap-1">
           <FileText className="w-3 h-3" />Texto extraído · validación
         </span>
@@ -2174,7 +2176,7 @@ function TextoExtraido({
         </div>
       </div>
       <div
-        style={{ height: alto, fontSize: `${(10 * zoomTexto) / 100}px` }}
+        style={{ height: `min(${alto}px, 32vh)`, minHeight: 72, fontSize: `${(10 * zoomTexto) / 100}px` }}
         className="overflow-y-auto font-mono leading-relaxed"
         onMouseUp={() => {
           const seleccion = window.getSelection()?.toString().trim();
