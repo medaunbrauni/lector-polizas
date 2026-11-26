@@ -1,4 +1,5 @@
 import Cargando from '../ui/Cargando';
+import BarraVisor from './BarraVisor';
 /**
  * PdfVisor — mini-visor de PDF con paginación y zoom, más su error boundary.
  *
@@ -103,48 +104,10 @@ export default function PdfVisor({ polizaId, url, width }: { polizaId: number; u
   // cambia, así que no se debe reconstruir este objeto en cada render.
   const fileProp = useMemo(() => (bytes ? { data: bytes } : null), [bytes]);
 
-  const zoomOut = () => setZoom((z) => Math.max(0.5, Math.round((z - 0.25) * 100) / 100));
-  const zoomIn  = () => setZoom((z) => Math.min(3.0,  Math.round((z + 0.25) * 100) / 100));
-
   return (
     <div className="absolute inset-0 flex flex-col overflow-hidden">
 
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0 select-none">
-
-        <button
-          onClick={() => setPagina((p) => Math.max(1, p - 1))}
-          disabled={pagina <= 1 || numPages === 0}
-          className="px-2 py-0.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
-        >‹</button>
-        <span className="text-xs font-medium text-[var(--color-text-secondary)] tabular-nums min-w-[72px] text-center">
-          {numPages > 0 ? `Pág. ${pagina} / ${numPages}` : '—'}
-        </span>
-        <button
-          onClick={() => setPagina((p) => Math.min(numPages, p + 1))}
-          disabled={pagina >= numPages || numPages === 0}
-          className="px-2 py-0.5 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
-        >›</button>
-
-        <div className="w-px h-4 bg-[var(--color-border)] mx-1" />
-
-        <button
-          onClick={zoomOut}
-          disabled={zoom <= 0.5}
-          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
-          title="Reducir"
-        >−</button>
-        <button
-          onClick={() => setZoom(1.0)}
-          className="text-xs font-mono font-semibold text-[var(--color-text-primary)] hover:text-[var(--color-brand-blue)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded px-1.5 py-0.5 transition-colors min-w-[44px] text-center"
-          title="Restablecer zoom"
-        >{Math.round(zoom * 100)}%</button>
-        <button
-          onClick={zoomIn}
-          disabled={zoom >= 3.0}
-          className="w-6 h-6 flex items-center justify-center text-sm font-bold text-[var(--color-text-secondary)] hover:text-[var(--color-brand-blue)] disabled:opacity-30 bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded transition-colors"
-          title="Ampliar"
-        >+</button>
-      </div>
+      <BarraVisor pagina={pagina} numPages={numPages} onPagina={setPagina} zoom={zoom} onZoom={setZoom} />
 
       <div ref={areaRef} className="flex-1 overflow-y-auto overflow-x-auto relative select-text bg-[var(--color-bg-secondary)]">
         {noDisponible ? (

@@ -10,6 +10,10 @@ import ConfirmDialog from '../components/ui/ConfirmDialog';
 import MantenimientoLote, { HistorialReglasModal } from '../components/reglas/MantenimientoLote';
 import DismissibleAlert from '../components/ui/DismissibleAlert';
 import PdfVisor, { PdfVisorErrorBoundary } from '../components/reglas/PdfVisor';
+import BarraVisor from '../components/reglas/BarraVisor';
+import CorregirDeteccion from '../components/reglas/CorregirDeteccion';
+import type { Clasificacion } from '../components/reglas/CorregirDeteccion';
+import Cargando from '../components/ui/Cargando';
 import {
   getCompanias, getRamos, getSubramos, getCampos,
   identificarModulo,
@@ -118,7 +122,8 @@ export default function Reglas() {
   const [confirmarRegla, setConfirmarRegla] = useState<{ campo: string; motivos: string[] } | null>(null);
   // Por campo: pólizas que el usuario sacó como ejemplos del regex, y si su lista está contraída.
   const [ejemplosExcluidos, setEjemplosExcluidos] = useState<Record<string, Set<number>>>({});
-  const [listasContraidas, setListasContraidas] = useState<Set<string>>(new Set());
+  // Por campo: listas de pólizas del lote que el usuario expandió (por defecto todas contraídas).
+  const [listasExpandidas, setListasExpandidas] = useState<Set<string>>(new Set());
   const [probando, setProbando] = useState<string | null>(null);
   const [guardando, setGuardando] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -137,8 +142,14 @@ export default function Reglas() {
   const [detectando, setDetectando] = useState(false);
   const [detectMsg, setDetectMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   const pendingAutoSelect = useRef<{ ramo_id: number; subramo_id: number } | null>(null);
+  // PDF de "Detectar con PDF": se conserva para poder corregir la clasificación sin volver a elegirlo.
+  const [archivoDetectado, setArchivoDetectado] = useState<File | null>(null);
+  const [polizaDetectadaId, setPolizaDetectadaId] = useState<number | null>(null);
+  const [ultimaDeteccion, setUltimaDeteccion] = useState<Partial<Clasificacion>>({});
+  const [corrigiendo, setCorrigiendo] = useState<{ motivo: string } | null>(null);
+  const [corrigiendoProc, setCorrigiendoProc] = useState(false);
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const pendingPolizaId = useRef<number | null>(null);
   const [avisoSinArchivo, setAvisoSinArchivo] = useState(false);
   // true cuando se llegó desde Historial ("Ver/Reentrenar"), O cuando la
@@ -422,12 +433,21 @@ export default function Reglas() {
     if (!file) return;
     e.target.value = '';
     setDetectando(true); setDetectMsg(null);
+    setArchivoDetectado(file); setPolizaDetectadaId(null); setUltimaDeteccion({});
     try {
       const res = await identificarModulo(file);
       if (!res.compania_id) {
         setDetectMsg({ ok: false, texto: 'No se reconoció la compañía' });
+        setCorrigiendo({ motivo: 'no se pudo reconocer la compañía, el ramo ni el subramo. Elígelos a mano.' });
         return;
       }
+      if (!res.ramo_id || !res.subramo_id) {
+        setDetectMsg({ ok: false, texto: `Detección incompleta: ${[res.compania_nombre, res.ramo_nombre].filter(Boolean).join(' › ')}` });
+        setUltimaDeteccion({ compania_id: res.compania_id, ramo_id: res.ramo_id ?? undefined });
+        setCorrigiendo({ motivo: 'la detección quedó incompleta (falta ramo o subramo). Complétalos a mano.' });
+        return;
+      }
+      setUltimaDeteccion({ compania_id: res.compania_id, ramo_id: res.ramo_id, subramo_id: res.subramo_id });
       const [ramosData, subramosData] = await Promise.all([
         getRamos(res.compania_id),
         res.ramo_id ? getSubramos(res.ramo_id) : Promise.resolve([]),
@@ -448,6 +468,7 @@ export default function Reglas() {
       // cascada de useEffect de los <select> de arriba).
       if (res.subramo_id) {
         const nuevas = await subirPolizasEntrenamiento(res.subramo_id, [file]);
+        setPolizaDetectadaId(nuevas[0]?.id ?? null);
         nuevas.forEach((n: PolizaEntrenamiento) => n.aviso && toast(`${n.nombre_archivo}: ${n.aviso}`, 'aviso'));
         setPolizas((prev) => {
           const merged = [...prev];
@@ -461,8 +482,82 @@ export default function Reglas() {
       }
     } catch (err) {
       setDetectMsg({ ok: false, texto: err instanceof Error ? err.message : 'Error' });
+      setCorrigiendo({ motivo: 'no se pudo analizar el PDF. Elige la compañía, el ramo y el subramo a mano.' });
     } finally {
       setDetectando(false);
+    }
+  }
+
+  /** Lleva la pantalla a Compañía › Ramo › Subramo y abre esa póliza lista para entrenar/corregir. */
+  async function irASubramo(c: Clasificacion, polizaId: number | null) {
+    const [ramosData, subramosData] = await Promise.all([getRamos(c.compania_id), getSubramos(c.ramo_id)]);
+    setRamos(ramosData);
+    setSubramos(subramosData);
+    if (polizaId != null) pendingPolizaId.current = polizaId;
+    setPanelDerechoTab('entrenar');
+    if (String(c.compania_id) !== selCompania) {
+      pendingAutoSelect.current = { ramo_id: c.ramo_id, subramo_id: c.subramo_id };
+      setSelCompania(String(c.compania_id));
+    } else if (String(c.ramo_id) !== selRamo) {
+      pendingAutoSelect.current = { ramo_id: c.ramo_id, subramo_id: c.subramo_id };
+      setSelRamo(String(c.ramo_id));
+    } else if (String(c.subramo_id) !== selSubramo) {
+      setSelSubramo(String(c.subramo_id));
+    } else {
+      await cargarEstado(c.subramo_id);   // misma pantalla: solo recargar el lote
+    }
+  }
+
+  /** Corrige la clasificación del PDF detectado: lo mueve al subramo elegido y lo abre. */
+  async function handleCorregirClasificacion(c: Clasificacion, etiqueta: string) {
+    if (!archivoDetectado) return;
+    setCorrigiendoProc(true);
+    try {
+      let polizaId = polizaDetectadaId;
+      if (polizaId == null || ultimaDeteccion.subramo_id !== c.subramo_id) {
+        // Estaba en otro subramo (lo subió la detección): se retira de ahí y se sube al correcto.
+        if (polizaId != null) { await eliminarPolizaEntrenamiento(polizaId); invalidarPdf(polizaId); }
+        const nuevas = await subirPolizasEntrenamiento(c.subramo_id, [archivoDetectado]);
+        nuevas.forEach((n: PolizaEntrenamiento) => n.aviso && toast(`${n.nombre_archivo}: ${n.aviso}`, 'aviso'));
+        polizaId = nuevas[0]?.id ?? null;
+        setPolizaDetectadaId(polizaId);
+      }
+      setUltimaDeteccion(c);
+      setDetectMsg({ ok: true, texto: `Corregido: ${etiqueta}` });
+      setCorrigiendo(null);
+      await irASubramo(c, polizaId);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : 'No se pudo corregir la clasificación.', 'aviso');
+    } finally {
+      setCorrigiendoProc(false);
+    }
+  }
+
+  /** Vuelve a la pantalla inicial del Entrenador (sin compañía, ramo ni subramo). */
+  function reiniciarEntrenador() {
+    pendingAutoSelect.current = null;
+    pendingPolizaId.current = null;
+    setSelCompania(''); setSelRamo(''); setSelSubramo('');
+    setRamos([]); setSubramos([]);
+    setPolizas([]); setPolizaIdx(0); setSelecciones({}); setReglas({});
+    setModoVistaExtraida(false); setPanelDerechoTab('campos');
+    setModoImagen(false); setPaginaImagen(1);
+    setDetectMsg(null); setArchivoDetectado(null); setPolizaDetectadaId(null); setUltimaDeteccion({});
+    setSearchParams({}, { replace: true });
+  }
+
+  /** Tras terminar una póliza: cierra la captura y pasa a la siguiente por entrenar, o al inicio si era la última. */
+  function avanzarTrasTerminar(lista: PolizaEntrenamiento[], idTerminada: number) {
+    setCampoActivo(''); setTextoSeleccionado(''); setBboxCapturado(null);
+    setMostrarTexto(false); setAutoDeteccion([]); setAutoDeteccionSel(new Set());
+    const i = lista.findIndex((p) => p.id === idTerminada);
+    const sig = [...lista.slice(i + 1), ...lista.slice(0, i)].find((p) => !p.entrenado);
+    if (sig) {
+      setPolizaIdx(lista.findIndex((p) => p.id === sig.id));
+      toast(`Póliza entrenada. Sigue: ${sig.nombre_archivo}`, 'exito');
+    } else {
+      toast('Última póliza del subramo entrenada. Lote completo.', 'exito');
+      reiniciarEntrenador();
     }
   }
 
@@ -477,6 +572,7 @@ export default function Reglas() {
     // visor, que es el caso real tras usar "Detectar con PDF" (deja esa
     // póliza como la activa). Si se borra otra distinta, no aplica.
     if (polizaActiva?.id === id) setDetectMsg(null);
+    if (polizaDetectadaId === id) { setPolizaDetectadaId(null); setArchivoDetectado(null); }
     setPolizas((prev) => {
       const next = prev.filter((p) => p.id !== id);
       if (polizaIdx >= next.length) setPolizaIdx(Math.max(0, next.length - 1));
@@ -549,16 +645,33 @@ export default function Reglas() {
       const yaEstabaEntrenada = polizaActiva.entrenado;
       const res = await terminarPoliza(polizaActiva.id);
       if (res.ok) {
-        setPolizas((prev) => prev.map((p) => (p.id === polizaActiva.id ? res.poliza : p)));
-        // Solo suma si esta póliza pasó de no-entrenada a entrenada — un
-        // re-clic sobre una ya entrenada no debe volver a sumar.
-        if (!yaEstabaEntrenada) ajustarContador('total_entrenadas', 1);
+        const actualizadas = polizas.map((p) => (p.id === polizaActiva.id ? res.poliza : p));
+        setPolizas(actualizadas);
+        // Solo suma (y avanza) si esta póliza pasó de no-entrenada a entrenada —
+        // un re-clic sobre una ya entrenada no debe volver a sumar ni moverse.
+        if (!yaEstabaEntrenada) {
+          ajustarContador('total_entrenadas', 1);
+          avanzarTrasTerminar(actualizadas, polizaActiva.id);
+        }
       } else {
         setTerminarError({ faltan: res.camposFaltantes, sinConfirmar: res.camposSinConfirmar });
       }
     } finally {
       setTerminando(false);
     }
+  }
+
+  const [confirmarYTerminar, setConfirmarYTerminar] = useState(false);
+
+  async function handleConfirmarYTerminar() {
+    setConfirmarYTerminar(false);
+    try {
+      await handleConfirmarPoliza();
+    } catch {
+      toast('No se pudieron confirmar los valores automáticos. Intenta de nuevo.', 'aviso');
+      return;
+    }
+    await handleTerminarPoliza();
   }
 
   const [reentrenando, setReentrenando] = useState(false);
@@ -904,6 +1017,8 @@ export default function Reglas() {
     return c.requerido && (!sel?.texto_seleccionado || sel.es_auto);   // sin valor o sin confirmar
   });
   const camposSinValorActivo = camposFaltantesActivo.filter((c) => !selecciones[c.nombre]?.[polizaActiva!.id]?.texto_seleccionado);
+  // Todo lo que falta ya tiene valor (viene del Extractor o de una regla) y solo está sin confirmar.
+  const soloFaltanConfirmar = camposFaltantesActivo.length > 0 && camposSinValorActivo.length === 0;
   // Valores automáticos (de todos los campos) de la póliza activa que se pueden confirmar de una vez.
   const autosActiva = !polizaActiva ? [] : Object.values(selecciones)
     .map((m) => m[polizaActiva.id])
@@ -971,7 +1086,7 @@ export default function Reglas() {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-[var(--color-bg-secondary)]">
+    <div className="flex flex-col h-screen min-h-[560px] overflow-hidden bg-[var(--color-bg-secondary)]">
 
       <ConfirmDialog
         open={mostrarConfirmVaciar}
@@ -983,6 +1098,29 @@ export default function Reglas() {
         procesando={vaciandoLote}
         onConfirm={confirmarVaciarLote}
         onCancel={() => setMostrarConfirmVaciar(false)}
+      />
+
+      {corrigiendo && archivoDetectado && (
+        <CorregirDeteccion
+          nombreArchivo={archivoDetectado.name}
+          motivo={corrigiendo.motivo}
+          companias={companias}
+          inicial={ultimaDeteccion}
+          avisoPerdida={polizaDetectadaId != null ? 'El PDF ya está en un lote: si eliges otro subramo se moverá allá y se perderá lo que hayas capturado en él.' : undefined}
+          procesando={corrigiendoProc}
+          onCancel={() => setCorrigiendo(null)}
+          onConfirm={handleCorregirClasificacion}
+        />
+      )}
+
+      <ConfirmDialog
+        open={confirmarYTerminar}
+        variant="info"
+        title="¿Confirmar los valores y terminar?"
+        message={`Se confirmarán ${autosActiva.length} valor${autosActiva.length === 1 ? '' : 'es'} automático${autosActiva.length === 1 ? '' : 's'} de esta póliza y se marcará como entrenada. Revisa que sean correctos: con ellos se generan las reglas.`}
+        confirmLabel="Confirmar y terminar"
+        onConfirm={handleConfirmarYTerminar}
+        onCancel={() => setConfirmarYTerminar(false)}
       />
 
       <ConfirmDialog
@@ -1018,7 +1156,7 @@ export default function Reglas() {
         </p>
       </DismissibleAlert>
 
-      <div className="px-6 py-4 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-4 flex-wrap">
+      <div className="px-6 py-4 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-4 flex-wrap lg:grid lg:grid-cols-[1fr_auto_1fr]">
         <div>
           <h1 className="text-lg font-bold text-[var(--color-text-primary)]">Entrenador PDFs</h1>
           <p className="text-xs text-[var(--color-text-secondary)]">
@@ -1052,20 +1190,29 @@ export default function Reglas() {
         </div>
 
         {tabActivo === 'reglas' && (
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto lg:justify-self-end flex items-center gap-3">
             <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleDetectarPDF} />
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={detectando}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-lg text-xs font-semibold transition-colors"
+              className="inline-flex items-center gap-2 px-5 py-2.5 bg-[var(--color-brand-blue)] hover:opacity-90 disabled:opacity-50 text-white rounded-lg text-sm font-semibold shadow-sm transition-opacity"
             >
-              <ScanSearch className="w-3.5 h-3.5" />
+              <ScanSearch className="w-4 h-4" />
               {detectando ? 'Analizando…' : 'Detectar con PDF'}
             </button>
             {detectMsg && (
               <span className={`text-xs font-medium ${detectMsg.ok ? 'text-[var(--color-success-text)]' : 'text-[var(--color-error-text)]'}`}>
                 {detectMsg.ok ? '✓' : '✕'} {detectMsg.texto}
               </span>
+            )}
+            {detectMsg && archivoDetectado && (
+              <button
+                type="button"
+                onClick={() => setCorrigiendo({ motivo: detectMsg.ok ? 'corrige la compañía, el ramo o el subramo si no son los correctos.' : 'elige la compañía, el ramo y el subramo a mano.' })}
+                className="px-3 py-1.5 rounded-lg border border-[var(--color-brand-blue)] text-[var(--color-brand-blue)] hover:bg-[var(--color-nav-active-bg)] text-xs font-semibold transition-colors"
+              >
+                {detectMsg.ok ? 'Corregir' : 'Elegir manualmente'}
+              </button>
             )}
           </div>
         )}
@@ -1130,7 +1277,7 @@ export default function Reglas() {
       ) : (
         <div ref={filaPanelesRef} className="flex flex-1 min-h-0 overflow-hidden">
 
-          <div style={{ width: anchoIzquierdo }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
+          <div style={{ width: anchoIzquierdo, maxWidth: '26%' }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-r border-[var(--color-border)] flex flex-col">
             <div className="px-3 py-2.5 border-b border-[var(--color-border)] flex items-center justify-between">
               <button
                 onClick={() => setMostrarLote((v) => !v)}
@@ -1230,7 +1377,7 @@ export default function Reglas() {
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
 
             {polizaActiva && (
-              <div className="px-4 py-2 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-3">
+              <div className="px-4 py-2 bg-[var(--color-bg-primary)] border-b border-[var(--color-border)] flex items-center gap-x-3 gap-y-1.5 flex-wrap">
                 <button
                   onClick={() => setPolizaIdx((i) => Math.max(0, i - 1))}
                   disabled={polizaIdx === 0}
@@ -1238,7 +1385,7 @@ export default function Reglas() {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="text-xs font-medium text-[var(--color-text-primary)] flex-1 text-center truncate">
+                <span className="text-xs font-medium text-[var(--color-text-primary)] flex-1 min-w-[8rem] text-center truncate">
                   {polizaActiva.nombre_archivo}
                   <span className="text-[var(--color-text-secondary)] ml-2">({polizaIdx + 1} / {polizas.length})</span>
                 </span>
@@ -1284,7 +1431,7 @@ export default function Reglas() {
 
             <div
               ref={containerRef}
-              className="flex-1 min-h-[240px] relative overflow-hidden"
+              className="flex-1 min-h-[120px] relative overflow-hidden"
               onMouseUp={(!modoImagen && polizaActiva) ? handleSeleccion : undefined}
             >
               {!polizaActiva ? (
@@ -1292,7 +1439,7 @@ export default function Reglas() {
                   Agrega pólizas al lote para empezar
                 </div>
               ) : modoImagen ? (
-                <div className="absolute inset-0 overflow-y-auto bg-[var(--color-bg-secondary)]">
+                <div className="absolute inset-0">
                   <VisorImagen
                     polizaId={polizaActiva.id}
                     page={paginaImagen}
@@ -1331,7 +1478,7 @@ export default function Reglas() {
                   }}
                   className="h-1 flex-shrink-0 cursor-row-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
                 />
-                <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-primary)] flex-shrink-0">
+                <div className="border-t border-[var(--color-border)] bg-[var(--color-bg-primary)] min-h-0 flex flex-col">
                 <TextoExtraido
                   texto={textoPdfActivo}
                   highlight={textoSeleccionado}
@@ -1348,7 +1495,7 @@ export default function Reglas() {
 
             {/* Botón guardar selección — SIEMPRE visible cuando hay campo activo */}
             {polizaActiva && campoActivo && (
-              <div className="flex-shrink-0 bg-[var(--color-bg-primary)] border-t border-[var(--color-border)] px-4 py-3 space-y-2">
+              <div className="flex-shrink-0 max-h-[42vh] overflow-y-auto bg-[var(--color-bg-primary)] border-t border-[var(--color-border)] px-4 py-3 space-y-2">
                 {textoSeleccionado ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2">
@@ -1412,7 +1559,7 @@ export default function Reglas() {
                       </p>
                     )}
                     {autoDeteccionAbierta && (
-                    <div className="space-y-1 max-h-[28vh] overflow-y-auto pr-1">
+                    <div className="space-y-1 max-h-[18vh] overflow-y-auto pr-1">
                       {[...autoDeteccion].sort((x, y) => Number(y.encontrado) - Number(x.encontrado)).map((ad) => (
                         <label
                           key={ad.poliza_id}
@@ -1462,7 +1609,7 @@ export default function Reglas() {
             className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           />
 
-          <div style={{ width: anchoDerecho }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
+          <div style={{ width: anchoDerecho, maxWidth: '34%' }} className="flex-shrink-0 bg-[var(--color-bg-primary)] border-l border-[var(--color-border)] flex flex-col overflow-hidden">
             {/* Pestañas: cuando se llegó desde Historial, o cuando la
                 póliza activa ya tiene al menos un dato real sembrado
                 (ej. al subir al lote se le aplicaron las reglas ya
@@ -1709,18 +1856,18 @@ export default function Reglas() {
                         {numSels > 0 && (
                           <button
                             type="button"
-                            onClick={() => setListasContraidas((prev) => {
+                            onClick={() => setListasExpandidas((prev) => {
                               const n = new Set(prev); if (n.has(campo.nombre)) n.delete(campo.nombre); else n.add(campo.nombre); return n;
                             })}
-                            aria-expanded={!listasContraidas.has(campo.nombre)}
+                            aria-expanded={listasExpandidas.has(campo.nombre)}
                             className="w-full flex items-center gap-1 text-left text-[10px] font-semibold text-gray-600 hover:text-gray-800"
                           >
-                            {listasContraidas.has(campo.nombre) ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                            {listasExpandidas.has(campo.nombre) ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
                             Pólizas del lote ({polizas.length}) · {numSels} con valor
                           </button>
                         )}
 
-                        {numSels > 0 && !listasContraidas.has(campo.nombre) && (
+                        {numSels > 0 && listasExpandidas.has(campo.nombre) && (
                           <div className="space-y-1">
                             {polizas.map((p) => {
                               const sel = sels[p.id];
@@ -1843,7 +1990,14 @@ export default function Reglas() {
                   info. Si el 400 igual ocurre (ej. otra pestaña cambió
                   algo), se muestra la lista debajo del botón. */}
               {polizaActiva && (
-                <div className="p-4 border-t border-[var(--color-border)]">
+                <div className="sticky bottom-0 z-10 p-4 border-t border-[var(--color-border)] bg-[var(--color-bg-primary)]">
+                  {!polizaActiva.entrenado && camposFaltantesActivo.length > 0 && (
+                    <p className="mb-2 text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                      {camposSinValorActivo.length > 0
+                        ? <>Faltan por capturar: {camposSinValorActivo.map((c) => c.label).join(', ')}.</>
+                        : <>Por confirmar: {camposFaltantesActivo.map((c) => c.label).join(', ')}. Con el botón de abajo se confirman todos los automáticos y se termina.</>}
+                    </p>
+                  )}
                   {terminarError && (terminarError.faltan.length > 0 || terminarError.sinConfirmar.length > 0) && (
                     <div className="mb-2 flex items-start gap-1.5 p-2 bg-amber-50 border border-amber-200 rounded-lg text-[10px] text-amber-800">
                       <AlertCircle className="w-3 h-3 flex-shrink-0 mt-0.5" />
@@ -1863,8 +2017,8 @@ export default function Reglas() {
                     </button>
                   )}
                   <button
-                    onClick={handleTerminarPoliza}
-                    disabled={terminando || camposFaltantesActivo.length > 0}
+                    onClick={soloFaltanConfirmar ? () => setConfirmarYTerminar(true) : handleTerminarPoliza}
+                    disabled={terminando || (camposFaltantesActivo.length > 0 && !soloFaltanConfirmar)}
                     title={
                       camposFaltantesActivo.length > 0
                         ? [
@@ -1880,7 +2034,7 @@ export default function Reglas() {
                         : 'bg-[var(--color-brand-blue)] text-white hover:opacity-90'
                     }`}
                   >
-                    {terminando ? 'Guardando…' : polizaActiva.entrenado ? '✓ Entrenada' : 'Terminar'}
+                    {terminando ? 'Guardando…' : polizaActiva.entrenado ? '✓ Entrenada' : soloFaltanConfirmar ? 'Confirmar y terminar' : 'Terminar'}
                   </button>
                 </div>
               )}
@@ -1917,6 +2071,7 @@ function VisorImagen({
   const [rect, setRect] = useState<{x: number; y: number; w: number; h: number} | null>(null);
   const [leyendo, setLeyendo] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [zoom, setZoom] = useState(1.0);
   const peticionRef = useRef(0);   // descarta respuestas de recuadros ya reemplazados
   const imgUrl = urlImagenPagina(polizaId, page);
   const imgLoaded = loadedUrl === imgUrl;
@@ -1974,7 +2129,7 @@ function VisorImagen({
       ctx.fillStyle = 'rgba(37,99,235,0.10)';
       ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
     }
-  }, [rect, imgLoaded]);
+  }, [rect, imgLoaded, zoom]);
 
   function getPt(e: React.MouseEvent<HTMLCanvasElement>) {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -2029,57 +2184,56 @@ function VisorImagen({
   }
 
   return (
-    <div className="flex flex-col items-center py-2 gap-2">
-      <div className="flex items-center gap-2 text-xs text-[var(--color-text-secondary)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1 shadow-sm">
-        <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1} className="disabled:opacity-30 hover:text-[var(--color-brand-blue)]">‹</button>
-        <span>Página {page} / {totalPages}</span>
-        <button onClick={() => onPageChange(Math.min(totalPages, page + 1))} disabled={page >= totalPages} className="disabled:opacity-30 hover:text-[var(--color-brand-blue)]">›</button>
-      </div>
-
-      {!campoActivo && (
-        <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1">
-          Elige un campo en el panel derecho para empezar a dibujar el área
-        </div>
-      )}
-      {campoActivo && (
-        <div className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1">
-          Arrastra para marcar el área donde aparece el valor
-          {leyendo && <span className="ml-2 font-semibold">Leyendo zona…</span>}
-          {!leyendo && ocrBbox && textoSeleccionado && <span className="ml-2 font-semibold text-emerald-600">✓ Área capturada</span>}
-          {rect && (
-            <button type="button" onClick={limpiarRecuadro} className="ml-3 underline hover:opacity-80">
-              Limpiar recuadro
-            </button>
+    <div className="absolute inset-0 flex flex-col overflow-hidden">
+      <BarraVisor pagina={page} numPages={totalPages} onPagina={onPageChange} zoom={zoom} onZoom={setZoom}>
+        <div className="ml-auto min-w-0 truncate text-xs">
+          {!campoActivo ? (
+            <span className="text-amber-600">Elige un campo en el panel derecho para dibujar el área</span>
+          ) : (
+            <span className="text-blue-600">
+              Arrastra para marcar el área del valor
+              {leyendo && <span className="ml-2 font-semibold">Leyendo zona…</span>}
+              {!leyendo && ocrBbox && textoSeleccionado && <span className="ml-2 font-semibold text-emerald-600">✓ Área capturada</span>}
+              {rect && (
+                <button type="button" onClick={limpiarRecuadro} className="ml-3 underline hover:opacity-80">
+                  Limpiar recuadro
+                </button>
+              )}
+            </span>
           )}
         </div>
-      )}
+      </BarraVisor>
+
       {aviso && (
-        <div role="alert" className="text-xs font-medium text-[var(--color-warning-text)] bg-[var(--color-bg-primary)] border border-[var(--color-border)] rounded-lg px-3 py-1 max-w-xl text-center">
+        <div role="alert" className="px-3 py-1 text-xs font-medium text-[var(--color-warning-text)] bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0">
           {aviso}
         </div>
       )}
 
-      {!imgLoaded && (
-        <div className="text-xs text-[var(--color-text-secondary)] py-4">Cargando imagen…</div>
-      )}
-
-      <div className={`relative inline-block shadow-md rounded overflow-hidden ${!imgLoaded ? 'opacity-0 h-0' : ''}`}>
-        <img
-          ref={imgRef}
-          src={imgUrl}
-          alt={`Página ${page}`}
-          onLoad={handleImgLoad}
-          className="block max-w-full"
-          draggable={false}
-        />
-        <canvas
-          ref={canvasRef}
-          className={`absolute inset-0 w-full h-full ${campoActivo ? 'cursor-crosshair' : 'cursor-default'}`}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-        />
+      <div className="flex-1 overflow-auto relative select-text bg-[var(--color-bg-secondary)]">
+        {!imgLoaded && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span className="bg-[var(--color-bg-primary)] px-4 py-3 rounded-lg shadow-sm"><Cargando texto="Cargando imagen…" tamano={36} /></span>
+          </div>
+        )}
+        <div className={`relative ${!imgLoaded ? 'opacity-0' : ''}`} style={{ width: `${zoom * 100}%` }}>
+          <img
+            ref={imgRef}
+            src={imgUrl}
+            alt={`Página ${page}`}
+            onLoad={handleImgLoad}
+            className="block w-full"
+            draggable={false}
+          />
+          <canvas
+            ref={canvasRef}
+            className={`absolute inset-0 w-full h-full ${campoActivo ? 'cursor-crosshair' : 'cursor-default'}`}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+          />
+        </div>
       </div>
     </div>
   );
@@ -2137,8 +2291,8 @@ function TextoExtraido({
   }
 
   return (
-    <div>
-      <div className="flex items-center justify-between px-4 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)]">
+    <div className="flex flex-col min-h-0">
+      <div className="flex items-center justify-between px-4 py-1.5 bg-[var(--color-bg-secondary)] border-b border-[var(--color-border)] flex-shrink-0">
         <span className="text-[10px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wide flex items-center gap-1">
           <FileText className="w-3 h-3" />Texto extraído · validación
         </span>
@@ -2174,7 +2328,7 @@ function TextoExtraido({
         </div>
       </div>
       <div
-        style={{ height: alto, fontSize: `${(10 * zoomTexto) / 100}px` }}
+        style={{ height: `min(${alto}px, 32vh)`, minHeight: 72, fontSize: `${(10 * zoomTexto) / 100}px` }}
         className="overflow-y-auto font-mono leading-relaxed"
         onMouseUp={() => {
           const seleccion = window.getSelection()?.toString().trim();
